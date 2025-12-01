@@ -2,7 +2,8 @@
   "crons": [
     {
       "path": "/api/admin/close-season",
-      "schedule": "0 15 0 * *"
+      "schedule": "0 0 1 * *",
+      "timezone": "Asia/Tokyo"
     }
   ]
 }
