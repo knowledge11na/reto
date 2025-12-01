@@ -1,8 +1,9 @@
 // app/rate-battle/page.js
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
-import { useSearchParams, useRouter } from 'next/navigation';
+import { Suspense } from 'react';
+import { useEffect, useState, useMemo } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import io from 'socket.io-client';
 import QuestionReviewAndReport from '@/components/QuestionReviewAndReport';
 
@@ -11,7 +12,7 @@ let socket;
 const PER_QUESTION_BASE = 15000; // 15秒ベース
 const EXTRA_PER_10CHARS = 10000; // 10文字ごと +10秒
 
-export default function RateBattlePage() {
+function ReteBattlePageInner() {
   const searchParams = useSearchParams();
   const roomId = searchParams.get('room');
   const router = useRouter();
@@ -30,7 +31,6 @@ export default function RateBattlePage() {
   const [answerHistory, setAnswerHistory] = useState([]);
 
   const currentQuestion = questions[index];
-
 
   const addLog = (msg) => {
     setLog((prev) => [...prev, msg]);
@@ -98,7 +98,9 @@ export default function RateBattlePage() {
             ...q,
             options: Array.isArray(q.options)
               ? shuffle(q.options)
-              : JSON.parse(q.options || '[]').sort(() => Math.random() - 0.5),
+              : JSON.parse(q.options || '[]').sort(
+                  () => Math.random() - 0.5
+                ),
           }))
         );
       } catch (e) {
@@ -139,7 +141,7 @@ export default function RateBattlePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [index, currentQuestion, finished]);
 
-    const handleTimeout = (used) => {
+  const handleTimeout = (used) => {
     if (!currentQuestion || finished) return;
     addLog(`時間切れ: ${(used / 1000).toFixed(1)}秒使用`);
     setTotalTime((t) => t + used);
@@ -180,7 +182,6 @@ export default function RateBattlePage() {
 
     goNext();
   };
-
 
   const goNext = () => {
     if (index + 1 >= questions.length) {
@@ -286,7 +287,7 @@ export default function RateBattlePage() {
             </div>
           )}
 
-                    {result && (
+          {result && (
             <div className="w-full max-w-md space-y-4">
               <div className="bg-white rounded-2xl shadow p-4 text-center space-y-3">
                 <p className="text-xs text-slate-500 mb-1">対戦結果</p>
@@ -328,7 +329,6 @@ export default function RateBattlePage() {
               />
             </div>
           )}
-
         </section>
       )}
 
@@ -345,6 +345,23 @@ export default function RateBattlePage() {
         </section>
       )}
     </main>
+  );
+}
+
+// 外側ラッパ（Suspense で包む default export）
+export default function RateBattlePage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="min-h-screen flex items-center justify-center bg-sky-50 text-slate-900">
+          <div className="bg-white rounded-2xl shadow px-6 py-4 text-center">
+            レート戦画面を読み込み中…
+          </div>
+        </main>
+      }
+    >
+      <ReteBattlePageInner />
+    </Suspense>
   );
 }
 
