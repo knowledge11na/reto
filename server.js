@@ -4,7 +4,7 @@ import { Server } from "socket.io";
 import db from "./lib/db.js";
 import { addBerriesByUserId } from "./lib/berries.js";
 
-const PORT = 4000;
+const PORT = process.env.PORT || 4000;
 
 // ★ 現在接続中のソケット数
 let onlineCount = 0;

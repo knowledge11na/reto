@@ -52,9 +52,16 @@ function ReteBattlePageInner() {
   // ソケット初期化
   useEffect(() => {
     if (!roomId) return;
-    if (!socket) {
-      socket = io();
-    }
+if (!socket) {
+  const SOCKET_URL =
+    process.env.NEXT_PUBLIC_SOCKET_URL ||
+    (typeof window !== 'undefined' ? window.location.origin : '');
+
+  socket = io(SOCKET_URL, {
+    transports: ['websocket', 'polling'],
+  });
+}
+
 
     socket.on('connect', () => {
       console.log('battle socket connected', socket.id);

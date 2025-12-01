@@ -303,14 +303,17 @@ export default function BattlePage() {
     if (!roomId) return;
     if (!me) return;
 
-    if (!socket) {
-      const host =
-        typeof window !== 'undefined' ? window.location.hostname : 'localhost';
-      const protocol =
-        typeof window !== 'undefined' ? window.location.protocol : 'http:';
-      const url = `${protocol}//${host}:4000`;
-      socket = io(url);
-    }
+if (!socket) {
+  // .env.local で設定した URL
+  const SOCKET_URL =
+    process.env.NEXT_PUBLIC_SOCKET_URL ||
+    (typeof window !== 'undefined' ? window.location.origin : '');
+
+  socket = io(SOCKET_URL, {
+    transports: ['websocket', 'polling'],
+  });
+}
+
 
     const s = socket;
 
