@@ -3,23 +3,21 @@ import http from "http";
 import express from "express";
 import cors from "cors";
 import { Server } from "socket.io";
+
 import db from "./lib/db.js";
 import { addBerriesByUserId } from "./lib/berries.js";
 
 const PORT = process.env.PORT || 4000;
 
-// ★ 現在接続中のソケット数
-let onlineCount = 0;
-
-// =========================
-//  Express アプリ本体
-// =========================
+// ------------------------------
+// Express アプリ
+// ------------------------------
 const app = express();
 
-// JSON ボディを受け取れるようにする
+// JSON を受け取れるように
 app.use(express.json());
 
-// 開発中だし雑に全部許可でOK（必要ならあとで origin 絞る）
+// CORS を許可
 app.use(
   cors({
     origin: true,
@@ -27,24 +25,25 @@ app.use(
   })
 );
 
-// ▼ ここが今までの `/online-count` 相当
-app.get("/online-count", (req, res) => {
-  res.json({ count: onlineCount });
-});
-
-// ▼ テスト用の簡単なAPI（あとで見に行けるように）
+// ★ API 追加テスト：これが動くか確認する
 app.get("/api/health", (req, res) => {
   res.json({ ok: true });
 });
 
-// それ以外は 404
+// ★ 接続数を返す
+let onlineCount = 0;
+app.get("/online-count", (req, res) => {
+  res.json({ count: onlineCount });
+});
+
+// 404
 app.use((req, res) => {
   res.status(404).send("Not Found");
 });
 
-// =========================
-//  HTTPサーバー + Socket.IO
-// =========================
+// ------------------------------
+// HTTP Server + Socket.IO
+// ------------------------------
 const httpServer = http.createServer(app);
 
 const io = new Server(httpServer, {
@@ -54,6 +53,7 @@ const io = new Server(httpServer, {
     credentials: true,
   },
 });
+
 
 // ★ この下は、今あなたが書いてある
 //   getRankName／rateQueue／io.on('connection'...) など
