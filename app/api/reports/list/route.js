@@ -1,6 +1,9 @@
 // file: app/api/reports/list/route.js
 import { NextResponse } from 'next/server';
-import { listQuestionReports, updateQuestionReportStatus } from '@/lib/reports.js';
+import {
+  listQuestionReportsForAdmin as listQuestionReports,
+  updateQuestionReportForAdmin as updateQuestionReportStatus,
+} from '@/lib/reports.js';
 
 export async function GET(request) {
   try {
