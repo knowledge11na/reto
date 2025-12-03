@@ -133,6 +133,16 @@ export async function POST(request) {
       [userId]
     );
 
+    // 🔥 レートシーズンランキング関連（今回のエラー原因）
+    await safeDelete(
+      'DELETE FROM rate_season_rankings WHERE user_id = $1',
+      [userId]
+    );
+
+    // 必要なら他のシーズン系テーブルもここで消してOK
+    // await safeDelete('DELETE FROM season_rankings WHERE user_id = $1', [userId]);
+    // など
+
     // 最後に users 本体を削除
     await db.run('DELETE FROM users WHERE id = $1', [userId]);
 
