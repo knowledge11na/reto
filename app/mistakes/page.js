@@ -112,13 +112,28 @@ export default function MistakesPage() {
         {/* 説明 */}
         <section className="bg-white border border-sky-100 rounded-3xl p-4 shadow-sm text-sm text-slate-800">
           <p>
-            レート戦・チャレンジモード・AIなつ戦で
+            レート戦・チャレンジモードで
             <span className="font-bold">間違えた直近2000問</span>
             を表示します。正解を確認して、復習に使ってください。
           </p>
           <p className="mt-1 text-xs text-slate-500">
             ※ 正解した問題は表示されません。
           </p>
+
+          <div className="mt-3">
+            {mistakes.length > 0 ? (
+              <Link
+                href="/weak-training"
+                className="inline-flex items-center justify-center px-4 py-2 rounded-full bg-emerald-500 text-emerald-50 text-xs font-bold shadow hover:bg-emerald-600"
+              >
+                弱点克服モードを始める
+              </Link>
+            ) : (
+              <p className="text-xs text-slate-500">
+                ※ 間違えた問題が記録されると、弱点克服モードを利用できます。
+              </p>
+            )}
+          </div>
         </section>
 
         {/* 本体 */}
@@ -158,9 +173,7 @@ export default function MistakesPage() {
                     <div className="text-[11px] text-slate-500 text-right">
                       <div>
                         最終ミス:
-                        {m.lastWrongAt
-                          ? ` ${m.lastWrongAt}`
-                          : ' -'}
+                        {m.lastWrongAt ? ` ${m.lastWrongAt}` : ' -'}
                       </div>
                       <div>通算ミス回数: {m.wrongCount ?? 1}</div>
                     </div>

@@ -114,6 +114,9 @@ function BattlePageInner() {
   const [oppScore, setOppScore] = useState(0);
   const [oppTime, setOppTime] = useState(0);
 
+  // ★ AIの種類: 'natsu' or 'narekin'
+  const [aiVariant, setAiVariant] = useState('natsu');
+
   const [selected, setSelected] = useState(null); // 単一選択
   const [multiSelected, setMultiSelected] = useState([]); // 複数選択
   const [orderSelected, setOrderSelected] = useState([]); // 並び替え
@@ -147,11 +150,11 @@ function BattlePageInner() {
 
   const addLog = (msg) => setLog((prev) => [...prev, msg]);
 
-  // ★ ミス記録用: レート戦・AI戦で不正解だった問題を /api/mistakes/add に送る
+  // ★ ミス記録用: レート戦で不正解だった問題を /api/mistakes/add に送る
   const logMistake = (question) => {
     if (!question || !question.id) return;
+    if (isAiMode) return; // AI戦はレート扱いにしない（必要ならここを外せばOK）
 
-    // レート戦・AIなつ戦 共通で「間違えた問題」を記録
     fetch('/api/mistakes/add', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -204,10 +207,7 @@ function BattlePageInner() {
             .slice(0, MAX_AI_QUESTIONS);
         } else {
           // ★ PVP：roomId を使った決定的シャッフル
-          picked = shuffleDeterministic(uniqueQuestions, roomId).slice(
-            0,
-            30
-          );
+          picked = shuffleDeterministic(uniqueQuestions, roomId).slice(0, 30);
         }
 
         // ③ battle用に整形
@@ -335,7 +335,11 @@ function BattlePageInner() {
     if (questions.length === 0) return;
     if (phase !== 'waiting') return;
 
-    setOppName('AIなつ');
+    // 10% の確率で「AIナレキン」にする
+    const isSecretBoss = Math.random() < 0.1;
+    setAiVariant(isSecretBoss ? 'narekin' : 'natsu');
+    setOppName(isSecretBoss ? 'AIナレキン' : 'AIなつ');
+
     setPhase('question');
     setQIndex(0);
     setMyScore(0);
@@ -348,7 +352,12 @@ function BattlePageInner() {
     setOrderSelected([]);
     setTextAnswer('');
     setAnswerHistory([]);
-    addLog('AIなつとの対戦を開始します（30問 or スコア10まで）');
+
+    addLog(
+      isSecretBoss
+        ? 'AIナレキンとの対戦を開始します（超高難度／30問 or スコア10まで）'
+        : 'AIなつとの対戦を開始します（30問 or スコア10まで）'
+    );
   }, [isAiMode, questions, phase]);
 
   // socket.io 初期化（PVPのみ）
@@ -730,13 +739,16 @@ function BattlePageInner() {
       outcome,
       self: { score: myScoreNum, totalTimeMs: myTimeNum },
       opponent: { score: oppScoreNum, totalTimeMs: oppTimeNum },
+      aiVariant,
     });
 
     if (outcome === 'win') {
+      const rewardBerry = aiVariant === 'narekin' ? 3000 : 200;
+
       fetch('/api/ai-battle/reward', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ berry: 200 }),
+        body: JSON.stringify({ berry: rewardBerry }),
       }).catch(() => {});
     }
   };
@@ -749,8 +761,7 @@ function BattlePageInner() {
   ) => {
     const totalQuestions = Math.min(questions.length, MAX_AI_QUESTIONS);
     const nextIndex = qIndex + 1;
-    const someoneReached10 =
-      myScoreVal >= 10 || oppScoreVal >= 10;
+    const someoneReached10 = myScoreVal >= 10 || oppScoreVal >= 10;
 
     // ★ 絶対に「30問 or スコア10」に到達するまで続ける
     if (nextIndex >= totalQuestions || someoneReached10) {
@@ -772,12 +783,21 @@ function BattlePageInner() {
     const limit = calcTimeLimit(currentQuestion);
     const used = typeof usedMs === 'number' ? usedMs : 0;
 
-    // AIの正解率・時間は適当に調整
-    const correctProb = 0.7;
-    const aiCorrect = Math.random() < correctProb;
-    const minMs = limit * 0.3;
-    const maxMs = limit * 0.9;
-    const aiUsed = Math.floor(minMs + (maxMs - minMs) * Math.random());
+    let aiCorrect;
+    let aiUsed;
+
+    if (aiVariant === 'narekin') {
+      // ★ AIナレキン: 98% 正解・15秒固定
+      aiCorrect = Math.random() < 0.98;
+      aiUsed = 15000;
+    } else {
+      // 通常の AIなつ
+      const correctProb = 0.7;
+      aiCorrect = Math.random() < correctProb;
+      const minMs = limit * 0.3;
+      const maxMs = limit * 0.9;
+      aiUsed = Math.floor(minMs + (maxMs - minMs) * Math.random());
+    }
 
     const nextMyScore = myScore + (isCorrect ? 1 : 0);
     const nextMyTime = myTime + used;
@@ -847,6 +867,25 @@ function BattlePageInner() {
     );
   }
 
+  const progress =
+    currentQuestion && calcTimeLimit(currentQuestion) > 0
+      ? Math.max(
+          0,
+          Math.min(
+            1,
+            timeLeft / (calcTimeLimit(currentQuestion) || 1)
+          )
+        )
+      : 0;
+
+  const aiResultTitle =
+    aiVariant === 'narekin' ? 'AIナレキン戦 結果' : 'AIなつ戦 結果';
+  const opponentLabel = isAiMode
+    ? aiVariant === 'narekin'
+      ? 'AIナレキン'
+      : 'AIなつ'
+    : oppName;
+
   return (
     <main className="min-h-screen bg-sky-50 text-sky-900 flex flex-col">
       {/* ヘッダー */}
@@ -889,7 +928,8 @@ function BattlePageInner() {
           <div className="bg-white rounded-2xl shadow p-4 flex flex-col gap-3">
             <div className="flex justify-between text-xs text-slate-500 mb-1">
               <span>
-                {qIndex + 1}問目 / {isAiMode ? MAX_AI_QUESTIONS : questions.length}問
+                {qIndex + 1}問目 /{' '}
+                {isAiMode ? MAX_AI_QUESTIONS : questions.length}問
               </span>
               <span>残り時間: {timeDisplay} 秒</span>
             </div>
@@ -898,15 +938,7 @@ function BattlePageInner() {
               <div
                 className="h-full bg-emerald-400 transition-all"
                 style={{
-                  width: `${
-                    Math.max(
-                      0,
-                      Math.min(
-                        1,
-                        timeLeft / (calcTimeLimit(currentQuestion) || 1)
-                      )
-                    ) * 100
-                  }%`,
+                  width: `${progress * 100}%`,
                 }}
               />
             </div>
@@ -918,96 +950,103 @@ function BattlePageInner() {
             {/* 問題タイプごとのUI */}
             <div className="mt-2 space-y-2">
               {/* 単一選択 */}
-              {qType === 'single' && currentQuestion.options?.length > 0 && (
-                <div className="grid grid-cols-1 gap-2">
-                  {currentQuestion.options.map((opt, i) => {
-                    let style =
-                      'bg-slate-50 hover:bg-sky-50 border-slate-200 text-slate-900';
-
-                    if (phase === 'question') {
-                      if (selected === opt) {
-                        style = 'bg-sky-500 text-white border-sky-500';
-                      }
-                    } else if (judge && phase !== 'question') {
-                      const candidateList = parseCorrectValues(
-                        currentQuestion.answer
-                      );
-                      const isCorrectOpt =
-                        candidateList.length === 0
-                          ? opt === (currentQuestion.answer || '')
-                          : candidateList.includes(opt);
-
-                      if (isCorrectOpt) {
-                        style =
-                          'bg-emerald-50 border-emerald-500 text-slate-900';
-                      }
-                      if (selected === opt && !judge.isCorrect) {
-                        style = 'bg-red-50 border-red-500 text-slate-900';
-                      }
-                    }
-
-                    return (
-                      <button
-                        key={i}
-                        disabled={phase !== 'question'}
-                        onClick={() => handleSelectSingle(opt)}
-                        className={`w-full text-left px-3 py-2 rounded-lg border text-sm transition ${style}`}
-                      >
-                        {opt}
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-
-              {/* 複数選択 */}
-              {qType === 'multi' && currentQuestion.options?.length > 0 && (
-                <div className="space-y-2">
+              {qType === 'single' &&
+                currentQuestion.options?.length > 0 && (
                   <div className="grid grid-cols-1 gap-2">
                     {currentQuestion.options.map((opt, i) => {
-                      const isOn = multiSelected.includes(opt);
                       let style =
                         'bg-slate-50 hover:bg-sky-50 border-slate-200 text-slate-900';
 
-                      if (phase !== 'question' && judge) {
-                        const correctList = parseCorrectValues(
+                      if (phase === 'question') {
+                        if (selected === opt) {
+                          style = 'bg-sky-500 text-white border-sky-500';
+                        }
+                      } else if (judge && phase !== 'question') {
+                        const candidateList = parseCorrectValues(
                           currentQuestion.answer
                         );
-                        if (correctList.includes(opt)) {
+                        const isCorrectOpt =
+                          candidateList.length === 0
+                            ? opt === (currentQuestion.answer || '')
+                            : candidateList.includes(opt);
+
+                        if (isCorrectOpt) {
                           style =
                             'bg-emerald-50 border-emerald-500 text-slate-900';
                         }
-                        if (isOn && !judge.isCorrect) {
-                          style = 'bg-red-50 border-red-500 text-slate-900';
+                        if (selected === opt && !judge.isCorrect) {
+                          style =
+                            'bg-red-50 border-red-500 text-slate-900';
                         }
-                      } else if (isOn) {
-                        style = 'bg-sky-500 text-white border-sky-500';
                       }
 
                       return (
                         <button
                           key={i}
                           disabled={phase !== 'question'}
-                          onClick={() => toggleMultiOption(opt)}
+                          onClick={() => handleSelectSingle(opt)}
                           className={`w-full text-left px-3 py-2 rounded-lg border text-sm transition ${style}`}
                         >
-                          <span className="mr-2">{isOn ? '☑' : '☐'}</span>
                           {opt}
                         </button>
                       );
                     })}
                   </div>
+                )}
 
-                  {phase === 'question' && (
-                    <button
-                      onClick={submitMulti}
-                      className="w-full mt-1 py-2 rounded-full bg-sky-500 text-white text-sm font-bold"
-                    >
-                      この選択で回答する
-                    </button>
-                  )}
-                </div>
-              )}
+              {/* 複数選択 */}
+              {qType === 'multi' &&
+                currentQuestion.options?.length > 0 && (
+                  <div className="space-y-2">
+                    <div className="grid grid-cols-1 gap-2">
+                      {currentQuestion.options.map((opt, i) => {
+                        const isOn = multiSelected.includes(opt);
+                        let style =
+                          'bg-slate-50 hover:bg-sky-50 border-slate-200 text-slate-900';
+
+                        if (phase !== 'question' && judge) {
+                          const correctList = parseCorrectValues(
+                            currentQuestion.answer
+                          );
+                          if (correctList.includes(opt)) {
+                            style =
+                              'bg-emerald-50 border-emerald-500 text-slate-900';
+                          }
+                          if (isOn && !judge.isCorrect) {
+                            style =
+                              'bg-red-50 border-red-500 text-slate-900';
+                          }
+                        } else if (isOn) {
+                          style =
+                            'bg-sky-500 text-white border-sky-500';
+                        }
+
+                        return (
+                          <button
+                            key={i}
+                            disabled={phase !== 'question'}
+                            onClick={() => toggleMultiOption(opt)}
+                            className={`w-full text-left px-3 py-2 rounded-lg border text-sm transition ${style}`}
+                          >
+                            <span className="mr-2">
+                              {isOn ? '☑' : '☐'}
+                            </span>
+                            {opt}
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {phase === 'question' && (
+                      <button
+                        onClick={submitMulti}
+                        className="w-full mt-1 py-2 rounded-full bg-sky-500 text-white text-sm font-bold"
+                      >
+                        この選択で回答する
+                      </button>
+                    )}
+                  </div>
+                )}
 
               {/* 並び替え */}
               {qType === 'ordering' &&
@@ -1030,10 +1069,12 @@ function BattlePageInner() {
                               'bg-emerald-50 border-emerald-500 text-slate-900';
                           }
                           if (idx >= 0 && !judge.isCorrect) {
-                            style = 'bg-red-50 border-red-500 text-slate-900';
+                            style =
+                              'bg-red-50 border-red-500 text-slate-900';
                           }
                         } else if (selectedOrder) {
-                          style = 'bg-sky-500 text-white border-sky-500';
+                          style =
+                            'bg-sky-500 text-white border-sky-500';
                         }
 
                         return (
@@ -1078,7 +1119,7 @@ function BattlePageInner() {
                 <div className="space-y-2">
                   <textarea
                     disabled={phase !== 'question'}
-                    className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm bg-slate-50 focus:outline-none focus:ring-2 focus:ring-sky-400"
+                    className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm bg-slate-50 focus:outline-none焦点 focus:ring-2 focus:ring-sky-400"
                     rows={2}
                     placeholder="ここに答えを入力"
                     value={textAnswer}
@@ -1138,7 +1179,7 @@ function BattlePageInner() {
           <div className="space-y-4 mt-4">
             <div className="bg-white rounded-2xl shadow p-4 text-center space-y-3">
               <p className="text-xs text-slate-500 mb-1">
-                {isAiMode ? 'AIなつ戦 結果' : '対戦結果'}
+                {isAiMode ? aiResultTitle : '対戦結果'}
               </p>
               <p className="text-2xl font-extrabold">
                 {result.outcome === 'win'
@@ -1157,9 +1198,7 @@ function BattlePageInner() {
                   </p>
                 </div>
                 <div className="bg-slate-50 rounded-lg p-2">
-                  <p className="font-bold mb-1">
-                    {isAiMode ? 'AIなつ' : oppName}
-                  </p>
+                  <p className="font-bold mb-1">{opponentLabel}</p>
                   <p>スコア: {result.opponent.score}</p>
                   <p>
                     時間: {(result.opponent.totalTimeMs / 1000).toFixed(1)} 秒
@@ -1200,6 +1239,7 @@ function BattlePageInner() {
     </main>
   );
 }
+
 // 一番下に追加
 
 export default function BattlePage() {
