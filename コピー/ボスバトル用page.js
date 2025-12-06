@@ -1,8 +1,12 @@
-// file: app/page.js 
+// file: app/page.js
 'use client';
 
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
+
+// ★ ボスバトルの対象タグ名（将来ここを変えるだけで文言変更できる）
+// 例: '東の海' → '頂上戦争' など
+const BOSS_TAG_LABEL = '東の海';
 
 export default function HomePage() {
   const [me, setMe] = useState(null);
@@ -142,43 +146,22 @@ export default function HomePage() {
           )}
         </section>
 
-        {/* チャレンジモード */}
-        <section className="bg-sky-100 border-2 border-emerald-500 rounded-3xl p-4 shadow-sm">
-          <h2 className="text-xl font-extrabold mb-2">🔥 チャレンジモード</h2>
-          <p className="text-sm mb-2">
-            1日1回挑戦可能／3問間違えたら終了
-          </p>
-          <Link
-            href="/challenge"
-            className="block w-full text-center py-3 rounded-full text-emerald-50 font-bold bg-emerald-500 active:bg-emerald-600 shadow"
-          >
-            挑戦する
-          </Link>
-        </section>
-
-        {/* 🎮 ソロゲームにまとめて移動（1ボタンだけ） */}
-        <section className="bg-sky-100 border-2 border-violet-500 rounded-3xl p-4 shadow-sm">
-          <h2 className="text-xl font-extrabold mb-2">🎮 ソロゲーム</h2>
-          <p className="text-[11px] text-sky-900 mb-3">
-            1人で黙々と遊べる練習モード。レートは変動しません。
-          </p>
-          {me ? (
+        {/* フリー対戦 ＆ チャレンジモード */}
+        <div className="grid grid-cols-1 gap-4">
+          {/* チャレンジモード */}
+          <section className="bg-sky-100 border-2 border-emerald-500 rounded-3xl p-4 shadow-sm">
+            <h2 className="text-xl font-extrabold mb-2">🔥 チャレンジモード</h2>
+            <p className="text-sm mb-2">
+              1日1回挑戦可能／3問間違えたら終了
+            </p>
             <Link
-              href="/solo"
-              className="block w-full text-center py-3 rounded-full text-violet-50 font-bold bg-violet-500 active:bg-violet-600 shadow"
+              href="/challenge"
+              className="block w-full text-center py-3 rounded-full text-emerald-50 font-bold bg-emerald-500 active:bg-emerald-600 shadow"
             >
-              ソロゲームをする
+              挑戦する
             </Link>
-          ) : (
-            <button
-              type="button"
-              disabled
-              className="block w-full text-center py-3 rounded-full text-violet-50 font-bold bg-gray-400 cursor-not-allowed shadow"
-            >
-              ログインが必要です
-            </button>
-          )}
-        </section>
+          </section>
+        </div>
 
         {/* 問題投稿 & ランキング */}
         <div className="grid grid-cols-2 gap-4">
@@ -226,6 +209,63 @@ export default function HomePage() {
             </Link>
           </section>
         </div>
+
+        {/* 期間限定イベント：ボスバトル */}
+        <section className="bg-slate-900 border-2 border-slate-700 rounded-3xl p-4 shadow-sm text-slate-50 space-y-2">
+          <div className="flex items-center justify-between mb-1">
+            <div className="flex items-center gap-2">
+              <span className="text-2xl">👹</span>
+              <div>
+                <h2 className="text-base font-extrabold">期間限定イベント</h2>
+                <p className="text-[11px] text-slate-300">
+                  みんなでボスを倒してご褒美ベリーをゲット！
+                </p>
+              </div>
+            </div>
+            <span className="text-[11px] px-2 py-0.5 rounded-full bg-amber-400 text-slate-900 font-bold">
+              準備中
+            </span>
+          </div>
+
+          <div className="bg-slate-800/80 rounded-2xl p-3 border border-slate-600 flex items-center gap-3">
+            <div className="w-16 h-16 rounded-xl bg-slate-950/70 flex items-center justify-center text-[10px] text-slate-200 border border-slate-700 overflow-hidden">
+              {/* 将来ここにボス画像を置く（/boss-battle/boss-xxx.png） */}
+              BOSS
+            </div>
+            <div className="flex-1 text-[12px] space-y-1">
+              <p className="font-semibold text-slate-50">
+                「{BOSS_TAG_LABEL}」タグ限定ボスバトル（予定）
+              </p>
+              <p className="text-slate-300">
+                期間中の正解数でみんなの総ダメージが決まる協力イベント。
+              </p>
+              <p className="text-slate-300">
+                成功報酬：参加者全員 2000 ベリー＋貢献ランキング報酬
+              </p>
+            </div>
+          </div>
+
+          {me ? (
+            <Link
+              href="/boss-battle"
+              className="block w-full text-center py-2.5 rounded-full text-slate-900 text-sm font-bold bg-amber-300 hover:bg-amber-400 active:bg-amber-500 shadow"
+            >
+              ボスバトルに挑戦する
+            </Link>
+          ) : (
+            <button
+              type="button"
+              disabled
+              className="block w-full text-center py-2.5 rounded-full text-slate-200 text-sm font-bold bg-slate-600 cursor-not-allowed shadow"
+            >
+              ボスバトルにはログインが必要です
+            </button>
+          )}
+
+          <p className="text-[10px] text-slate-400 mt-1">
+            ※ 仕様は今後変更される可能性があります（テスト実装中）。
+          </p>
+        </section>
 
         {/* フッターリンク */}
         <footer className="mt-6 text-center space-y-2">

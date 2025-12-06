@@ -1,4 +1,4 @@
-// file: app/page.js 
+// file: app/page.js
 'use client';
 
 import Link from 'next/link';
@@ -142,43 +142,22 @@ export default function HomePage() {
           )}
         </section>
 
-        {/* チャレンジモード */}
-        <section className="bg-sky-100 border-2 border-emerald-500 rounded-3xl p-4 shadow-sm">
-          <h2 className="text-xl font-extrabold mb-2">🔥 チャレンジモード</h2>
-          <p className="text-sm mb-2">
-            1日1回挑戦可能／3問間違えたら終了
-          </p>
-          <Link
-            href="/challenge"
-            className="block w-full text-center py-3 rounded-full text-emerald-50 font-bold bg-emerald-500 active:bg-emerald-600 shadow"
-          >
-            挑戦する
-          </Link>
-        </section>
-
-        {/* 🎮 ソロゲームにまとめて移動（1ボタンだけ） */}
-        <section className="bg-sky-100 border-2 border-violet-500 rounded-3xl p-4 shadow-sm">
-          <h2 className="text-xl font-extrabold mb-2">🎮 ソロゲーム</h2>
-          <p className="text-[11px] text-sky-900 mb-3">
-            1人で黙々と遊べる練習モード。レートは変動しません。
-          </p>
-          {me ? (
+        {/* フリー対戦 ＆ チャレンジモード */}
+        <div className="grid grid-cols-1 gap-4">
+          {/* チャレンジモード */}
+          <section className="bg-sky-100 border-2 border-emerald-500 rounded-3xl p-4 shadow-sm">
+            <h2 className="text-xl font-extrabold mb-2">🔥 チャレンジモード</h2>
+            <p className="text-sm mb-2">
+              1日1回挑戦可能／3問間違えたら終了
+            </p>
             <Link
-              href="/solo"
-              className="block w-full text-center py-3 rounded-full text-violet-50 font-bold bg-violet-500 active:bg-violet-600 shadow"
+              href="/challenge"
+              className="block w-full text-center py-3 rounded-full text-emerald-50 font-bold bg-emerald-500 active:bg-emerald-600 shadow"
             >
-              ソロゲームをする
+              挑戦する
             </Link>
-          ) : (
-            <button
-              type="button"
-              disabled
-              className="block w-full text-center py-3 rounded-full text-violet-50 font-bold bg-gray-400 cursor-not-allowed shadow"
-            >
-              ログインが必要です
-            </button>
-          )}
-        </section>
+          </section>
+        </div>
 
         {/* 問題投稿 & ランキング */}
         <div className="grid grid-cols-2 gap-4">

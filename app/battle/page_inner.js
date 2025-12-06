@@ -366,7 +366,6 @@ function BattlePageInner() {
     if (!roomId) return;
     if (!me) return;
 
-    // ★ ここを書き換え
     if (!socket) {
       let SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL;
 
@@ -455,17 +454,47 @@ function BattlePageInner() {
 
     const onFinished = (payload) => {
       addLog('対戦終了');
+
+      // ★ PVPはサーバーの outcome を信用せず、自分と相手の
+      //   スコア＆時間から必ず勝敗を計算し直す
+      let outcome = 'draw';
+      if (payload.self && payload.opponent) {
+        const myScoreVal = Number(payload.self.score) || 0;
+        const oppScoreVal = Number(payload.opponent.score) || 0;
+        const myTimeVal = Number(payload.self.totalTimeMs) || 0;
+        const oppTimeVal = Number(payload.opponent.totalTimeMs) || 0;
+
+        if (myScoreVal > oppScoreVal) {
+          outcome = 'win';
+        } else if (myScoreVal < oppScoreVal) {
+          outcome = 'lose';
+        } else {
+          if (myTimeVal < oppTimeVal) {
+            outcome = 'win';
+          } else if (myTimeVal > oppTimeVal) {
+            outcome = 'lose';
+          } else {
+            outcome = 'draw';
+          }
+        }
+      } else if (payload.outcome) {
+        // 念のためサーバー側が outcome を持っていたら最後のフォールバックとして使う
+        outcome = payload.outcome;
+      }
+
+      const fullResult = { ...payload, outcome };
+
       setPhase('finished');
-      setResult(payload);
+      setResult(fullResult);
       setJudge(null);
 
-      if (payload.self) {
-        setMyScore(payload.self.score);
-        setMyTime(payload.self.totalTimeMs);
+      if (fullResult.self) {
+        setMyScore(fullResult.self.score);
+        setMyTime(fullResult.self.totalTimeMs);
       }
-      if (payload.opponent) {
-        setOppScore(payload.opponent.score);
-        setOppTime(payload.opponent.totalTimeMs);
+      if (fullResult.opponent) {
+        setOppScore(fullResult.opponent.score);
+        setOppTime(fullResult.opponent.totalTimeMs);
       }
     };
 
@@ -936,7 +965,7 @@ function BattlePageInner() {
 
             <div className="h-2 bg-slate-200 rounded-full overflow-hidden mb-1">
               <div
-                className="h-full bg-emerald-400 transition-all"
+                className="h-full bg-emerald-500 transition-all"
                 style={{
                   width: `${progress * 100}%`,
                 }}
@@ -959,7 +988,7 @@ function BattlePageInner() {
 
                       if (phase === 'question') {
                         if (selected === opt) {
-                          style = 'bg-sky-500 text-white border-sky-500';
+                          style = 'bg-sky-600 text-white border-sky-600';
                         }
                       } else if (judge && phase !== 'question') {
                         const candidateList = parseCorrectValues(
@@ -1018,7 +1047,7 @@ function BattlePageInner() {
                           }
                         } else if (isOn) {
                           style =
-                            'bg-sky-500 text-white border-sky-500';
+                            'bg-sky-600 text-white border-sky-600';
                         }
 
                         return (
@@ -1040,7 +1069,7 @@ function BattlePageInner() {
                     {phase === 'question' && (
                       <button
                         onClick={submitMulti}
-                        className="w-full mt-1 py-2 rounded-full bg-sky-500 text-white text-sm font-bold"
+                        className="w-full mt-1 py-2 rounded-full bg-sky-600 text-white text-sm font-bold"
                       >
                         この選択で回答する
                       </button>
@@ -1074,7 +1103,7 @@ function BattlePageInner() {
                           }
                         } else if (selectedOrder) {
                           style =
-                            'bg-sky-500 text-white border-sky-500';
+                            'bg-sky-600 text-white border-sky-600';
                         }
 
                         return (
@@ -1098,13 +1127,13 @@ function BattlePageInner() {
                         <>
                           <button
                             onClick={resetOrder}
-                            className="flex-1 py-2 rounded-full bg-slate-200 text-slate-700 text-xs font-bold"
+                            className="flex-1 py-2 rounded-full bg-slate-200 text-slate-800 text-xs font-bold"
                           >
                             リセット
                           </button>
                           <button
                             onClick={submitOrder}
-                            className="flex-1 py-2 rounded-full bg-sky-500 text-white text-xs font-bold"
+                            className="flex-1 py-2 rounded-full bg-sky-600 text-white text-xs font-bold"
                           >
                             この順番で回答
                           </button>
@@ -1119,7 +1148,7 @@ function BattlePageInner() {
                 <div className="space-y-2">
                   <textarea
                     disabled={phase !== 'question'}
-                    className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm bg-slate-50 focus:outline-none焦点 focus:ring-2 focus:ring-sky-400"
+                    className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm bg-slate-50 focus:outline-none focus:ring-2 focus:ring-sky-500"
                     rows={2}
                     placeholder="ここに答えを入力"
                     value={textAnswer}
@@ -1128,7 +1157,7 @@ function BattlePageInner() {
                   {phase === 'question' && (
                     <button
                       onClick={submitText}
-                      className="w-full py-2 rounded-full bg-sky-500 text-white text-sm font-bold"
+                      className="w-full py-2 rounded-full bg-sky-600 text-white text-sm font-bold"
                     >
                       この答えで回答する
                     </button>
@@ -1181,7 +1210,7 @@ function BattlePageInner() {
               <p className="text-xs text-slate-500 mb-1">
                 {isAiMode ? aiResultTitle : '対戦結果'}
               </p>
-              <p className="text-2xl font-extrabold">
+              <p className="text-2xl font-extrabold text-slate-900">
                 {result.outcome === 'win'
                   ? '勝利！'
                   : result.outcome === 'lose'
@@ -1207,7 +1236,7 @@ function BattlePageInner() {
               </div>
 
               <button
-                className="mt-2 px-4 py-2 rounded-full bg-sky-500 text-white text-sm font-bold"
+                className="mt-2 px-4 py-2 rounded-full bg-sky-600 text-white text-sm font-bold"
                 onClick={() => router.push('/')}
               >
                 ホームへ戻る
