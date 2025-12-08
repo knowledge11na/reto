@@ -1,9 +1,11 @@
 // file: app/solo/meteor/page.js
 'use client';
 
+import GameLayout from '../GameLayout';
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import QuestionReviewAndReport from '@/components/QuestionReviewAndReport';
+
 
 // 全体プレイ時間 10分
 const TOTAL_TIME_MS = 10 * 60 * 1000;
