@@ -26,10 +26,13 @@ export default function MyPage() {
   // キャラ図鑑サマリ
   const [charSummary, setCharSummary] = useState(null);
 
-  // ★ チャレンジ成績（ここを追加）
+  // ★ チャレンジ成績
   const [challengeSeasonBest, setChallengeSeasonBest] = useState(0);
   const [challengeAllTimeBest, setChallengeAllTimeBest] = useState(0);
 
+  // ============================
+  // 初期ロード (/api/me /api/user/characters)
+  // ============================
   useEffect(() => {
     const load = async () => {
       try {
@@ -90,7 +93,40 @@ export default function MyPage() {
     load();
   }, []);
 
+  // ============================
+  // ★ マイページから称号チェック用 API を呼ぶ
+  //    ・チャレンジ最高記録
+  //    ・所持キャラ数
+  // ============================
+  useEffect(() => {
+    if (!user) return;
 
+    const ownedCount =
+      (charSummary?.uniqueOwned ?? charSummary?.ownedCount ?? 0) || 0;
+    const seasonBest = challengeSeasonBest || 0;
+    const allTimeBest = challengeAllTimeBest || 0;
+
+    // どれも 0 なら送っても意味ないのでスキップ
+    if (!ownedCount && !seasonBest && !allTimeBest) return;
+
+    fetch('/api/solo/titles', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'mypage',
+        userId: user.id,
+        ownedCharacters: ownedCount, // 所持キャラ数
+        challengeSeasonBest: seasonBest, // シーズン最高
+        challengeAllTimeBest: allTimeBest, // 歴代最高
+      }),
+    }).catch(() => {
+      // エラー時は特に何もしない（称号付与が遅れるだけ）
+    });
+  }, [user, charSummary, challengeSeasonBest, challengeAllTimeBest]);
+
+  // ============================
+  // ログアウト
+  // ============================
   const handleLogout = async () => {
     if (loggingOut) return;
     setLoggingOut(true);
@@ -107,6 +143,9 @@ export default function MyPage() {
     }
   };
 
+  // ============================
+  // 名前変更
+  // ============================
   const handleNameSave = async (e) => {
     e?.preventDefault?.();
     if (savingName || nameChangeUsed >= 1) return;
@@ -149,6 +188,9 @@ export default function MyPage() {
     }
   };
 
+  // ============================
+  // ローディング & 未ログイン
+  // ============================
   if (loading) {
     return (
       <div className="min-h-screen bg-sky-50 flex items-center justify-center">
@@ -171,10 +213,10 @@ export default function MyPage() {
     );
   }
 
-  // 所持ベリー
+  // ============================
+  // 表示用値
+  // ============================
   const berriesForView = user.berries ?? 0;
-
-  // ガチャが回せるか
   const canDrawGacha = berriesForView >= 500;
 
   const wins = user.wins ?? 0;
@@ -199,12 +241,13 @@ export default function MyPage() {
   const ownedUnique =
     charSummary?.uniqueOwned ?? charSummary?.ownedCount ?? null;
 
-  // ★ チャレンジ用表示値（best_correct だけ抜いて表示）
-// ★ チャレンジ用表示値（state はそのまま数字）
-const seasonBestCorrect = challengeSeasonBest;
-const allTimeBestCorrect = challengeAllTimeBest;
+  // チャレンジ表示用
+  const seasonBestCorrect = challengeSeasonBest;
+  const allTimeBestCorrect = challengeAllTimeBest;
 
-
+  // ============================
+  // JSX
+  // ============================
   return (
     <div className="min-h-screen bg-sky-50 flex flex-col items-center text-sky-900">
       {/* ヘッダー */}

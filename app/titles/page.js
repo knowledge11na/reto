@@ -14,15 +14,24 @@ export default function TitlesPage() {
   useEffect(() => {
     const load = async () => {
       try {
+        // 1. 自分の userId を取得
+        const meRes = await fetch('/api/me', { cache: 'no-store' });
+        const meData = await meRes.json().catch(() => ({}));
+        const userId = meData.user?.id;
+
+        // 2. 称号一覧を取得
         const r1 = await fetch('/api/titles');
         const d1 = await r1.json().catch(() => ({}));
         const list = d1.titles || [];
         setTitles(list);
 
-        const r2 = await fetch('/api/titles/owned');
-        const d2 = await r2.json().catch(() => ({}));
-        // 文字列化しておくと id が数値でも文字でも安全
-        const ownedSet = new Set((d2.owned || []).map((v) => String(v)));
+        // 3. 所持称号IDを取得（user_id を渡す）
+        let ownedSet = new Set();
+        if (userId) {
+          const r2 = await fetch(`/api/titles/owned?user_id=${userId}`);
+          const d2 = await r2.json().catch(() => ({}));
+          ownedSet = new Set((d2.owned || []).map((v) => String(v)));
+        }
         setOwned(ownedSet);
 
         // 最初に選択するインデックス
@@ -78,8 +87,7 @@ export default function TitlesPage() {
               const isSelected = idx === selectedIndex;
               const key = String(t.id);
 
-              const has =
-                !isPlaceholder && owned.has(String(t.id));
+              const has = !isPlaceholder && owned.has(String(t.id));
 
               return (
                 <button
@@ -115,68 +123,68 @@ export default function TitlesPage() {
           </div>
         </section>
 
-{/* 詳細パネル */}
-<section className="bg-sky-100 border-2 border-sky-500 rounded-3xl p-4 shadow-sm text-sm">
-  {current?.type === 'title' ? (
-    <>
-      <h2 className="text-base font-extrabold mb-3">
-        選択中のエンブレム
-      </h2>
+        {/* 詳細パネル */}
+        <section className="bg-sky-100 border-2 border-sky-500 rounded-3xl p-4 shadow-sm text-sm">
+          {current?.type === 'title' ? (
+            <>
+              <h2 className="text-base font-extrabold mb-3">
+                選択中のエンブレム
+              </h2>
 
-      <div className="flex items-center gap-4">
-        {/* === 透過PNGそのままの立体バッジビュー === */}
-        <div className="w-28 h-28 flex items-center justify-center">
-          {currentIsOwned && current.data.image_url ? (
-            <img
-              src={current.data.image_url}
-              alt={current.data.name}
-              className="
-                w-full h-full object-contain 
-               
-                transition-transform duration-300
-                hover:-translate-y-1 hover:rotate-2
-                active:translate-y-0 active:rotate-0
-              "
-            />
+              <div className="flex items-center gap-4">
+                {/* 透過PNGそのままのバッジビュー */}
+                <div className="w-28 h-28 flex items-center justify-center">
+                  {currentIsOwned && current.data.image_url ? (
+                    <img
+                      src={current.data.image_url}
+                      alt={current.data.name}
+                      className="
+                        w-full h-full object-contain 
+                        transition-transform duration-300
+                        hover:-translate-y-1 hover:rotate-2
+                        active:translate-y-0 active:rotate-0
+                      "
+                    />
+                  ) : (
+                    <div className="text-[11px] text-sky-600 font-bold">
+                      未入手
+                    </div>
+                  )}
+                </div>
+
+                {/* テキスト情報 */}
+                <div className="flex-1 space-y-1">
+                  <p className="mb-1">
+                    名称：
+                    <span className="font-bold">{current.data.name}</span>
+                  </p>
+                  <p className="mb-1 text-sky-700">
+                    入手条件：{current.data.condition_text}
+                  </p>
+                  <p className="mt-1 text-xs">
+                    状態：
+                    {currentIsOwned ? (
+                      <span className="text-emerald-700 font-bold">
+                        入手済み
+                      </span>
+                    ) : (
+                      <span className="text-rose-700 font-bold">未入手</span>
+                    )}
+                  </p>
+                </div>
+              </div>
+            </>
           ) : (
-            <div className="text-[11px] text-sky-600 font-bold">
-              未入手
-            </div>
+            <>
+              <h2 className="text-base font-extrabold mb-2">
+                アップデート待ち
+              </h2>
+              <p className="text-sky-700 text-sm">
+                今後のアップデートで新しいエンブレムが追加される予定です。
+              </p>
+            </>
           )}
-        </div>
-
-        {/* テキスト情報 */}
-        <div className="flex-1 space-y-1">
-          <p className="mb-1">
-            名称：
-            <span className="font-bold">{current.data.name}</span>
-          </p>
-          <p className="mb-1 text-sky-700">
-            入手条件：{current.data.condition_text}
-          </p>
-          <p className="mt-1 text-xs">
-            状態：
-            {currentIsOwned ? (
-              <span className="text-emerald-700 font-bold">入手済み</span>
-            ) : (
-              <span className="text-rose-700 font-bold">未入手</span>
-            )}
-          </p>
-        </div>
-      </div>
-    </>
-  ) : (
-    <>
-      <h2 className="text-base font-extrabold mb-2">
-        アップデート待ち
-      </h2>
-      <p className="text-sky-700 text-sm">
-        今後のアップデートで新しいエンブレムが追加される予定です。
-      </p>
-    </>
-  )}
-</section>
-
+        </section>
       </main>
     </div>
   );

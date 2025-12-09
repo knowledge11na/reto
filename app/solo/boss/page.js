@@ -674,64 +674,65 @@ export default function SoloBossPage() {
     });
   };
 
-  // ==== バトル終了時処理 ====
-  const finishBattle = (result) => {
-    // タイマー停止
-    if (questionTimerRef.current) {
-      clearInterval(questionTimerRef.current);
-      questionTimerRef.current = null;
+// ==== バトル終了時処理 ====
+const finishBattle = (result) => {
+  // タイマー停止
+  if (questionTimerRef.current) {
+    clearInterval(questionTimerRef.current);
+    questionTimerRef.current = null;
+  }
+
+  setPhase('finished');
+  setBattleResult(result);
+
+  const correctCount = answerHistory.filter((h) => h.isCorrect).length;
+  const missCount = answerHistory.length - correctCount;
+
+  let clearMs = null;
+
+  if (result === 'win' && battleStartRef.current) {
+    clearMs = Date.now() - battleStartRef.current;
+
+    if (difficultyKey) {
+      updateBestRecord(
+        difficultyKey,
+        clearMs,
+        correctCount,
+        missCount,
+        battleTeamSnapshot
+      );
     }
 
-    setPhase('finished');
-    setBattleResult(result);
+    // ★ ボス称号チェック API 呼び出し
+    const noTeam =
+      !battleTeamSnapshot || battleTeamSnapshot.length === 0;
 
-    const correctCount = answerHistory.filter((h) => h.isCorrect).length;
-    const missCount = answerHistory.length - correctCount;
+    fetch('/api/solo/titles', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'boss',
+        userId: me?.id ?? null,   // ← 半角スペースで素直に
+        value: clearMs,           // クリアタイム(ms)
+        difficulty: difficultyKey, // 'easy' / 'normal' / 'hard' / ...
+        result: 'win',
+        noTeam,
+      }),
+    }).catch(() => {});
+  }
 
-    // 勝利時のみベスト更新 & 称号チェック
-    let clearMs = null;
-    if (result === 'win' && battleStartRef.current) {
-      clearMs = Date.now() - battleStartRef.current;
-
-      if (difficultyKey) {
-        updateBestRecord(
-          difficultyKey,
-          clearMs,
-          correctCount,
-          missCount,
-          battleTeamSnapshot
-        );
-      }
-
-      // ★ ソロ称号チェック API 呼び出し
-      const noTeam =
-        !battleTeamSnapshot || battleTeamSnapshot.length === 0;
-
-      fetch('/api/solo/titles', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          type: 'boss',
-          value: clearMs, // ms
-          difficulty: difficultyKey,
-          result: 'win',
-          noTeam,
-        }),
-      }).catch(() => {});
-    }
-
-    // ログ API（正解数だけ送る簡易仕様）
-    if (me && correctCount > 0) {
-      fetch('/api/boss-battle/submit', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userId: me.id,
-          correctCount,
-        }),
-      }).catch(() => {});
-    }
-  };
+  // ログ API（正解数だけ送る簡易仕様）
+  if (me && correctCount > 0) {
+    fetch('/api/boss-battle/submit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        userId: me.id,
+        correctCount,
+      }),
+    }).catch(() => {});
+  }
+};
 
   // ==== 回答処理（isTimeUp: true なら時間切れ不正解）====
   const handleSubmit = (isTimeUp = false) => {

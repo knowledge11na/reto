@@ -2,31 +2,90 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 
 export default function SoloMenuPage() {
   const [meteorBest, setMeteorBest] = useState(0);
   const [sniperBest, setSniperBest] = useState(0);
+  const [dungeonBest, setDungeonBest] = useState(null);
+
+  const [me, setMe] = useState(null);
+
+  // ★ ソロ称号APIを何度も叩かないためのフラグ
+  const soloTitlesSentRef = useRef(false);
+
+  // ユーザー情報取得（userId をソロ称号APIに送るため）
+  useEffect(() => {
+    const fetchMe = async () => {
+      try {
+        const res = await fetch('/api/me', { cache: 'no-store' });
+        const data = await res.json().catch(() => ({}));
+        if (res.ok && data.user) {
+          setMe(data.user);
+        } else {
+          setMe(null);
+        }
+      } catch {
+        setMe(null);
+      }
+    };
+    fetchMe();
+  }, []);
 
   // 各ゲームの自己ベスト（ブラウザ保存）を読み込む
   useEffect(() => {
     if (typeof window === 'undefined') return;
     try {
+      // 隕石
       const rawMeteor = window.localStorage.getItem('meteor_best_score');
       const m = rawMeteor ? Number(rawMeteor) : 0;
       if (!Number.isNaN(m) && m > 0) {
         setMeteorBest(m);
       }
 
+      // スナイパー
       const rawSniper = window.localStorage.getItem('sniper_best_score');
       const s = rawSniper ? Number(rawSniper) : 0;
       if (!Number.isNaN(s) && s > 0) {
         setSniperBest(s);
       }
+
+      // ダンジョン（まだ実装中なら保存されてなくてもOK）
+      const rawDungeon = window.localStorage.getItem('dungeon_best_score');
+      const d = rawDungeon ? Number(rawDungeon) : 0;
+      if (!Number.isNaN(d) && d > 0) {
+        setDungeonBest(d);
+      } else {
+        setDungeonBest(null);
+      }
     } catch {
       // 無視
     }
   }, []);
+
+  // 自己ベストから「隕石クラッシュ」「正答スナイパー」系の称号を付与
+  useEffect(() => {
+    if (!me || !me.id) return;
+
+    // まだ一度も送っていない & どちらかは遊んでる
+    if (soloTitlesSentRef.current) return;
+    if (meteorBest <= 0 && sniperBest <= 0) return;
+
+    soloTitlesSentRef.current = true;
+
+    fetch('/api/solo/titles', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'solo_menu',
+        userId: me.id,
+        meteorBest,
+        sniperBest,
+      }),
+    }).catch(() => {
+      // エラー時は特に何もしない（称号付与が遅れるだけ）
+    });
+  }, [me, meteorBest, sniperBest]);
 
   return (
     <main className="min-h-screen bg-sky-50 text-sky-900">
@@ -61,9 +120,7 @@ export default function SoloMenuPage() {
             <div className="mt-2 flex items-center justify-between text-[11px] text-indigo-900">
               <span>
                 自己ベスト:{' '}
-                <span className="font-semibold">
-                  {meteorBest}
-                </span>
+                <span className="font-semibold">{meteorBest}</span>
                 個
               </span>
               <Link
@@ -92,14 +149,44 @@ export default function SoloMenuPage() {
             <div className="mt-2 flex items-center justify-between text-[11px] text-emerald-900">
               <span>
                 自己ベスト:{' '}
-                <span className="font-semibold">
-                  {sniperBest}
-                </span>
+                <span className="font-semibold">{sniperBest}</span>
                 問
               </span>
               <Link
                 href="/solo/sniper/rules"
                 className="underline text-emerald-700 hover:text-emerald-500"
+              >
+                ルールを見る
+              </Link>
+            </div>
+          </div>
+
+          {/* ダンジョン（ソロ） */}
+          <div className="rounded-2xl border border-amber-400 bg-amber-50 px-3 py-3 shadow-sm">
+            <Link
+              href="/solo/dungeon"
+              className="block hover:bg-amber-100 rounded-2xl -mx-3 -my-3 px-3 py-3 transition"
+            >
+              <p className="text-sm font-bold text-amber-900">
+                ダンジョン（ソロ）
+              </p>
+              <p className="text-[11px] text-amber-950 leading-tight mt-1">
+                モンスターの弱点だけを選んで魔法攻撃する複数選択専用モード。
+                5回ミスで終了。
+              </p>
+            </Link>
+
+            <div className="mt-2 flex items-center justify-between text-[11px] text-amber-900">
+              <span>
+                自己ベスト:{' '}
+                <span className="font-semibold">
+                  {dungeonBest != null ? dungeonBest : '--'}
+                </span>
+                問
+              </span>
+              <Link
+                href="/solo/dungeon/rules"
+                className="underline text-amber-700 hover:text-amber-500"
               >
                 ルールを見る
               </Link>
