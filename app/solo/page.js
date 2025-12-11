@@ -169,7 +169,7 @@ export default function SoloMenuPage() {
             </div>
           </div>
 
-          {/* ダンジョン（ソロ） */}
+          {/* ダンジョン（複数選択） */}
           <div className="rounded-2xl border border-amber-400 bg-amber-50 px-3 py-3 shadow-sm">
             <Link
               href="/solo/dungeon"

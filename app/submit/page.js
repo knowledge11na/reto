@@ -44,6 +44,188 @@ function cleanArray(arr) {
   return (arr || []).map((s) => s.trim()).filter((s) => s.length > 0);
 }
 
+// ──────────────────────────────
+// CSV 解析用ユーティリティ
+// ──────────────────────────────
+
+// テキスト全体を「クォート内の改行は維持しつつ」行に分割
+function splitCsvLines(text) {
+  const lines = [];
+  let current = '';
+  let inQuotes = false;
+
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+
+    if (ch === '"') {
+      // 連続する "" はエスケープされた "
+      if (inQuotes && text[i + 1] === '"') {
+        current += '"';
+        i++;
+      } else {
+        inQuotes = !inQuotes;
+        current += ch;
+      }
+    } else if ((ch === '\n' || ch === '\r') && !inQuotes) {
+      if (current.trim() !== '') {
+        lines.push(current);
+      }
+      current = '';
+      // \r\n の場合に二重処理しない
+      if (ch === '\r' && text[i + 1] === '\n') {
+        i++;
+      }
+    } else {
+      current += ch;
+    }
+  }
+
+  if (current.trim() !== '') {
+    lines.push(current);
+  }
+
+  return lines;
+}
+
+// 1行を CSV セル配列に分割（カンマ区切り / " で囲まれた部分対応）
+function parseCsvLine(line) {
+  const cells = [];
+  let current = '';
+  let inQuotes = false;
+
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === '"') {
+      if (inQuotes && line[i + 1] === '"') {
+        current += '"';
+        i++;
+      } else {
+        inQuotes = !inQuotes;
+      }
+    } else if (ch === ',' && !inQuotes) {
+      cells.push(current);
+      current = '';
+    } else {
+      current += ch;
+    }
+  }
+  cells.push(current);
+  return cells;
+}
+
+// 質問テキスト/選択肢から画像URL部分を除去
+function stripImagePart(str) {
+  if (!str) return '';
+  const first = String(str).split('|')[0];
+  return first.trim();
+}
+
+// CSV テキスト → 「サイト用の下書き質問」配列に変換
+function parseImportedQuestions(csvText) {
+  const lines = splitCsvLines(csvText || '');
+  if (!lines.length) return [];
+
+  let startIdx = 0;
+  const header = lines[0].toLowerCase();
+  if (header.includes('questionid') && header.includes('question')) {
+    startIdx = 1; // ヘッダーを飛ばす
+  }
+
+  const imported = [];
+
+  for (let i = startIdx; i < lines.length; i++) {
+    const line = lines[i];
+    if (!line || !line.trim()) continue;
+
+    const cells = parseCsvLine(line);
+    if (cells.length < 7) {
+      // 足りない分は空文字で埋める
+      while (cells.length < 7) cells.push('');
+    }
+
+    const [
+      questionId,
+      questionRaw,
+      answersRaw,
+      wrongRaw,
+      explanation,
+      orderedRaw,
+      generatedWrongChoicesRaw,
+    ] = cells;
+
+    const questionText = stripImagePart(questionRaw);
+    if (!questionText) continue;
+
+    const answersText = stripImagePart(answersRaw);
+    const wrongText = stripImagePart(wrongRaw);
+
+    const answersList = answersText
+      .split(';')
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const wrongList = wrongText
+      .split(';')
+      .map((s) => s.trim())
+      .filter(Boolean);
+
+    // ── 質問タイプ推定 ──
+    let questionType = 'text';
+
+    const lowerQ = questionText.toLowerCase();
+    if (
+      questionText.includes('並び替え') ||
+      questionText.includes('並びかえ') ||
+      questionText.includes('順番に並べ') ||
+      questionText.includes('順に並べ')
+    ) {
+      questionType = 'order';
+    } else if (wrongList.length > 0) {
+      // 選択肢がある
+      if (answersList.length > 1) {
+        questionType = 'multi';
+      } else {
+        questionType = 'single';
+      }
+    } else {
+      // 選択肢がない → 記述
+      questionType = 'text';
+    }
+
+    // ── サイトのフォーム用にフィールドを組む ──
+    const item = {
+      _sourceId: questionId,
+      _explanation: explanation,
+      questionType,
+      question: questionText,
+      textAnswer: '',
+      altTextAnswers: [''],
+      correctChoices: [''],
+      wrongChoices: [''],
+      orderChoices: [''],
+    };
+
+    if (questionType === 'text') {
+      item.textAnswer = answersText.trim();
+      item.altTextAnswers = [''];
+    } else if (questionType === 'single') {
+      item.correctChoices =
+        answersList.length > 0 ? answersList : answersText ? [answersText] : [''];
+      item.wrongChoices = wrongList.length > 0 ? wrongList : [''];
+    } else if (questionType === 'multi') {
+      item.correctChoices =
+        answersList.length > 0 ? answersList : answersText ? [answersText] : [''];
+      item.wrongChoices = wrongList.length > 0 ? wrongList : [''];
+    } else if (questionType === 'order') {
+      item.orderChoices =
+        answersList.length > 0 ? answersList : answersText ? [answersText] : [''];
+    }
+
+    imported.push(item);
+  }
+
+  return imported;
+}
+
 export default function SubmitPage() {
   const [questionType, setQuestionType] = useState('single'); // single | multi | text | order
   const [question, setQuestion] = useState('');
@@ -71,12 +253,19 @@ export default function SubmitPage() {
   // 「前の条件を引き継ぐ」設定
   const [carryOpen, setCarryOpen] = useState(false);
   const [carryConfig, setCarryConfig] = useState({
-    keepQuestion: false,        // 問題文
-    keepQuestionType: false,    // 問題タイプ
-    keepAnswerContent: false,   // 解答内容（枠 + 中身を全部残す）
-    keepAnswerBoxes: false,     // 解答欄（枠の数だけ残し、中身は空にする）
-    keepTags: false,            // タグ
+    keepQuestion: false, // 問題文
+    keepQuestionType: false, // 問題タイプ
+    keepAnswerContent: false, // 解答内容（枠 + 中身）
+    keepAnswerBoxes: false, // 解答欄（枠数のみ）
+    keepTags: false, // タグ
   });
+
+  // CSV からの「問題ストック」
+  const [importOpen, setImportOpen] = useState(false);
+  const [importText, setImportText] = useState('');
+  const [importQueue, setImportQueue] = useState([]); // { questionType, question, ... }[]
+  const [importIndex, setImportIndex] = useState(0);
+  const [importInfo, setImportInfo] = useState('');
 
   const toggleCarry = (key) => {
     setCarryConfig((prev) => ({ ...prev, [key]: !prev[key] }));
@@ -109,12 +298,14 @@ export default function SubmitPage() {
     });
   };
 
-  // 投稿完了後のリセット（引き継ぎ設定を反映）
+  // ──────────────────────────────
+  // 投稿後リセット（引き継ぎ設定を反映）
+  // ──────────────────────────────
   const resetForm = () => {
     setDuplicates([]);
     setConfirmMode(false);
 
-    // ★ 今の枠数を先にメモしておく（特に並び替えで重要）
+    // 今の枠数をメモ
     const altLen = altTextAnswers.length || 1;
     const correctLen = correctChoices.length || 1;
     const wrongLen = wrongChoices.length || 1;
@@ -132,22 +323,16 @@ export default function SubmitPage() {
 
     // 解答内容・解答欄
     if (carryConfig.keepAnswerContent) {
-      // 何もしない → 枠の数も中身も全部残す
+      // 何もしない → 全部残す
     } else if (carryConfig.keepAnswerBoxes) {
-      // 枠の数だけ残して、中身は空にする
-
-      // 記述
+      // 枠数だけキープして中身を空に
       setTextAnswer('');
       setAltTextAnswers(Array(altLen).fill(''));
-
-      // 単一/複数
       setCorrectChoices(Array(correctLen).fill(''));
       setWrongChoices(Array(wrongLen).fill(''));
-
-      // 並び替え
       setOrderChoices(Array(orderLen).fill(''));
     } else {
-      // 解答欄ごとリセット（枠1つだけ）
+      // 完全リセット
       setTextAnswer('');
       setAltTextAnswers(['']);
       setCorrectChoices(['']);
@@ -161,7 +346,43 @@ export default function SubmitPage() {
     }
   };
 
+  // ──────────────────────────────
+  // CSV から読み込んだ 1問をフォームに反映
+  // ──────────────────────────────
+  const applyImportedQuestion = (item) => {
+    if (!item) return;
+
+    setQuestionType(item.questionType || 'text');
+    setQuestion(item.question || '');
+
+    setTextAnswer(item.textAnswer || '');
+    setAltTextAnswers(
+      Array.isArray(item.altTextAnswers) && item.altTextAnswers.length > 0
+        ? item.altTextAnswers
+        : ['']
+    );
+    setCorrectChoices(
+      Array.isArray(item.correctChoices) && item.correctChoices.length > 0
+        ? item.correctChoices
+        : ['']
+    );
+    setWrongChoices(
+      Array.isArray(item.wrongChoices) && item.wrongChoices.length > 0
+        ? item.wrongChoices
+        : ['']
+    );
+    setOrderChoices(
+      Array.isArray(item.orderChoices) && item.orderChoices.length > 0
+        ? item.orderChoices
+        : ['']
+    );
+
+    // タグは CSV にないので、今の値をそのまま残しておく
+  };
+
+  // ──────────────────────────────
   // 類似問題チェックだけを行う
+  // ──────────────────────────────
   const runDuplicateCheck = async (payload) => {
     try {
       setCheckingDup(true);
@@ -199,6 +420,9 @@ export default function SubmitPage() {
     }
   };
 
+  // ──────────────────────────────
+  // フォーム送信
+  // ──────────────────────────────
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (submitting || checkingDup) return;
@@ -313,13 +537,62 @@ export default function SubmitPage() {
       }
 
       setMessage('問題を送信しました。承認されると本番に反映されます。');
-      resetForm(); // ★ここで引き継ぎ設定を反映したリセット
+
+      // フォームのリセット（引き継ぎ設定を考慮）
+      resetForm();
+
+      // ストックがあれば次の問題を自動でフォームに載せる
+      if (importQueue.length > 0 && importIndex < importQueue.length) {
+        const nextItem = importQueue[importIndex];
+        applyImportedQuestion(nextItem);
+        setImportIndex(importIndex + 1);
+        setImportInfo(
+          `読み込み済み: ${importIndex + 1} / ${importQueue.length} 問`
+        );
+      }
     } catch (err) {
       console.error(err);
       setMessage('送信中にエラーが発生しました。');
     } finally {
       setSubmitting(false);
     }
+  };
+
+  // ──────────────────────────────
+  // CSV 読み込み系のハンドラ
+  // ──────────────────────────────
+  const handleImportAdd = () => {
+    const list = parseImportedQuestions(importText || '');
+    if (!list.length) {
+      setImportInfo('読み込める問題がありませんでした。');
+      return;
+    }
+
+    setImportQueue((prev) => {
+      const next = [...prev, ...list];
+      setImportInfo(
+        `${list.length}問をストックに追加しました。（ストック合計 ${next.length}問）`
+      );
+      // まだ 1問も使っていない場合は index=0 のまま
+      return next;
+    });
+  };
+
+  const handleImportNext = () => {
+    if (importQueue.length === 0) {
+      setImportInfo('ストックが空です。CSVを貼り付けて「ストックに追加」を押してください。');
+      return;
+    }
+    if (importIndex >= importQueue.length) {
+      setImportInfo('ストックの問題は全てフォームに流し込みました。');
+      return;
+    }
+    const item = importQueue[importIndex];
+    applyImportedQuestion(item);
+    setImportIndex(importIndex + 1);
+    setImportInfo(
+      `読み込み済み: ${importIndex + 1} / ${importQueue.length} 問`
+    );
   };
 
   return (
@@ -329,6 +602,13 @@ export default function SubmitPage() {
         <header className="flex items-center justify-between mb-2">
           <h1 className="text-xl font-bold">問題を投稿する</h1>
           <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setImportOpen((v) => !v)}
+              className="border border-emerald-400 px-3 py-1 rounded-full text-xs font-bold bg-slate-900 text-emerald-100 shadow-sm"
+            >
+              問題読み込み
+            </button>
             <button
               type="button"
               onClick={() => setCarryOpen((v) => !v)}
@@ -344,6 +624,56 @@ export default function SubmitPage() {
             </Link>
           </div>
         </header>
+
+        {/* CSV 読み込みパネル */}
+        {importOpen && (
+          <div className="mb-2 text-xs bg-slate-900 border border-emerald-500 rounded-2xl px-3 py-3 space-y-2">
+            <div className="font-semibold text-emerald-200 mb-1">
+              CSV から問題を読み込む
+            </div>
+            <p className="text-[11px] text-slate-400 leading-relaxed mb-1">
+              スマホアプリからエクスポートした
+              <span className="text-emerald-300 font-semibold">
+                「questionId,question,answers,...」
+              </span>
+              形式の CSV テキストをそのまま貼り付けてください。
+              画像用の URL（
+              <span className="text-slate-300">http〜</span>
+              ）は自動で無視されます。
+            </p>
+            <textarea
+              className="w-full h-32 px-2 py-1 rounded bg-slate-950 border border-slate-700 text-[11px] font-mono leading-snug"
+              value={importText}
+              onChange={(e) => setImportText(e.target.value)}
+              placeholder="ここに CSV テキストを貼り付け..."
+            />
+            <div className="flex flex-wrap gap-2 mt-1">
+              <button
+                type="button"
+                onClick={handleImportAdd}
+                className="px-3 py-1 rounded-full bg-emerald-500 text-black font-bold text-xs"
+              >
+                ストックに追加
+              </button>
+              <button
+                type="button"
+                onClick={handleImportNext}
+                className="px-3 py-1 rounded-full bg-emerald-700 text-slate-50 font-bold text-xs"
+              >
+                次の読み込み問題をフォームにセット
+              </button>
+              <span className="text-[11px] text-slate-400 mt-1">
+                ストック: {importQueue.length} 問 / 次のインデックス:{' '}
+                {importIndex + 1}
+              </span>
+            </div>
+            {importInfo && (
+              <div className="mt-1 text-[11px] text-emerald-200 whitespace-pre-line">
+                {importInfo}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* 引き継ぎ設定パネル */}
         {carryOpen && (
@@ -399,15 +729,17 @@ export default function SubmitPage() {
               </label>
             </div>
             <p className="text-[10px] text-slate-400 leading-relaxed">
-              ・<span className="font-semibold text-sky-200">解答内容</span>：
-              記述／単一／複数／並び替えの「回答欄の枠の数」と「入力した内容」が
-              そのまま残ります。{'\n'}
-              ・<span className="font-semibold text-sky-200">解答欄</span>：
-              「枠の数」だけ残し、中身は空にリセットされます。
+              ・
+              <span className="font-semibold text-sky-200">解答内容</span>
+              ：記述／単一／複数／並び替えの「回答欄の枠の数」と「入力した内容」がそのまま残ります。
+              {'\n'}・
+              <span className="font-semibold text-sky-200">解答欄</span>
+              ：「枠の数」だけ残し、中身は空にリセットされます。
             </p>
           </div>
         )}
 
+        {/* 本体フォーム */}
         <form onSubmit={handleSubmit} className="space-y-4">
           {/* 種別 */}
           <div className="space-y-1 text-sm">
