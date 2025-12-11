@@ -19,7 +19,6 @@ export default function PostingInfoPage() {
 
       {/* 本文 */}
       <main className="w-full max-w-md px-4 pb-10 mt-4 space-y-6">
-
         {/* 問題形式 */}
         <section className="bg-white border border-sky-200 rounded-2xl p-4 shadow-sm">
           <h2 className="text-lg font-bold mb-2">問題形式</h2>
@@ -81,13 +80,13 @@ export default function PostingInfoPage() {
 
             <ul className="list-decimal list-inside space-y-1">
               <li>
-                問題文に「（数字のみで回答）」「（単位をつけて回答）」など明記する  
+                問題文に「（数字のみで回答）」「（単位をつけて回答）」など明記する
                 <div className="bg-sky-50 border border-sky-100 p-2 rounded text-xs mt-1">
                   例. ルフィは現在何歳？（数字のみで回答）
                 </div>
               </li>
               <li>
-                別解を用意して、数字・単位の両方を許容する  
+                別解を用意して、数字・単位の両方を許容する
                 <div className="bg-sky-50 border border-sky-100 p-2 rounded text-xs mt-1">
                   例. ルフィは現在何歳？　解：19歳　別解：19
                 </div>
@@ -107,6 +106,57 @@ export default function PostingInfoPage() {
             </p>
             <p>
               問題には、<span className="font-bold">可能な限り詳細なタグ</span>を付けてください。
+            </p>
+          </div>
+        </section>
+
+        {/* 問題読み込みについて */}
+        <section className="bg-white border border-sky-200 rounded-2xl p-4 shadow-sm">
+          <h2 className="text-lg font-bold mb-2">問題読み込みについて</h2>
+          <div className="text-sm leading-relaxed space-y-2">
+            <p className="font-semibold">● 暗記メーカーから読み込む場合</p>
+            <p>
+              暗記メーカー内の問題集の
+              <span className="font-semibold">「エクスポート」ボタンからコピー</span>
+              を押します。
+            </p>
+            <p>
+              その後、このサイトの
+              <span className="font-semibold">問題投稿ページの「問題読み込み」ボタン</span>
+              を押し、コピーしたデータをそのまま貼り付けてください。
+            </p>
+            <p>
+              「ストックに追加」を押し、そのあと
+              <span className="font-semibold">「次の問題をフォームにセット」</span>
+              を押すと、1問ずつ編集して投稿できます。
+            </p>
+            <p>
+              なお、<span className="font-semibold">画像は無視して読み込みます。</span>
+              画像問題が含まれている場合は、その問題の投稿を飛ばして
+              <span className="font-semibold">「次の問題をセット」</span>
+              を押すことで、その問題は投稿せずに次の問題の編集に進めます。
+            </p>
+          </div>
+        </section>
+
+        {/* 前の条件を引き継ぐについて */}
+        <section className="bg-white border border-sky-200 rounded-2xl p-4 shadow-sm">
+          <h2 className="text-lg font-bold mb-2">前の条件を引き継ぐについて</h2>
+          <div className="text-sm leading-relaxed space-y-2">
+            <p>
+              問題投稿をする時に、画面上部の
+              <span className="font-semibold">「前の条件を引き継ぐ」ボタン</span>
+              を押すと、
+            </p>
+            <p>
+              その問題を投稿したあと、
+              <span className="font-semibold">
+                次の問題を作成する際にも前の問題の条件（解答欄の数・タグ・問題文など）
+              </span>
+              をそのまま引き継いで作成できます。
+            </p>
+            <p>
+              同じシリーズや同じ範囲の問題を連続して作りたいときに、とても便利な機能です。
             </p>
           </div>
         </section>
