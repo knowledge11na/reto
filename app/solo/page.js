@@ -242,6 +242,25 @@ export default function SoloMenuPage() {
               単一・複数・並び替え・記述、全形式の問題を使ってボスのHPを削るモード。
             </p>
           </Link>
+
+{/* ===============================
+   🚧 ナレッジタワー（未公開）
+   本番実装時はこのコメントを外すだけ
+=============================== */}
+{/*
+<Link
+  href="/solo/knowledge-tower"
+  className="block rounded-2xl border border-violet-500 bg-violet-50 px-3 py-3 shadow-sm hover:bg-violet-100"
+>
+  <p className="text-sm font-bold text-violet-900">
+    ナレッジタワー（タグ別）
+  </p>
+  <p className="text-[11px] text-violet-950 leading-tight mt-1">
+    20階層の塔を、タグ別問題でひとつずつ攻略していくソロモード。
+    各フロア30問正解→ボス戦で塔のてっぺんを目指そう。
+  </p>
+</Link>
+*/}
         </div>
 
         <div className="mt-6 text-center">

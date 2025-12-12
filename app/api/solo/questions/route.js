@@ -20,7 +20,6 @@ function safeJsonParse(raw, fallback) {
 }
 
 // correct_answer をインデックスっぽく書いたもの用（今はほぼ使わないが保険で残す）
-// 例: "0,2,3" → [0,2,3]
 function parseCorrectIndexes(row) {
   const qType = row.type;
   if (qType === 'text') return [];
@@ -52,6 +51,7 @@ export async function GET(request) {
       where.push("qs.type IN ('single','multi','order','text')");
     }
 
+    // ★ LIMIT を撤去（承認済み全件）
     const sql = `
       SELECT
         qs.id,
@@ -64,7 +64,6 @@ export async function GET(request) {
       FROM question_submissions qs
       WHERE ${where.join(' AND ')}
       ORDER BY RANDOM()
-      LIMIT 200
     `;
 
     const rows = await queryRows(sql, params);
@@ -74,23 +73,16 @@ export async function GET(request) {
       const alt = safeJsonParse(row.alt_answers_json, []);
       const tags = safeJsonParse(row.tags_json, []);
 
-      // ↓↓↓ ここがポイント ↓↓↓
-      // multi / order は correct_answer に JSON で ["A","B"] みたいに入っているので
-      // そのまま配列にして渡す。それ以外は文字列として渡す。
       let correct = null;
-
       if (row.type === 'multi' || row.type === 'order') {
         const parsed = safeJsonParse(row.correct_answer, null);
-        if (Array.isArray(parsed)) {
-          correct = parsed;
-        }
+        if (Array.isArray(parsed)) correct = parsed;
       } else {
         if (typeof row.correct_answer === 'string') {
           correct = row.correct_answer;
         }
       }
 
-      // 旧仕様の「0,2,3」みたいな書き方用の保険
       const correctIndexes = parseCorrectIndexes(row);
 
       return {
@@ -98,11 +90,8 @@ export async function GET(request) {
         type: row.type,
         text: row.question,
         options,
-        // ★ ボスモードの判定はまず correct を見る
         correct,
-        // ★ 旧仕様の名残り（今は基本使われないけど残しておく）
         correctIndexes,
-        // 記述のメイン正解とかで使う
         answerText: row.correct_answer,
         altAnswers: alt,
         tags,
