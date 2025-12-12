@@ -1,7 +1,7 @@
 // file: app/submit/page.js
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 
 const TAGS_STORY = [
@@ -171,7 +171,6 @@ function parseImportedQuestions(csvText) {
     // ── 質問タイプ推定 ──
     let questionType = 'text';
 
-    const lowerQ = questionText.toLowerCase();
     if (
       questionText.includes('並び替え') ||
       questionText.includes('並びかえ') ||
@@ -226,6 +225,10 @@ function parseImportedQuestions(csvText) {
   return imported;
 }
 
+// ローカルストレージ用キー
+const IMPORT_QUEUE_KEY = 'submit_import_queue_v1';
+const IMPORT_INDEX_KEY = 'submit_import_index_v1';
+
 export default function SubmitPage() {
   const [questionType, setQuestionType] = useState('single'); // single | multi | text | order
   const [question, setQuestion] = useState('');
@@ -264,7 +267,7 @@ export default function SubmitPage() {
   const [importOpen, setImportOpen] = useState(false);
   const [importText, setImportText] = useState('');
   const [importQueue, setImportQueue] = useState([]); // { questionType, question, ... }[]
-  const [importIndex, setImportIndex] = useState(0);
+  const [importIndex, setImportIndex] = useState(0); // 次に読み込むインデックス（1-based表示用には +1）
   const [importInfo, setImportInfo] = useState('');
 
   const toggleCarry = (key) => {
@@ -545,9 +548,10 @@ export default function SubmitPage() {
       if (importQueue.length > 0 && importIndex < importQueue.length) {
         const nextItem = importQueue[importIndex];
         applyImportedQuestion(nextItem);
-        setImportIndex(importIndex + 1);
+        const nextIndex = importIndex + 1;
+        setImportIndex(nextIndex);
         setImportInfo(
-          `読み込み済み: ${importIndex + 1} / ${importQueue.length} 問`
+          `読み込み済み: ${nextIndex} / ${importQueue.length} 問`
         );
       }
     } catch (err) {
@@ -573,14 +577,15 @@ export default function SubmitPage() {
       setImportInfo(
         `${list.length}問をストックに追加しました。（ストック合計 ${next.length}問）`
       );
-      // まだ 1問も使っていない場合は index=0 のまま
       return next;
     });
   };
 
   const handleImportNext = () => {
     if (importQueue.length === 0) {
-      setImportInfo('ストックが空です。CSVを貼り付けて「ストックに追加」を押してください。');
+      setImportInfo(
+        'ストックが空です。CSVを貼り付けて「ストックに追加」を押してください。'
+      );
       return;
     }
     if (importIndex >= importQueue.length) {
@@ -589,11 +594,104 @@ export default function SubmitPage() {
     }
     const item = importQueue[importIndex];
     applyImportedQuestion(item);
-    setImportIndex(importIndex + 1);
+    const nextIndex = importIndex + 1;
+    setImportIndex(nextIndex);
     setImportInfo(
-      `読み込み済み: ${importIndex + 1} / ${importQueue.length} 問`
+      `読み込み済み: ${nextIndex} / ${importQueue.length} 問`
     );
   };
+
+  // ★ 1つ前の問題に戻る
+  const handleImportPrev = () => {
+    if (importQueue.length === 0) {
+      setImportInfo(
+        'ストックが空です。CSVを貼り付けて「ストックに追加」を押してください。'
+      );
+      return;
+    }
+    if (importIndex <= 1) {
+      // まだ最初か1問目 → 1問目を表示
+      const item = importQueue[0];
+      applyImportedQuestion(item);
+      setImportIndex(1);
+      setImportInfo(
+        `読み込み済み: 1 / ${importQueue.length} 問（先頭の問題を表示中）`
+      );
+      return;
+    }
+
+    const prevIndex = importIndex - 1; // さっきまでの問題
+    const item = importQueue[prevIndex - 1]; // index-1 が「1つ前」
+    applyImportedQuestion(item);
+    setImportIndex(prevIndex); // 「読み込み済み = prevIndex 件」
+    setImportInfo(
+      `読み込み済み: ${prevIndex} / ${importQueue.length} 問（1つ前の問題に戻りました）`
+    );
+  };
+
+  // ★ 進捗を保存して通常投稿モードに戻る
+  const handleSwitchToNormal = () => {
+    // importQueue と importIndex はそのまま（進捗は localStorage にも保存される）
+    setQuestionType('single');
+    setQuestion('');
+    setTextAnswer('');
+    setAltTextAnswers(['']);
+    setCorrectChoices(['']);
+    setWrongChoices(['']);
+    setOrderChoices(['']);
+    setDuplicates([]);
+    setConfirmMode(false);
+    setMessage(
+      'CSVからの進捗は保存されています。通常の投稿モードに切り替えました。'
+    );
+  };
+
+  // ──────────────────────────────
+  // ★ ストック＆進捗を localStorage に保存・復元
+  // ──────────────────────────────
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const qStr = window.localStorage.getItem(IMPORT_QUEUE_KEY);
+      const idxStr = window.localStorage.getItem(IMPORT_INDEX_KEY);
+
+      if (qStr) {
+        const parsed = JSON.parse(qStr);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const idxRaw = parseInt(idxStr ?? '0', 10);
+          const idx = Number.isNaN(idxRaw) ? 0 : idxRaw;
+
+          setImportQueue(parsed);
+          setImportIndex(idx);
+          setImportInfo(
+            `前回のストックを復元しました。全 ${parsed.length} 問 / 次のインデックス: ${
+              idx + 1
+            }`
+          );
+        }
+      }
+    } catch (e) {
+      console.error('failed to restore import queue', e);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      if (importQueue.length > 0) {
+        window.localStorage.setItem(
+          IMPORT_QUEUE_KEY,
+          JSON.stringify(importQueue)
+        );
+        window.localStorage.setItem(IMPORT_INDEX_KEY, String(importIndex));
+      } else {
+        window.localStorage.removeItem(IMPORT_QUEUE_KEY);
+        window.localStorage.removeItem(IMPORT_INDEX_KEY);
+      }
+    } catch (e) {
+      console.error('failed to save import queue', e);
+    }
+  }, [importQueue, importIndex]);
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-50 px-4 py-6">
@@ -647,13 +745,20 @@ export default function SubmitPage() {
               onChange={(e) => setImportText(e.target.value)}
               placeholder="ここに CSV テキストを貼り付け..."
             />
-            <div className="flex flex-wrap gap-2 mt-1">
+            <div className="flex flex-wrap gap-2 mt-1 items-center">
               <button
                 type="button"
                 onClick={handleImportAdd}
                 className="px-3 py-1 rounded-full bg-emerald-500 text-black font-bold text-xs"
               >
                 ストックに追加
+              </button>
+              <button
+                type="button"
+                onClick={handleImportPrev}
+                className="px-3 py-1 rounded-full bg-slate-800 text-emerald-100 font-bold text-xs border border-slate-600"
+              >
+                1つ前の問題に戻る
               </button>
               <button
                 type="button"
@@ -666,6 +771,15 @@ export default function SubmitPage() {
                 ストック: {importQueue.length} 問 / 次のインデックス:{' '}
                 {importIndex + 1}
               </span>
+            </div>
+            <div className="flex flex-wrap gap-2 mt-2">
+              <button
+                type="button"
+                onClick={handleSwitchToNormal}
+                className="px-3 py-1 rounded-full bg-slate-900 border border-slate-500 text-slate-100 font-bold text-[11px]"
+              >
+                進捗を保存して通常の投稿に戻る
+              </button>
             </div>
             {importInfo && (
               <div className="mt-1 text-[11px] text-emerald-200 whitespace-pre-line">
