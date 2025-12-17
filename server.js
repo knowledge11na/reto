@@ -3,9 +3,10 @@ import http from "http";
 import express from "express";
 import cors from "cors";
 import { Server } from "socket.io";
-
 import db from "./lib/db.js";
 import { addBerriesByUserId } from "./lib/berries.js";
+import { setupMeteorMode } from "./meteorMode.js";
+
 
 const PORT = process.env.PORT || 4000;
 
@@ -52,6 +53,8 @@ const io = new Server(httpServer, {
     methods: ["GET", "POST"],
   },
 });
+
+setupMeteorMode(io);
 
 // --------------- 共通 ---------------
 
