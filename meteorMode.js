@@ -17,20 +17,20 @@ const HP_SECOND_MS = 6 * 60 * 1000 + 30 * 1000; // 390000
 // 直撃（タイムアップ）ペナルティ
 const HIT_PENALTY_MS = 30000;
 
-// ★中心→船までの基準（＝30秒）
+// 中心→船までの基準（＝30秒）
 const CENTER_MS = 30000;
-// ★船↔船（全距離）＝60秒
+// 船↔船（全距離）＝60秒
 const SHIP_TO_SHIP_MS = CENTER_MS * 2;
 
-// ★開幕の3つだけ45秒
+// 開幕の3つだけ45秒
 const OPENING_MS = 45000;
 
-// ★連打などで二重発射を防ぐ
+// 連打などで二重発射を防ぐ
 const ANSWER_COOLDOWN_MS = 150;
 
-// ★② 隕石が2つ以上向かってきている側は「常時HPが減る」
-// 速度一定のまま、2個以上なら毎tickぶんHPを削る（= 1秒あたり1秒減る）
-const MULTI_INCOMING_DRAIN_MS_PER_TICK = TICK_MS; // ここを強くしたいなら TICK_MS * 2 とかにできる
+// ★隕石2つ以上向かってきている側は「持ち時間」を追加で削る（プレッシャー）
+// 例：2個なら +1倍、3個なら +2倍
+const MULTI_INCOMING_DRAIN = true;
 
 function log(...args) {
   console.log('[meteor]', ...args);
@@ -98,11 +98,7 @@ function buildMeteor(questions, targetSide, startMs) {
     target: targetSide,
     remainingMs: limitMs,
     limitMs,
-
-    // 表示
     text: q.text,
-
-    // 判定用
     qid: q.id,
     answerText: q.answerText,
     altAnswers: q.altAnswers,
@@ -166,39 +162,6 @@ function endGame(io, roomId, winnerSide) {
   }
 }
 
-// ★② 2個以上向かってきてる側のHPをtickごとに削る
-function applyMultiIncomingDrain(io, roomId, room) {
-  const countA = room.meteors.filter((m) => m.target === 'A').length;
-  const countB = room.meteors.filter((m) => m.target === 'B').length;
-
-  let aDead = false;
-  let bDead = false;
-
-  if (countA >= 2) {
-    room.players.A.hpMs = Math.max(0, room.players.A.hpMs - MULTI_INCOMING_DRAIN_MS_PER_TICK);
-    if (room.players.A.hpMs <= 0) aDead = true;
-  }
-  if (countB >= 2) {
-    room.players.B.hpMs = Math.max(0, room.players.B.hpMs - MULTI_INCOMING_DRAIN_MS_PER_TICK);
-    if (room.players.B.hpMs <= 0) bDead = true;
-  }
-
-  if (aDead && bDead) {
-    endGame(io, roomId, null); // 同時に尽きたら引き分け扱い
-    return true;
-  }
-  if (aDead) {
-    endGame(io, roomId, 'B');
-    return true;
-  }
-  if (bDead) {
-    endGame(io, roomId, 'A');
-    return true;
-  }
-
-  return false;
-}
-
 export function setupMeteorMode(io) {
   const broadcastQueue = () => {
     io.emit('meteor:queue-updated', { size: meteorQueue.length });
@@ -219,7 +182,7 @@ export function setupMeteorMode(io) {
     const room = {
       roomId,
       phase: 'playing',
-      maxHpMs: HP_FIRST_MS, // 表示上の基準（フロントが最大7:00で統一表示するため）
+      maxHpMs: HP_FIRST_MS,
       message: '',
       winnerSide: null,
       questions,
@@ -243,7 +206,7 @@ export function setupMeteorMode(io) {
       },
       meteors: [],
       tick: null,
-      lastAnswerAt: {},
+      lastAnswerAt: {}, // socket.id -> timestamp
     };
 
     // 開幕3つは45秒で firstTarget 側へ
@@ -263,7 +226,27 @@ export function setupMeteorMode(io) {
 
       r.message = '';
 
-      // ★隕石タイマー進行 & 直撃処理
+      // ★② 隕石2つ以上向かってきてる側の「持ち時間」を減らす
+      if (MULTI_INCOMING_DRAIN) {
+        const cntA = r.meteors.filter((m) => m.target === 'A').length;
+        const cntB = r.meteors.filter((m) => m.target === 'B').length;
+
+        const drainA = Math.max(0, cntA - 1) * TICK_MS;
+        const drainB = Math.max(0, cntB - 1) * TICK_MS;
+
+        if (drainA > 0) r.players.A.hpMs = Math.max(0, r.players.A.hpMs - drainA);
+        if (drainB > 0) r.players.B.hpMs = Math.max(0, r.players.B.hpMs - drainB);
+
+        if (r.players.A.hpMs <= 0) {
+          endGame(io, roomId, 'B');
+          return;
+        }
+        if (r.players.B.hpMs <= 0) {
+          endGame(io, roomId, 'A');
+          return;
+        }
+      }
+
       for (let i = 0; i < r.meteors.length; i++) {
         const m = r.meteors[i];
         m.remainingMs -= TICK_MS;
@@ -271,6 +254,7 @@ export function setupMeteorMode(io) {
         if (m.remainingMs <= 0) {
           const target = m.target;
 
+          // 直撃：持ち時間 -30秒
           r.players[target].hpMs = Math.max(0, r.players[target].hpMs - HIT_PENALTY_MS);
           r.message = `${r.players[target].name} に直撃！ -30秒`;
 
@@ -285,10 +269,6 @@ export function setupMeteorMode(io) {
           m.remainingMs = CENTER_MS;
         }
       }
-
-      // ★② 2個以上来てる側のHPを常時ドレイン
-      const endedByDrain = applyMultiIncomingDrain(io, roomId, r);
-      if (endedByDrain) return;
 
       emitState(io, roomId);
     }, TICK_MS);
@@ -382,6 +362,7 @@ export function setupMeteorMode(io) {
 
       const nInput = normalize(inputText);
 
+      // 自分に向かっている隕石のうち「最初に正解した1個だけ」返す
       const hitIndex = room.meteors.findIndex((m) => {
         if (m.target !== side) return false;
         const base = normalize(m.answerText);

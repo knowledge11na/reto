@@ -1,4 +1,3 @@
-// file: app/multi/meteor/battle/MultiMeteorBattleClient.js
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -66,7 +65,6 @@ export default function MultiMeteorBattleClient() {
 
   const [answerInput, setAnswerInput] = useState('');
   const inputRef = useRef(null);
-
   const [laneIds, setLaneIds] = useState([null, null, null]);
 
   const youSide = state?.youSide || null;
@@ -85,6 +83,7 @@ export default function MultiMeteorBattleClient() {
   const myHpMs = state?.players?.[youSide]?.hpMs ?? null;
   const oppHpMs = state?.players?.[oppSide]?.hpMs ?? null;
 
+  // 2人とも「最大7:00基準」で統一表示（後攻は最初から短く見える）
   const baseMaxHpMs = useMemo(() => {
     const a = state?.players?.A?.maxHpMs;
     const b = state?.players?.B?.maxHpMs;
@@ -200,12 +199,8 @@ export default function MultiMeteorBattleClient() {
             {typeof ms === 'number' ? formatMs(ms) : '--:--'}
           </span>
         </div>
-
         <div className="mt-1 w-full h-3 rounded-full bg-slate-800 border border-slate-600 overflow-hidden">
-          <div
-            className={`h-full ${fillClass} transition-[width] duration-200`}
-            style={{ width: `${ratio * 100}%` }}
-          />
+          <div className={`h-full ${fillClass} transition-[width] duration-200`} style={{ width: `${ratio * 100}%` }} />
         </div>
       </div>
     );
@@ -236,12 +231,9 @@ export default function MultiMeteorBattleClient() {
       <div className="relative z-10 w-full max-w-5xl mx-auto px-3 pt-3 pb-6">
         <header className="flex items-center justify-between mb-3">
           <div className="space-y-0.5">
-            <h1 className="text-base sm:text-lg font-extrabold tracking-wide">
-              マルチ：隕石クラッシュ（打ち返し）
-            </h1>
+            <h1 className="text-base sm:text-lg font-extrabold tracking-wide">マルチ：隕石クラッシュ（打ち返し）</h1>
             <p className="text-[11px] sm:text-xs text-slate-300">
-              room: <span className="font-mono">{roomId || '----'}</span> / socket:{' '}
-              {connected ? '接続中' : '未接続'}
+              room: <span className="font-mono">{roomId || '----'}</span> / socket: {connected ? '接続中' : '未接続'}
             </p>
           </div>
 
@@ -254,9 +246,7 @@ export default function MultiMeteorBattleClient() {
         </header>
 
         {!state && (
-          <div className="bg-slate-900/70 border border-slate-700 rounded-2xl p-4 text-sm text-slate-200">
-            対戦情報を取得中...
-          </div>
+          <div className="bg-slate-900/70 border border-slate-700 rounded-2xl p-4 text-sm text-slate-200">対戦情報を取得中...</div>
         )}
 
         {state && (
@@ -272,9 +262,7 @@ export default function MultiMeteorBattleClient() {
 
             {ended && (
               <div className="mb-3 bg-slate-900/80 border border-slate-600 rounded-2xl p-4 text-center">
-                <p className="text-sm sm:text-base font-extrabold">
-                  {winnerSide === youSide ? '勝利！' : '敗北…'}
-                </p>
+                <p className="text-sm sm:text-base font-extrabold">{winnerSide === youSide ? '勝利！' : '敗北…'}</p>
                 <p className="text-[11px] sm:text-xs text-slate-300 mt-1">レート変動なし</p>
               </div>
             )}
@@ -304,54 +292,40 @@ export default function MultiMeteorBattleClient() {
 
                   const targetIsMe = meteor.target === youSide;
 
-                  // ★隕石バーは不要なので ratio は削除
+                  const ratio =
+                    meteor.limitMs > 0 ? Math.max(0, Math.min(1, meteor.remainingMs / meteor.limitMs)) : 0;
 
                   const topStart = 18;
                   const topEnd = 70;
 
-                  const ratioForMove =
-                    meteor.limitMs > 0
-                      ? Math.max(0, Math.min(1, meteor.remainingMs / meteor.limitMs))
-                      : 0;
-
                   const topPercent = targetIsMe
-                    ? topStart + (1 - ratioForMove) * (topEnd - topStart)
-                    : topEnd - (1 - ratioForMove) * (topEnd - topStart);
+                    ? topStart + (1 - ratio) * (topEnd - topStart)
+                    : topEnd - (1 - ratio) * (topEnd - topStart);
 
                   return (
                     <div key={lane} className="flex-1 relative">
-                      <div
-                        className="absolute left-1/2 -translate-x-1/2 transition-[top] duration-200"
-                        style={{ top: `${topPercent}%` }}
-                      >
+                      <div className="absolute left-1/2 -translate-x-1/2 transition-[top] duration-200" style={{ top: `${topPercent}%` }}>
                         {/* 隕石サイズ（ここで編集） */}
-                        <div className="relative w-40 h-40 sm:w-52 sm:h-52 flex items-center justify-center">
+                        <div className="relative w-30 h-30 sm:w-42 sm:h-52 flex items-center justify-center">
                           <div className="absolute inset-0 rounded-full bg-[radial-gradient(circle_at_20%_20%,#e5e7eb_0,#64748b_40%,#020617_80%)] shadow-[0_0_25px_rgba(15,23,42,0.95)] border border-slate-700" />
                           <div className="absolute left-4 top-5 w-6 h-6 sm:w-7 sm:h-7 rounded-full bg-slate-800/80 shadow-inner" />
                           <div className="absolute right-5 top-4 w-5 h-5 sm:w-6 sm:h-6 rounded-full bg-slate-900/80 shadow-inner" />
                           <div className="absolute left-10 bottom-5 w-5 h-5 sm:w-6 sm:h-6 rounded-full bg-slate-900/80 shadow-inner" />
 
-                          {/* カード（長文スクロール） */}
                           <div className="relative z-10 w-[84%] h-[70%] bg-slate-950/90 rounded-xl border border-slate-500/80 px-3 py-2 flex flex-col">
                             <div className="flex items-center justify-between mb-1 shrink-0">
-                              <span className="text-[7px] text-amber-200 font-bold">
-                                {targetIsMe ? '→ 自分' : '→ 相手'}
-                              </span>
-                              <span className="text-[7px] text-slate-100 font-extrabold">
-                                {formatMs(meteor.remainingMs)}
-                              </span>
+                              <span className="text-[7px] text-amber-200 font-bold">{targetIsMe ? '→ 自分' : '→ 相手'}</span>
+                              <span className="text-[7px] text-slate-100 font-extrabold">{formatMs(meteor.remainingMs)}</span>
                             </div>
 
+                            {/* 長文スクロール */}
                             <div className="flex-1 overflow-y-auto pr-1">
-                              {/* 問題文の文字サイズ（ここで編集） */}
                               <p className="text-[7px] sm:text-sm font-semibold text-slate-50 whitespace-pre-wrap leading-snug">
                                 {meteor.text}
                               </p>
                             </div>
 
-                            <div className="mt-1 text-[6px] text-slate-400 text-right shrink-0">
-                              長文はスクロール
-                            </div>
+                            <div className="mt-1 text-[6px] text-slate-400 text-right shrink-0">長文はスクロール</div>
                           </div>
 
                           <div
@@ -397,17 +371,9 @@ export default function MultiMeteorBattleClient() {
                     </button>
                   </div>
 
-                  {state?.message && (
-                    <div className="mt-2 text-[11px] sm:text-xs text-slate-200 text-center">
-                      {state.message}
-                    </div>
-                  )}
+                  {state?.message && <div className="mt-2 text-[11px] sm:text-xs text-slate-200 text-center">{state.message}</div>}
                 </div>
               </div>
-            </div>
-
-            <div className="mt-3 text-[11px] sm:text-xs text-slate-300">
-              HPバーは最大7:00基準。隕石の時間バーは非表示。
             </div>
           </>
         )}
