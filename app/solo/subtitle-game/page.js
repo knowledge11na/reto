@@ -15,9 +15,11 @@ import Link from 'next/link';
  * ・大文字小文字は問わない
  */
 
+const VER = '単行本の表記準拠';
+
 function stripParens(s) {
   if (!s) return '';
-  return s.replace(/（[^）]*）|\([^)]*\)/g, '');
+  return String(s).replace(/（[^）]*）|\([^)]*\)/g, '');
 }
 
 function normalizeForJudge(raw) {
@@ -80,6 +82,7 @@ const RULES = [
   { key: 'A', name: '① 最初と最後' },
   { key: 'B', name: '② 漢字を含む' },
   { key: 'C', name: '③ 前後から' },
+  { key: 'E', name: '③ 前後から（イージー）' }, // ★追加
   { key: 'M', name: 'ミックス' },
 ];
 
@@ -104,13 +107,19 @@ function loadBest(ruleKey, durationSec) {
 }
 
 function saveBest(ruleKey, durationSec, score) {
-  if (typeof window === 'undefined') return;
+  if (typeof window === 'undefined') return false;
   const cur = loadBest(ruleKey, durationSec);
   if (score > cur) {
     localStorage.setItem(bestKey(ruleKey, durationSec), String(score));
     return true;
   }
   return false;
+}
+
+// ★questionから答え表示を作る（時間切れ対策：useMemoに依存しない）
+function buildRevealLinesFromQuestion(q) {
+  if (!q) return [];
+  return (q.corrects || []).map((x) => x.title);
 }
 
 export default function SubtitleGamePage() {
@@ -120,7 +129,7 @@ export default function SubtitleGamePage() {
   const [loadErr, setLoadErr] = useState(null);
 
   // settings
-  const [rule, setRule] = useState('A'); // A/B/C/M
+  const [rule, setRule] = useState('A'); // A/B/C/E/M
   const [durationSec, setDurationSec] = useState(300); // 5min default
 
   // run state
@@ -133,7 +142,7 @@ export default function SubtitleGamePage() {
   const [answeredCount, setAnsweredCount] = useState(0);
   const [streak, setStreak] = useState(0);
 
-  // ★ reveal state（3秒答え表示）
+  // reveal state（3秒答え表示）
   const [revealing, setRevealing] = useState(false);
   const revealTimerRef = useRef(null);
 
@@ -146,6 +155,16 @@ export default function SubtitleGamePage() {
   const [bests, setBests] = useState({}); // {`${rule}_${sec}`: best}
 
   const inputRef = useRef(null);
+
+  // ★最新questionをrefに保持（時間切れの “古いquestion” 問題を潰す）
+  const questionRef = useRef(null);
+  useEffect(() => {
+    questionRef.current = question;
+  }, [question]);
+
+  // ★ゲーム終了時に最後の問題の答えを結果画面で見せる
+  const [finalReveal, setFinalReveal] = useState(null);
+  // { title: string, lines: string[] }
 
   // load Excel data via API
   useEffect(() => {
@@ -193,7 +212,7 @@ export default function SubtitleGamePage() {
   // load bests
   useEffect(() => {
     const obj = {};
-    for (const rr of ['A', 'B', 'C', 'M']) {
+    for (const rr of ['A', 'B', 'C', 'E', 'M']) {
       for (const dd of DURATIONS) {
         obj[`${rr}_${dd.sec}`] = loadBest(rr, dd.sec);
       }
@@ -233,19 +252,19 @@ export default function SubtitleGamePage() {
 
       if (left <= 0) {
         stopTimer();
-        finishGame();
+        finishGame(questionRef.current);
       }
     }, 100);
   }
 
-  // ★残り時間を減らす（間違い or スキップで -10秒）
+  // 残り時間を減らす（間違い or スキップで -10秒）
   function applyPenaltyMs(ms) {
     endAtRef.current -= ms;
     const left = Math.max(0, endAtRef.current - Date.now());
     setTimeLeftMs(left);
     if (left <= 0) {
       stopTimer();
-      finishGame();
+      finishGame(questionRef.current);
       return true;
     }
     return false;
@@ -279,6 +298,7 @@ export default function SubtitleGamePage() {
       return { type: 'B', kanji, corrects: buildAnswersByContains(all, kanji) };
     }
 
+    // ③ 前後から（頭/末だけ）
     if (ruleKey === 'C') {
       if (all.length < 3) return null;
 
@@ -289,9 +309,25 @@ export default function SubtitleGamePage() {
 
       return {
         type: 'C',
-        // ★話数はUIで出さないが、内部は持ってもOK（今回は不要なので持たない）
         prev: { start: getFirstCharForClue(prev.title), end: getLastCharForClue(prev.title) },
         next: { start: getFirstCharForClue(next.title), end: getLastCharForClue(next.title) },
+        corrects: [mid],
+      };
+    }
+
+    // ★追加：③ 前後から（イージー：前後は全文）
+    if (ruleKey === 'E') {
+      if (all.length < 3) return null;
+
+      const i = pickRandomIndex(1, all.length - 2);
+      const prev = all[i - 1];
+      const mid = all[i];
+      const next = all[i + 1];
+
+      return {
+        type: 'E',
+        prev: { full: prev?.title ?? '' },
+        next: { full: next?.title ?? '' },
         corrects: [mid],
       };
     }
@@ -300,7 +336,7 @@ export default function SubtitleGamePage() {
   }
 
   function newQuestion() {
-    const pool = ['A', 'B', 'C'];
+    const pool = ['A', 'B', 'C', 'E']; // ★ミックスにEも混ぜる
     const picked = rule === 'M' ? sample(pool) : rule;
 
     if (!picked) {
@@ -326,6 +362,9 @@ export default function SubtitleGamePage() {
   function startGame() {
     if (!all.length) return;
 
+    // ★開始時に最後の答えをリセット
+    setFinalReveal(null);
+
     if (revealTimerRef.current) clearTimeout(revealTimerRef.current);
     revealTimerRef.current = null;
     setRevealing(false);
@@ -338,7 +377,17 @@ export default function SubtitleGamePage() {
     startTimer();
   }
 
-  function finishGame() {
+  function finishGame(qSnapshot) {
+    const q = qSnapshot || null;
+
+    // ★終了時点で「最後の問題の答え」を結果画面で見せる
+    if (q) {
+      const lines = buildRevealLinesFromQuestion(q);
+      setFinalReveal(lines.length ? { title: '最後の問題の答え', lines } : null);
+    } else {
+      setFinalReveal(null);
+    }
+
     setPhase('result');
     setRevealing(false);
     if (revealTimerRef.current) clearTimeout(revealTimerRef.current);
@@ -352,7 +401,7 @@ export default function SubtitleGamePage() {
     const improved = saveBest(rule, durationSec, correctCount);
 
     const obj = {};
-    for (const rr of ['A', 'B', 'C', 'M']) {
+    for (const rr of ['A', 'B', 'C', 'E', 'M']) {
       for (const dd of DURATIONS) obj[`${rr}_${dd.sec}`] = loadBest(rr, dd.sec);
     }
     setBests(obj);
@@ -361,7 +410,8 @@ export default function SubtitleGamePage() {
       setJudgeFlash({ ok: true, msg: '🏆 自己ベスト更新！' });
       setTimeout(() => setJudgeFlash(null), 1500);
     }
-  }, [phase]); // eslint-disable-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase]);
 
   function beginRevealThenNext() {
     setRevealing(true);
@@ -394,13 +444,11 @@ export default function SubtitleGamePage() {
       setJudgeFlash({ ok: true, msg: '✅ 正解！' });
     } else {
       setStreak(0);
-      // ★間違い：-10秒
       const ended = applyPenaltyMs(PENALTY_MS);
       if (ended) return;
       setJudgeFlash({ ok: false, msg: '❌ 不正解…（-10秒）' });
     }
 
-    // ★答えを3秒表示してから次へ（正解でも不正解でも）
     beginRevealThenNext();
   }
 
@@ -410,13 +458,10 @@ export default function SubtitleGamePage() {
     setAnsweredCount((v) => v + 1);
     setStreak(0);
 
-    // ★スキップ：-10秒
     const ended = applyPenaltyMs(PENALTY_MS);
     if (ended) return;
 
-    setJudgeFlash({ ok: false, msg: '⏭ スキップ（-10秒） 3秒答え表示' });
-
-    // ★答えを3秒表示してから次へ
+    setJudgeFlash({ ok: false, msg: '⏭ スキップ（-10秒）' });
     beginRevealThenNext();
   }
 
@@ -476,11 +521,7 @@ export default function SubtitleGamePage() {
     return r ? r.name : rule;
   }, [rule]);
 
-  const correctTitlesToShow = useMemo(() => {
-    if (!question?.corrects) return [];
-    // 表示用：元のタイトルをそのまま（括弧など含んでOK）
-    return question.corrects.map((x) => x.title);
-  }, [question]);
+  const correctTitlesToShow = useMemo(() => buildRevealLinesFromQuestion(question), [question]);
 
   return (
     <div
@@ -500,6 +541,7 @@ export default function SubtitleGamePage() {
             <div style={{ ...small }}>
               記号無視（ただし「・」は判定）／（）内無視／全角半角無視／大小無視
             </div>
+            <div style={{ ...small, marginTop: 4 }}>VER: {VER}</div>
           </div>
           <Link
             href="/"
@@ -540,7 +582,6 @@ export default function SubtitleGamePage() {
                 </div>
               </div>
 
-              {/* Timer bar (playing only) */}
               {phase === 'playing' && (
                 <div style={{ display: 'grid', gap: 6 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
@@ -572,7 +613,6 @@ export default function SubtitleGamePage() {
                 </div>
               )}
 
-              {/* stats */}
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
                 <div style={{ ...card, padding: 10, background: 'rgba(255,255,255,0.85)' }}>
                   <div style={{ ...small }}>正解数</div>
@@ -618,11 +658,10 @@ export default function SubtitleGamePage() {
               ))}
             </div>
 
-            {/* bests */}
             <div style={{ ...card, ...neon, padding: 12 }}>
               <div style={{ fontWeight: 950, marginBottom: 8 }}>自己ベスト（正解数）</div>
               <div style={{ display: 'grid', gap: 6 }}>
-                {['A', 'B', 'C', 'M'].map((rk) => (
+                {['A', 'B', 'C', 'E', 'M'].map((rk) => (
                   <div
                     key={rk}
                     style={{
@@ -664,7 +703,6 @@ export default function SubtitleGamePage() {
               <div>問題を生成できません。</div>
             ) : (
               <div style={{ display: 'grid', gap: 12 }}>
-                {/* question header */}
                 <div style={{ ...card, ...neon, padding: 12 }}>
                   {question.type === 'A' && (
                     <>
@@ -718,6 +756,40 @@ export default function SubtitleGamePage() {
                     </>
                   )}
 
+                  {question.type === 'E' && (
+                    <>
+                      <div style={{ fontWeight: 950, fontSize: 16 }}>
+                        ③（イージー）前後のサブタイトルから「間に入るサブタイトル」を答えよ
+                      </div>
+                      <div style={{ display: 'grid', gap: 8, marginTop: 10 }}>
+                        <div
+                          style={{
+                            background: 'rgba(255,255,255,0.70)',
+                            border: '1px solid rgba(0,0,0,0.06)',
+                            borderRadius: 14,
+                            padding: '10px 12px',
+                          }}
+                        >
+                          <div style={{ fontWeight: 950 }}>前</div>
+                          <div style={{ marginTop: 2, fontWeight: 900, whiteSpace: 'pre-wrap' }}>{question.prev.full}</div>
+                        </div>
+
+                        <div
+                          style={{
+                            background: 'rgba(255,255,255,0.70)',
+                            border: '1px solid rgba(0,0,0,0.06)',
+                            borderRadius: 14,
+                            padding: '10px 12px',
+                          }}
+                        >
+                          <div style={{ fontWeight: 950 }}>後</div>
+                          <div style={{ marginTop: 2, fontWeight: 900, whiteSpace: 'pre-wrap' }}>{question.next.full}</div>
+                        </div>
+                      </div>
+                      <div style={{ ...small, marginTop: 6 }}>※ ここは基本1つだけ正解。</div>
+                    </>
+                  )}
+
                   {rule === 'M' && (
                     <div style={{ marginTop: 10, ...small }}>
                       🎲 ミックス：今の問題タイプは <b>{question.type}</b>
@@ -725,7 +797,6 @@ export default function SubtitleGamePage() {
                   )}
                 </div>
 
-                {/* input + actions */}
                 <div style={{ display: 'grid', gap: 10 }}>
                   <input
                     ref={inputRef}
@@ -758,7 +829,6 @@ export default function SubtitleGamePage() {
                     </button>
                   </div>
 
-                  {/* flash */}
                   {judgeFlash && (
                     <div
                       style={{
@@ -774,7 +844,6 @@ export default function SubtitleGamePage() {
                     </div>
                   )}
 
-                  {/* ★答え表示（3秒） */}
                   {revealing && (
                     <div
                       style={{
@@ -785,14 +854,7 @@ export default function SubtitleGamePage() {
                       }}
                     >
                       <div style={{ fontWeight: 950, marginBottom: 8 }}>正解になり得る答え</div>
-                      <div
-                        style={{
-                          maxHeight: 160,
-                          overflow: 'auto',
-                          display: 'grid',
-                          gap: 6,
-                        }}
-                      >
+                      <div style={{ maxHeight: 160, overflow: 'auto', display: 'grid', gap: 6 }}>
                         {correctTitlesToShow.map((t, idx) => (
                           <div
                             key={`${idx}_${t}`}
@@ -802,6 +864,7 @@ export default function SubtitleGamePage() {
                               background: 'rgba(227,242,253,0.75)',
                               border: '1px solid rgba(13,71,161,0.10)',
                               fontWeight: 800,
+                              whiteSpace: 'pre-wrap',
                             }}
                           >
                             {t}
@@ -827,6 +890,7 @@ export default function SubtitleGamePage() {
                       setAnswer('');
                       setJudgeFlash(null);
                       setRevealing(false);
+                      setFinalReveal(null);
                       if (revealTimerRef.current) clearTimeout(revealTimerRef.current);
                       revealTimerRef.current = null;
                       setTimeLeftMs(durationSec * 1000);
@@ -845,6 +909,30 @@ export default function SubtitleGamePage() {
           <div style={{ ...card }}>
             <div style={{ display: 'grid', gap: 10 }}>
               <div style={{ fontWeight: 1000, fontSize: 22 }}>⏱ 終了！</div>
+
+              {/* ★最後の問題の答え */}
+              {finalReveal && Array.isArray(finalReveal.lines) && finalReveal.lines.length > 0 && (
+                <div style={{ ...card, ...neon, padding: 12 }}>
+                  <div style={{ fontWeight: 950, marginBottom: 8 }}>{finalReveal.title}</div>
+                  <div style={{ maxHeight: 220, overflow: 'auto', display: 'grid', gap: 6 }}>
+                    {finalReveal.lines.map((t, idx) => (
+                      <div
+                        key={`final_${idx}_${t}`}
+                        style={{
+                          padding: '8px 10px',
+                          borderRadius: 12,
+                          background: 'rgba(227,242,253,0.75)',
+                          border: '1px solid rgba(13,71,161,0.10)',
+                          fontWeight: 800,
+                          whiteSpace: 'pre-wrap',
+                        }}
+                      >
+                        {t}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
                 <div style={{ ...card, padding: 12, background: 'rgba(255,255,255,0.86)' }}>
@@ -882,6 +970,7 @@ export default function SubtitleGamePage() {
                     setAnsweredCount(0);
                     setStreak(0);
                     setRevealing(false);
+                    setFinalReveal(null);
                     if (revealTimerRef.current) clearTimeout(revealTimerRef.current);
                     revealTimerRef.current = null;
                     setTimeLeftMs(durationSec * 1000);
@@ -902,6 +991,7 @@ export default function SubtitleGamePage() {
                     setAnsweredCount(0);
                     setStreak(0);
                     setRevealing(false);
+                    setFinalReveal(null);
                     if (revealTimerRef.current) clearTimeout(revealTimerRef.current);
                     revealTimerRef.current = null;
                     setTimeLeftMs(durationSec * 1000);

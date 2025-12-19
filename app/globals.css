@@ -74,5 +74,141 @@ button {
   font-family: inherit;
 }
 
+/* =========================
+   Waza Game Background (Bright / B-1 vibe)
+========================= */
+.gameBG {
+  position: relative;
+  min-height: 100vh;
+  overflow: hidden;
+  background: radial-gradient(1200px 600px at 20% 10%, rgba(255,255,255,0.78), transparent),
+    radial-gradient(900px 520px at 80% 20%, rgba(0,188,212,0.20), transparent),
+    linear-gradient(180deg, #bfe7ff, #e8f7ff);
+}
 
+/* 空：ふわふわ雲レイヤー */
+.bgClouds {
+  position: absolute;
+  inset: -40px -40px auto -40px;
+  height: 55vh;
+  pointer-events: none;
+  opacity: 0.75;
+  background:
+    radial-gradient(120px 60px at 10% 30%, rgba(255,255,255,0.9), transparent 60%),
+    radial-gradient(160px 80px at 25% 20%, rgba(255,255,255,0.9), transparent 62%),
+    radial-gradient(140px 70px at 45% 35%, rgba(255,255,255,0.85), transparent 62%),
+    radial-gradient(170px 85px at 65% 25%, rgba(255,255,255,0.85), transparent 62%),
+    radial-gradient(140px 70px at 85% 30%, rgba(255,255,255,0.85), transparent 62%);
+  filter: blur(0.6px);
+  animation: cloudsDrift 18s linear infinite;
+}
+
+/* 海：ゆらゆら波レイヤー */
+.bgSea {
+  position: absolute;
+  left: -20%;
+  right: -20%;
+  bottom: -12vh;
+  height: 30vh;
+  pointer-events: none;
+  background:
+    radial-gradient(120% 100% at 50% 0%, rgba(0,188,212,0.35), rgba(0,188,212,0.10) 60%, transparent 70%),
+    repeating-linear-gradient(
+      90deg,
+      rgba(255,255,255,0.20) 0px,
+      rgba(255,255,255,0.20) 18px,
+      rgba(255,255,255,0.08) 18px,
+      rgba(255,255,255,0.08) 38px
+    );
+  border-top-left-radius: 70% 70%;
+  border-top-right-radius: 70% 70%;
+  filter: blur(0.2px);
+  animation: seaSway 6s ease-in-out infinite;
+  transform-origin: 50% 50%;
+  opacity: 0.95;
+}
+
+/* 中身（UI）は前面に */
+.gameBG > * {
+  position: relative;
+  z-index: 2;
+}
+
+/* アニメ */
+@keyframes cloudsDrift {
+  0%   { transform: translateX(-2%) translateY(0); }
+  50%  { transform: translateX(2%) translateY(1%); }
+  100% { transform: translateX(-2%) translateY(0); }
+}
+
+@keyframes seaSway {
+  0%   { transform: translateY(0) scaleX(1); }
+  50%  { transform: translateY(-6px) scaleX(1.02); }
+  100% { transform: translateY(0) scaleX(1); }
+}
+
+/* =========================
+   Route Ripple Transition
+========================= */
+.routeRipple {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9999;
+  opacity: 0;
+}
+
+.routeRipple.isActive {
+  opacity: 1;
+}
+
+.routeRipple__ring {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 14px;
+  height: 14px;
+  transform: translate(-50%, -50%) scale(0.2);
+  border-radius: 999px;
+  border: 3px solid rgba(255, 255, 255, 0.85);
+  box-shadow: 0 0 0 2px rgba(0, 188, 212, 0.22);
+  opacity: 0;
+}
+
+.routeRipple.isActive .routeRipple__ring {
+  animation: routeRippleExpand 520ms ease-out forwards;
+}
+
+.routeRipple__ring--2 {
+  border: 2px solid rgba(255, 255, 255, 0.55);
+  box-shadow: 0 0 0 2px rgba(21, 101, 192, 0.12);
+}
+
+.routeRipple.isActive .routeRipple__ring--2 {
+  animation-delay: 60ms;
+}
+
+/* 画面全体に広がる */
+@keyframes routeRippleExpand {
+  0% {
+    opacity: 0.0;
+    transform: translate(-50%, -50%) scale(0.2);
+  }
+  12% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(80);
+  }
+}
+
+/* しんどい人用 */
+@media (prefers-reduced-motion: reduce) {
+  .routeRipple,
+  .routeRipple__ring {
+    animation: none !important;
+    transition: none !important;
+  }
+}
 

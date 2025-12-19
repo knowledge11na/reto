@@ -20,9 +20,12 @@ import Link from 'next/link';
  * - ァ ィ ゥ ェ ォ 無視
  */
 
+const VER = 'その他〇刀流やゴムゴムのなども問わない';
+
 const RULES = [
   { key: 'A', name: '① 漢字1文字を含む技' },
   { key: 'B', name: '② 前後から推測（技名）' },
+  { key: 'E', name: '② 前後から推測（イージー）' }, // ★追加
   { key: 'C', name: '③ 漢字4つから使用者' },
   { key: 'M', name: 'ミックス' },
 ];
@@ -43,16 +46,9 @@ function stripParens(s) {
 function normalizeCommon(raw) {
   if (!raw) return '';
   let s = String(raw);
-
-  // 括弧内無視
   s = stripParens(s);
-
-  // 半角全角寄せ
   s = s.normalize('NFKC');
-
-  // 大小無視
   s = s.toLowerCase();
-
   return s;
 }
 
@@ -61,8 +57,6 @@ function normalizeWazaName(raw) {
   if (!raw) return '';
   let s = normalizeCommon(raw);
 
-  // 明示的に消す要素（記号に頼らず先に落とす）
-  // ※ 「・」は本来判定するが、"R・A" は丸ごと無視指定なので先に消す
   const dropTokens = [
     '必殺',
     '緑星',
@@ -87,44 +81,27 @@ function normalizeWazaName(raw) {
     'ra',
   ];
 
-  for (const t of dropTokens) {
-    if (!t) continue;
-    s = s.split(t).join('');
-  }
+  for (const t of dropTokens) s = s.split(t).join('');
 
-  // 一刀流〜九刀流 無視（スペース入りも想定）
   s = s.replace(/(一|二|三|四|八|九)\s*刀流/gu, '');
-
-  // っ/ッ 無視
   s = s.replace(/[っッ]/g, '');
-
-  // 小さい母音 無視
   s = s.replace(/[ァィゥェォ]/g, '');
-
-  // ～ / ー 無視（念のため）
   s = s.replace(/[～ー]/g, '');
 
-  // 中黒だけ保持、他記号は削除
   const DOT = '・';
   s = s.replaceAll(DOT, '__DOT__');
-  s = s.replace(/[\p{P}\p{S}]/gu, ''); // 記号全消し
+  s = s.replace(/[\p{P}\p{S}]/gu, '');
   s = s.replaceAll('__DOT__', DOT);
 
-  // スペース無視
   s = s.replace(/\s+/g, '');
-
   return s;
 }
 
-// 使用者名用（ゆるめ）：記号/スペース無視、大小/全角半角無視、括弧内無視
 function normalizeUserName(raw) {
   if (!raw) return '';
   let s = normalizeCommon(raw);
-
-  // 記号は全部落としてOK（人名は・の判定不要とする）
   s = s.replace(/[\p{P}\p{S}]/gu, '');
   s = s.replace(/\s+/g, '');
-
   return s;
 }
 
@@ -148,13 +125,29 @@ function loadBest(ruleKey, durationSec) {
   return Number.isFinite(n) ? n : 0;
 }
 function saveBest(ruleKey, durationSec, score) {
-  if (typeof window === 'undefined') return;
+  if (typeof window === 'undefined') return false;
   const cur = loadBest(ruleKey, durationSec);
   if (score > cur) {
     localStorage.setItem(bestKey(ruleKey, durationSec), String(score));
     return true;
   }
   return false;
+}
+
+// ★questionから答え表示を作る（useMemoに依存しない：時間切れ対策）
+function buildRevealLinesFromQuestion(q) {
+  if (!q) return [];
+  if (q.type === 'A' || q.type === 'B' || q.type === 'E') return (q.corrects || []).map((x) => x.name);
+  if (q.type === 'C') {
+    const lines = [];
+    lines.push(`【使用者】${q.user}`);
+    if (Array.isArray(q.fromWaza)) {
+      lines.push('【ヒントに使われた技】');
+      for (const w of q.fromWaza) lines.push(`・${w.name}`);
+    }
+    return lines;
+  }
+  return [];
 }
 
 export default function WazaGamePage() {
@@ -184,10 +177,19 @@ export default function WazaGamePage() {
   const [bests, setBests] = useState({});
   const inputRef = useRef(null);
 
+  // ★追加：最新questionをrefに保持（時間切れの “古いquestion” 問題を潰す）
+  const questionRef = useRef(null);
+  useEffect(() => {
+    questionRef.current = question;
+  }, [question]);
+
+  // ★追加：ゲーム終了時に最後の問題の答えを結果画面で見せる
+  const [finalReveal, setFinalReveal] = useState(null);
+  // { title: string, lines: string[] }
+
   // データ読み込み
   useEffect(() => {
     let alive = true;
-
     (async () => {
       try {
         setLoading(true);
@@ -198,7 +200,6 @@ export default function WazaGamePage() {
         if (!r.ok || !d.ok) throw new Error(d.error || `load failed: ${r.status}`);
 
         const items = Array.isArray(d.items) ? d.items : [];
-        // Excelの順番を維持
         items.sort((a, b) => (a.idx ?? 0) - (b.idx ?? 0));
 
         if (!alive) return;
@@ -243,7 +244,7 @@ export default function WazaGamePage() {
   // bests
   useEffect(() => {
     const obj = {};
-    for (const rr of ['A', 'B', 'C', 'M']) {
+    for (const rr of ['A', 'B', 'E', 'C', 'M']) {
       for (const dd of DURATIONS) obj[`${rr}_${dd.sec}`] = loadBest(rr, dd.sec);
     }
     setBests(obj);
@@ -267,6 +268,7 @@ export default function WazaGamePage() {
     timerIdRef.current = null;
   }
 
+  // ★タイマー終了は「最新questionRef」を使ってfinishする
   function startTimer() {
     stopTimer();
     const now = Date.now();
@@ -278,7 +280,7 @@ export default function WazaGamePage() {
       setTimeLeftMs(left);
       if (left <= 0) {
         stopTimer();
-        finishGame();
+        finishGame(questionRef.current);
       }
     }, 100);
   }
@@ -289,7 +291,7 @@ export default function WazaGamePage() {
     setTimeLeftMs(left);
     if (left <= 0) {
       stopTimer();
-      finishGame();
+      finishGame(questionRef.current);
       return true;
     }
     return false;
@@ -318,7 +320,7 @@ export default function WazaGamePage() {
       return { type: 'A', kanji: k, corrects: buildAnswersByContainsKanji(k) };
     }
 
-    // ② 前後から推測（技名）
+    // ② 前後から推測（技名：頭/末だけ）
     if (ruleKey === 'B') {
       if (all.length < 3) return null;
       const i = pickRandomIndex(1, all.length - 2);
@@ -342,7 +344,23 @@ export default function WazaGamePage() {
       };
     }
 
-    // ③ 技が4つ以上あるキャラ：別々の技から漢字4つ→使用者当て
+    // ★追加：② 前後から推測（イージー：前後は技名全文）
+    if (ruleKey === 'E') {
+      if (all.length < 3) return null;
+      const i = pickRandomIndex(1, all.length - 2);
+      const prev = all[i - 1];
+      const mid = all[i];
+      const next = all[i + 1];
+
+      return {
+        type: 'E',
+        prev: { full: prev?.name ?? '' },
+        next: { full: next?.name ?? '' },
+        corrects: [mid],
+      };
+    }
+
+    // ③ 漢字4つから使用者
     if (ruleKey === 'C') {
       const candidates = [];
       for (const [u, list] of byUser.entries()) {
@@ -354,9 +372,7 @@ export default function WazaGamePage() {
         const picked = sample(candidates);
         if (!picked) continue;
 
-        // 4つの技をランダムで選ぶ（重複なし）
         const pool = [...picked.list];
-        // シャッフル
         for (let i = pool.length - 1; i > 0; i--) {
           const j = Math.floor(Math.random() * (i + 1));
           [pool[i], pool[j]] = [pool[j], pool[i]];
@@ -364,7 +380,6 @@ export default function WazaGamePage() {
         const four = pool.slice(0, 4);
         if (four.length < 4) continue;
 
-        // 各技から「漢字」を1つずつ抽出
         const kanjis = [];
         const fromWaza = [];
         const used = new Set();
@@ -389,12 +404,10 @@ export default function WazaGamePage() {
             kanjis,
             user: picked.user,
             fromWaza,
-            corrects: [{ user: picked.user }], // 表示用の形だけ合わせる
+            corrects: [{ user: picked.user }],
           };
         }
       }
-
-      // 最後の保険：生成失敗
       return null;
     }
 
@@ -402,7 +415,7 @@ export default function WazaGamePage() {
   }
 
   function newQuestion() {
-    const pool = ['A', 'B', 'C'];
+    const pool = ['A', 'B', 'E', 'C']; // ★ミックスにEも混ぜる
     const picked = rule === 'M' ? sample(pool) : rule;
 
     if (!picked) {
@@ -428,6 +441,8 @@ export default function WazaGamePage() {
   function startGame() {
     if (!all.length) return;
 
+    setFinalReveal(null);
+
     if (revealTimerRef.current) clearTimeout(revealTimerRef.current);
     revealTimerRef.current = null;
     setRevealing(false);
@@ -440,7 +455,16 @@ export default function WazaGamePage() {
     startTimer();
   }
 
-  function finishGame() {
+  function finishGame(qSnapshot) {
+    const q = qSnapshot || null;
+    if (q) {
+      const title = q.type === 'C' ? '最後の問題の答え（使用者）' : '最後の問題の答え';
+      const lines = buildRevealLinesFromQuestion(q);
+      setFinalReveal(lines.length ? { title, lines } : null);
+    } else {
+      setFinalReveal(null);
+    }
+
     setPhase('result');
     setRevealing(false);
     if (revealTimerRef.current) clearTimeout(revealTimerRef.current);
@@ -453,7 +477,7 @@ export default function WazaGamePage() {
     const improved = saveBest(rule, durationSec, correctCount);
 
     const obj = {};
-    for (const rr of ['A', 'B', 'C', 'M']) {
+    for (const rr of ['A', 'B', 'E', 'C', 'M']) {
       for (const dd of DURATIONS) obj[`${rr}_${dd.sec}`] = loadBest(rr, dd.sec);
     }
     setBests(obj);
@@ -462,11 +486,11 @@ export default function WazaGamePage() {
       setJudgeFlash({ ok: true, msg: '🏆 自己ベスト更新！' });
       setTimeout(() => setJudgeFlash(null), 1500);
     }
-  }, [phase]); // eslint-disable-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase]);
 
   function beginRevealThenNext() {
     setRevealing(true);
-
     if (revealTimerRef.current) clearTimeout(revealTimerRef.current);
     revealTimerRef.current = setTimeout(() => {
       setRevealing(false);
@@ -477,15 +501,13 @@ export default function WazaGamePage() {
   function judgeAnswer(q, userRaw) {
     if (!q) return { ok: false };
 
-    // ①②：技名一致（正解群のどれかに一致）
-    if (q.type === 'A' || q.type === 'B') {
+    if (q.type === 'A' || q.type === 'B' || q.type === 'E') {
       const ua = normalizeWazaName(userRaw);
       if (!ua) return { ok: false, empty: true };
       const ok = (q.corrects || []).some((ans) => normalizeWazaName(ans.name) === ua);
       return { ok };
     }
 
-    // ③：使用者名一致
     if (q.type === 'C') {
       const ua = normalizeUserName(userRaw);
       if (!ua) return { ok: false, empty: true };
@@ -499,9 +521,7 @@ export default function WazaGamePage() {
   function doJudge() {
     if (!question || phase !== 'playing' || revealing) return;
 
-    const user = answer;
-    // 空判定（各ルールのnormalizeで空なら弾く）
-    const judged = judgeAnswer(question, user);
+    const judged = judgeAnswer(question, answer);
     if (judged.empty) {
       setJudgeFlash({ ok: false, msg: '入力が空だよ！' });
       setTimeout(() => setJudgeFlash(null), 650);
@@ -518,7 +538,7 @@ export default function WazaGamePage() {
       setStreak(0);
       const ended = applyPenaltyMs(PENALTY_MS);
       if (ended) return;
-      setJudgeFlash({ ok: false, msg: '❌ 不正解…（-10秒） ' });
+      setJudgeFlash({ ok: false, msg: '❌ 不正解…（-10秒）' });
     }
 
     beginRevealThenNext();
@@ -533,7 +553,7 @@ export default function WazaGamePage() {
     const ended = applyPenaltyMs(PENALTY_MS);
     if (ended) return;
 
-    setJudgeFlash({ ok: false, msg: '⏭ スキップ（-10秒） 3秒答え表示' });
+    setJudgeFlash({ ok: false, msg: '⏭ スキップ（-10秒）' });
     beginRevealThenNext();
   }
 
@@ -548,30 +568,8 @@ export default function WazaGamePage() {
   const totalMs = durationSec * 1000;
   const progress = totalMs > 0 ? Math.max(0, Math.min(1, timeLeftMs / totalMs)) : 0;
 
-  // 表示用：正解群
-  const revealLines = useMemo(() => {
-    if (!question) return [];
+  const revealLines = useMemo(() => buildRevealLinesFromQuestion(question), [question]);
 
-    // ①②：技名を全部
-    if (question.type === 'A' || question.type === 'B') {
-      return (question.corrects || []).map((x) => x.name);
-    }
-
-    // ③：使用者 + 使った4技も見せる
-    if (question.type === 'C') {
-      const lines = [];
-      lines.push(`【使用者】${question.user}`);
-      if (Array.isArray(question.fromWaza)) {
-        lines.push('【ヒントに使われた技】');
-        for (const w of question.fromWaza) lines.push(`・${w.name}`);
-      }
-      return lines;
-    }
-
-    return [];
-  }, [question]);
-
-  // UI（サブタイトル版と同じ）
   const card = {
     background: 'rgba(255,255,255,0.92)',
     borderRadius: 18,
@@ -616,17 +614,38 @@ export default function WazaGamePage() {
     return r ? r.name : rule;
   }, [rule]);
 
-  return (
+return (
+  <div
+    className="gameBG"
+    style={{
+      minHeight: '100vh',
+      padding: 14,
+      color: '#0b1b2a',
+      position: 'relative',
+      overflow: 'hidden',
+    }}
+  >
+    {/* 背景：レイアウトに影響しない fixed */}
     <div
+      className="bgClouds"
       style={{
-        minHeight: '100vh',
-        padding: 14,
-        background:
-          'radial-gradient(1200px 600px at 20% 10%, rgba(255,255,255,0.75), transparent), radial-gradient(900px 500px at 80% 20%, rgba(0,188,212,0.18), transparent), linear-gradient(180deg, #bfe7ff, #e8f7ff)',
-        color: '#0b1b2a',
+        position: 'fixed',
+        inset: 0,
+        zIndex: -2,
+        pointerEvents: 'none',
       }}
-    >
-      <div style={{ maxWidth: 780, margin: '0 auto', display: 'grid', gap: 12 }}>
+    />
+    <div
+      className="bgSea"
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: -1,
+        pointerEvents: 'none',
+      }}
+    />
+
+    <div style={{ maxWidth: 780, margin: '0 auto', display: 'grid', gap: 12 }}>
         {/* Header */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
           <div>
@@ -634,6 +653,7 @@ export default function WazaGamePage() {
             <div style={{ ...small }}>
               技名は“有無を問わない”要素を全部無視（・だけ判定）／（）内無視／全角半角無視／大小無視
             </div>
+            <div style={{ ...small, marginTop: 4 }}>VER: {VER}</div>
           </div>
           <Link
             href="/"
@@ -660,9 +680,7 @@ export default function WazaGamePage() {
             <div>
               <div style={{ fontWeight: 950, color: '#b71c1c', fontSize: 16 }}>読み込み失敗</div>
               <div style={{ marginTop: 6, fontSize: 13 }}>{loadErr}</div>
-              <div style={{ marginTop: 10, ...small }}>
-                ✅ `data/waza.xlsx` があるか確認してね（今の指定：`C:\Users\aoba10\OneDrive\Desktop\reto\data\waza.xlsx`）
-              </div>
+              <div style={{ marginTop: 10, ...small }}>✅ `data/waza.xlsx` があるか確認してね（APIは `/api/waza`）</div>
             </div>
           ) : (
             <div style={{ display: 'grid', gap: 8 }}>
@@ -680,6 +698,7 @@ export default function WazaGamePage() {
                     <div style={{ fontWeight: 950 }}>残り時間</div>
                     <div style={{ fontWeight: 950, fontSize: 18 }}>{timeLeftText}</div>
                   </div>
+
                   <div
                     style={{
                       height: 14,
@@ -699,6 +718,7 @@ export default function WazaGamePage() {
                       }}
                     />
                   </div>
+
                   <div style={{ ...small }}>
                     ※ 不正解 or スキップで <b>残り -10秒</b>（時間が0なら終了）
                   </div>
@@ -752,7 +772,7 @@ export default function WazaGamePage() {
             <div style={{ ...card, ...neon, padding: 12 }}>
               <div style={{ fontWeight: 950, marginBottom: 8 }}>自己ベスト（正解数）</div>
               <div style={{ display: 'grid', gap: 6 }}>
-                {['A', 'B', 'C', 'M'].map((rk) => (
+                {['A', 'B', 'E', 'C', 'M'].map((rk) => (
                   <div
                     key={rk}
                     style={{
@@ -797,18 +817,14 @@ export default function WazaGamePage() {
                 <div style={{ ...card, ...neon, padding: 12 }}>
                   {question.type === 'A' && (
                     <>
-                      <div style={{ fontWeight: 950, fontSize: 16 }}>
-                        ①「{question.kanji}」を含む技名を答えよ
-                      </div>
+                      <div style={{ fontWeight: 950, fontSize: 16 }}>①「{question.kanji}」を含む技名を答えよ</div>
                       <div style={{ ...small, marginTop: 6 }}>※ 条件を満たすものは複数。どれでも正解。</div>
                     </>
                   )}
 
                   {question.type === 'B' && (
                     <>
-                      <div style={{ fontWeight: 950, fontSize: 16 }}>
-                        ② 前後の情報から「間に入る技名」を答えよ
-                      </div>
+                      <div style={{ fontWeight: 950, fontSize: 16 }}>② 前後の情報から「間に入る技名」を答えよ</div>
                       <div style={{ display: 'grid', gap: 8, marginTop: 10 }}>
                         <div
                           style={{
@@ -842,14 +858,44 @@ export default function WazaGamePage() {
                     </>
                   )}
 
-                  {question.type === 'C' && (
+                  {question.type === 'E' && (
                     <>
                       <div style={{ fontWeight: 950, fontSize: 16 }}>
-                        ③ 漢字4つから「使用者」を当てよ
+                        ②（イージー）前後の技名から「間に入る技名」を答えよ
                       </div>
-                      <div style={{ ...small, marginTop: 6 }}>
-                        ※ 4つの漢字は「同じキャラの別々の技」から抽出
+                      <div style={{ display: 'grid', gap: 8, marginTop: 10 }}>
+                        <div
+                          style={{
+                            background: 'rgba(255,255,255,0.70)',
+                            border: '1px solid rgba(0,0,0,0.06)',
+                            borderRadius: 14,
+                            padding: '10px 12px',
+                          }}
+                        >
+                          <div style={{ fontWeight: 950 }}>前</div>
+                          <div style={{ marginTop: 2, fontWeight: 900 }}>{question.prev.full}</div>
+                        </div>
+
+                        <div
+                          style={{
+                            background: 'rgba(255,255,255,0.70)',
+                            border: '1px solid rgba(0,0,0,0.06)',
+                            borderRadius: 14,
+                            padding: '10px 12px',
+                          }}
+                        >
+                          <div style={{ fontWeight: 950 }}>後</div>
+                          <div style={{ marginTop: 2, fontWeight: 900 }}>{question.next.full}</div>
+                        </div>
                       </div>
+                      <div style={{ ...small, marginTop: 6 }}>※ ここは基本1つだけ正解。</div>
+                    </>
+                  )}
+
+                  {question.type === 'C' && (
+                    <>
+                      <div style={{ fontWeight: 950, fontSize: 16 }}>③ 漢字4つから「使用者」を当てよ</div>
+                      <div style={{ ...small, marginTop: 6 }}>※ 4つの漢字は「同じキャラの別々の技」から抽出</div>
                       <div
                         style={{
                           marginTop: 12,
@@ -980,6 +1026,7 @@ export default function WazaGamePage() {
                       setAnswer('');
                       setJudgeFlash(null);
                       setRevealing(false);
+                      setFinalReveal(null);
                       if (revealTimerRef.current) clearTimeout(revealTimerRef.current);
                       revealTimerRef.current = null;
                       setTimeLeftMs(durationSec * 1000);
@@ -999,20 +1046,29 @@ export default function WazaGamePage() {
             <div style={{ display: 'grid', gap: 10 }}>
               <div style={{ fontWeight: 1000, fontSize: 22 }}>⏱ 終了！</div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
-                <div style={{ ...card, padding: 12, background: 'rgba(255,255,255,0.86)' }}>
-                  <div style={{ ...small }}>ルール</div>
-                  <div style={{ fontWeight: 950 }}>{ruleLabel}</div>
+              {/* ★最後の問題の答え */}
+              {finalReveal && Array.isArray(finalReveal.lines) && finalReveal.lines.length > 0 && (
+                <div style={{ ...card, ...neon, padding: 12 }}>
+                  <div style={{ fontWeight: 950, marginBottom: 8 }}>{finalReveal.title}</div>
+                  <div style={{ maxHeight: 220, overflow: 'auto', display: 'grid', gap: 6 }}>
+                    {finalReveal.lines.map((t, idx) => (
+                      <div
+                        key={`final_${idx}_${t}`}
+                        style={{
+                          padding: '8px 10px',
+                          borderRadius: 12,
+                          background: 'rgba(227,242,253,0.75)',
+                          border: '1px solid rgba(13,71,161,0.10)',
+                          fontWeight: 800,
+                          whiteSpace: 'pre-wrap',
+                        }}
+                      >
+                        {t}
+                      </div>
+                    ))}
+                  </div>
                 </div>
-                <div style={{ ...card, padding: 12, background: 'rgba(255,255,255,0.86)' }}>
-                  <div style={{ ...small }}>時間</div>
-                  <div style={{ fontWeight: 950 }}>{durationSec === 300 ? '5分' : '10分'}</div>
-                </div>
-                <div style={{ ...card, padding: 12, background: 'rgba(255,255,255,0.86)' }}>
-                  <div style={{ ...small }}>正解数</div>
-                  <div style={{ fontWeight: 1000, fontSize: 22 }}>{correctCount}</div>
-                </div>
-              </div>
+              )}
 
               <div style={{ ...card, ...neon, padding: 12 }}>
                 <div style={{ fontWeight: 950, marginBottom: 6 }}>自己ベスト</div>
@@ -1035,6 +1091,7 @@ export default function WazaGamePage() {
                     setAnsweredCount(0);
                     setStreak(0);
                     setRevealing(false);
+                    setFinalReveal(null);
                     if (revealTimerRef.current) clearTimeout(revealTimerRef.current);
                     revealTimerRef.current = null;
                     setTimeLeftMs(durationSec * 1000);
@@ -1055,6 +1112,7 @@ export default function WazaGamePage() {
                     setAnsweredCount(0);
                     setStreak(0);
                     setRevealing(false);
+                    setFinalReveal(null);
                     if (revealTimerRef.current) clearTimeout(revealTimerRef.current);
                     revealTimerRef.current = null;
                     setTimeLeftMs(durationSec * 1000);

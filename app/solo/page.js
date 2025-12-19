@@ -40,42 +40,31 @@ export default function SoloMenuPage() {
       // 隕石
       const rawMeteor = window.localStorage.getItem('meteor_best_score');
       const m = rawMeteor ? Number(rawMeteor) : 0;
-      if (!Number.isNaN(m) && m > 0) {
-        setMeteorBest(m);
-      }
+      if (!Number.isNaN(m) && m > 0) setMeteorBest(m);
 
       // スナイパー
       const rawSniper = window.localStorage.getItem('sniper_best_score');
       const s = rawSniper ? Number(rawSniper) : 0;
-      if (!Number.isNaN(s) && s > 0) {
-        setSniperBest(s);
-      }
+      if (!Number.isNaN(s) && s > 0) setSniperBest(s);
 
-      // ダンジョン（まだ実装中なら保存されてなくてもOK）
+      // ダンジョン
       const rawDungeon = window.localStorage.getItem('dungeon_best_score');
       const d = rawDungeon ? Number(rawDungeon) : 0;
-      if (!Number.isNaN(d) && d > 0) {
-        setDungeonBest(d);
-      } else {
-        setDungeonBest(null);
-      }
+      if (!Number.isNaN(d) && d > 0) setDungeonBest(d);
+      else setDungeonBest(null);
 
-      // ★ 爆弾解除（並び替え）
+      // ★ 爆弾解除
       const rawBomb = window.localStorage.getItem('bomb_best_score');
       const b = rawBomb ? Number(rawBomb) : 0;
-      if (!Number.isNaN(b) && b > 0) {
-        setBombBest(b);
-      }
+      if (!Number.isNaN(b) && b > 0) setBombBest(b);
     } catch {
       // 無視
     }
   }, []);
 
-  // 自己ベストから「隕石クラッシュ」「正答スナイパー」系の称号を付与
+  // 自己ベストから称号付与
   useEffect(() => {
     if (!me || !me.id) return;
-
-    // まだ一度も送っていない & どちらかは遊んでる
     if (soloTitlesSentRef.current) return;
     if (meteorBest <= 0 && sniperBest <= 0) return;
 
@@ -90,22 +79,15 @@ export default function SoloMenuPage() {
         meteorBest,
         sniperBest,
       }),
-    }).catch(() => {
-      // エラー時は特に何もしない（称号付与が遅れるだけ）
-    });
+    }).catch(() => {});
   }, [me, meteorBest, sniperBest]);
 
   return (
     <main className="min-h-screen bg-sky-50 text-sky-900">
       <div className="max-w-md mx-auto px-4 py-6">
         <header className="mb-4 flex items-center justify-between">
-          <h1 className="text-xl sm:text-2xl font-extrabold">
-            🎮 ソロゲームメニュー
-          </h1>
-          <Link
-            href="/"
-            className="text-xs font-bold text-sky-700 underline hover:text-sky-500"
-          >
+          <h1 className="text-xl sm:text-2xl font-extrabold">🎮 ソロゲームメニュー</h1>
+          <Link href="/" className="text-xs font-bold text-sky-700 underline hover:text-sky-500">
             ホームに戻る
           </Link>
         </header>
@@ -118,23 +100,16 @@ export default function SoloMenuPage() {
           {/* 隕石クラッシュ */}
           <div className="rounded-2xl border border-indigo-400 bg-indigo-50 px-3 py-3 shadow-sm">
             <Link href="/solo/meteor" className="block">
-              <p className="text-sm font-bold text-indigo-900">
-                隕石クラッシュ（記述式）
-              </p>
+              <p className="text-sm font-bold text-indigo-900">隕石クラッシュ（記述式）</p>
               <p className="text-[11px] text-indigo-950 leading-tight mt-1">
                 記述式だけ出題。問題が隕石のように降ってくる。制限時間内にどれだけ破壊できるか。
               </p>
             </Link>
             <div className="mt-2 flex items-center justify-between text-[11px] text-indigo-900">
               <span>
-                自己ベスト:{' '}
-                <span className="font-semibold">{meteorBest}</span>
-                個
+                自己ベスト: <span className="font-semibold">{meteorBest}</span> 個
               </span>
-              <Link
-                href="/solo/meteor/rules"
-                className="underline text-indigo-700 hover:text-indigo-500"
-              >
+              <Link href="/solo/meteor/rules" className="underline text-indigo-700 hover:text-indigo-500">
                 ルールを見る
               </Link>
             </div>
@@ -146,85 +121,60 @@ export default function SoloMenuPage() {
               href="/solo/sniper"
               className="block hover:bg-emerald-100 rounded-2xl -mx-3 -my-3 px-3 py-3 transition"
             >
-              <p className="text-sm font-bold text-emerald-900">
-                正答スナイパー（単一選択）
-              </p>
+              <p className="text-sm font-bold text-emerald-900">正答スナイパー（単一選択）</p>
               <p className="text-[11px] text-emerald-950 leading-tight mt-1">
-                単一選択の正解だけを素早く撃ち抜く3分間のタイムアタック。
-                正解で時間回復・ミスで時間減少。
+                単一選択の正解だけを素早く撃ち抜く3分間のタイムアタック。正解で時間回復・ミスで時間減少。
               </p>
             </Link>
             <div className="mt-2 flex items-center justify-between text-[11px] text-emerald-900">
               <span>
-                自己ベスト:{' '}
-                <span className="font-semibold">{sniperBest}</span>
-                問
+                自己ベスト: <span className="font-semibold">{sniperBest}</span> 問
               </span>
-              <Link
-                href="/solo/sniper/rules"
-                className="underline text-emerald-700 hover:text-emerald-500"
-              >
+              <Link href="/solo/sniper/rules" className="underline text-emerald-700 hover:text-emerald-500">
                 ルールを見る
               </Link>
             </div>
           </div>
 
-          {/* ダンジョン（複数選択） */}
+          {/* ダンジョン */}
           <div className="rounded-2xl border border-amber-400 bg-amber-50 px-3 py-3 shadow-sm">
             <Link
               href="/solo/dungeon"
               className="block hover:bg-amber-100 rounded-2xl -mx-3 -my-3 px-3 py-3 transition"
             >
-              <p className="text-sm font-bold text-amber-900">
-                ダンジョン（複数回答）
-              </p>
+              <p className="text-sm font-bold text-amber-900">ダンジョン（複数回答）</p>
               <p className="text-[11px] text-amber-950 leading-tight mt-1">
-                モンスターの弱点だけを選んで魔法攻撃する複数選択専用モード。
-                5回ミスで終了。
+                モンスターの弱点だけを選んで魔法攻撃する複数選択専用モード。5回ミスで終了。
               </p>
             </Link>
 
             <div className="mt-2 flex items-center justify-between text-[11px] text-amber-900">
               <span>
                 自己ベスト:{' '}
-                <span className="font-semibold">
-                  {dungeonBest != null ? dungeonBest : '--'}
-                </span>
-                問
+                <span className="font-semibold">{dungeonBest != null ? dungeonBest : '--'}</span> 問
               </span>
-              <Link
-                href="/solo/dungeon/rules"
-                className="underline text-amber-700 hover:text-amber-500"
-              >
+              <Link href="/solo/dungeon/rules" className="underline text-amber-700 hover:text-amber-500">
                 ルールを見る
               </Link>
             </div>
           </div>
 
-          {/* ★ 爆弾解除（並び替え） */}
+          {/* 爆弾解除 */}
           <div className="rounded-2xl border border-fuchsia-400 bg-fuchsia-50 px-3 py-3 shadow-sm">
             <Link
               href="/solo/bomb"
               className="block hover:bg-fuchsia-100 rounded-2xl -mx-3 -my-3 px-3 py-3 transition"
             >
-              <p className="text-sm font-bold text-fuchsia-900">
-                爆弾解除（並び替え）
-              </p>
+              <p className="text-sm font-bold text-fuchsia-900">爆弾解除（並び替え）</p>
               <p className="text-[11px] text-fuchsia-950 leading-tight mt-1">
-                並び替え問題だけを使った爆弾解除モード。
-                正しい順にコードを切って、できるだけ多くの爆弾を解除しよう。
+                並び替え問題だけを使った爆弾解除モード。正しい順にコードを切って、できるだけ多くの爆弾を解除しよう。
               </p>
             </Link>
             <div className="mt-2 flex items-center justify-between text-[11px] text-fuchsia-900">
               <span>
-                自己ベスト:{' '}
-                <span className="font-semibold">{bombBest}</span>
-                個
+                自己ベスト: <span className="font-semibold">{bombBest}</span> 個
               </span>
-              <Link
-                href="/solo/bomb/rules"
-                className="underline text-fuchsia-700 hover:text-fuchsia-500"
-              >
+              <Link href="/solo/bomb/rules" className="underline text-fuchsia-700 hover:text-fuchsia-500">
                 ルールを見る
               </Link>
             </div>
@@ -235,32 +185,74 @@ export default function SoloMenuPage() {
             href="/solo/boss"
             className="block rounded-2xl border border-rose-400 bg-rose-50 px-3 py-3 shadow-sm hover:bg-rose-100"
           >
-            <p className="text-sm font-bold text-rose-900">
-              ボス討伐（全形式）
-            </p>
+            <p className="text-sm font-bold text-rose-900">ボス討伐（全形式）</p>
             <p className="text-[11px] text-rose-950 leading-tight mt-1">
               単一・複数・並び替え・記述、全形式の問題を使ってボスのHPを削るモード。
             </p>
           </Link>
 
-{/* ===============================
-   🚧 ナレッジタワー（未公開）
-   本番実装時はこのコメントを外すだけ
-=============================== */}
-{/*
-<Link
-  href="/solo/knowledge-tower"
-  className="block rounded-2xl border border-violet-500 bg-violet-50 px-3 py-3 shadow-sm hover:bg-violet-100"
->
-  <p className="text-sm font-bold text-violet-900">
-    ナレッジタワー（タグ別）
-  </p>
-  <p className="text-[11px] text-violet-950 leading-tight mt-1">
-    20階層の塔を、タグ別問題でひとつずつ攻略していくソロモード。
-    各フロア30問正解→ボス戦で塔のてっぺんを目指そう。
-  </p>
-</Link>
-*/}
+          {/* ★ サブタイミニゲーム（ボス討伐の下） */}
+          <div className="rounded-2xl border border-cyan-400 bg-cyan-50 px-3 py-3 shadow-sm">
+            <Link
+              href="/solo/subtitle-game"
+              className="block hover:bg-cyan-100 rounded-2xl -mx-3 -my-3 px-3 py-3 transition"
+            >
+              <p className="text-sm font-bold text-cyan-900">サブタイミニゲーム</p>
+              <p className="text-[11px] text-cyan-950 leading-tight mt-1">
+                サブタイトル系のワード当てミニゲーム。
+              </p>
+            </Link>
+          </div>
+
+          {/* ★ 技ミニゲーム（その下） */}
+          <div className="rounded-2xl border border-teal-400 bg-teal-50 px-3 py-3 shadow-sm">
+            <Link
+              href="/solo/waza-game"
+              className="block hover:bg-teal-100 rounded-2xl -mx-3 -my-3 px-3 py-3 transition"
+            >
+              <p className="text-sm font-bold text-teal-900">技ミニゲーム</p>
+              <p className="text-[11px] text-teal-950 leading-tight mt-1">
+                技名のワード当てミニゲーム。
+              </p>
+            </Link>
+          </div>
+
+          {/* ★ ワードル（その下） */}
+          <div className="rounded-2xl border border-slate-400 bg-slate-50 px-3 py-3 shadow-sm">
+            <Link
+              href="/solo/wordle"
+              className="block hover:bg-slate-100 rounded-2xl -mx-3 -my-3 px-3 py-3 transition"
+            >
+              <p className="text-sm font-bold text-slate-900">ワードル（5〜9文字）</p>
+              <p className="text-[11px] text-slate-950 leading-tight mt-1">
+                ひらがな単語を当てるパズル。
+              </p>
+            </Link>
+            <div className="mt-2 flex items-center justify-end text-[11px] text-slate-900">
+              <Link href="/solo/wordle/rules" className="underline text-slate-700 hover:text-slate-500">
+                ルールを見る
+              </Link>
+            </div>
+          </div>
+
+          {/* ===============================
+             🚧 ナレッジタワー（未公開）
+             本番実装時はこのコメントを外すだけ
+          =============================== */}
+          {/*
+          <Link
+            href="/solo/knowledge-tower"
+            className="block rounded-2xl border border-violet-500 bg-violet-50 px-3 py-3 shadow-sm hover:bg-violet-100"
+          >
+            <p className="text-sm font-bold text-violet-900">
+              ナレッジタワー（タグ別）
+            </p>
+            <p className="text-[11px] text-violet-950 leading-tight mt-1">
+              20階層の塔を、タグ別問題でひとつずつ攻略していくソロモード。
+              各フロア30問正解→ボス戦で塔のてっぺんを目指そう。
+            </p>
+          </Link>
+          */}
         </div>
 
         <div className="mt-6 text-center">
