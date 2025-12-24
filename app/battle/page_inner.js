@@ -119,6 +119,7 @@ function BattlePageInner() {
   const enemyKey = searchParams.get('enemy') || '';
 
   const [me, setMe] = useState(null);
+  const meRef = useRef(null); // ★ socket effect を張り替えないために ref で持つ
   const [socketId, setSocketId] = useState(null);
 
   // waiting / prebattle / pick / question / waiting-opponent / finished
@@ -166,7 +167,7 @@ function BattlePageInner() {
   const timerStartRef = useRef(0);
   const limitRef = useRef(0);
 
-  const currentQuestion = isStoryMode ? activeQ : questions[0]; // 旧コード互換は捨てず、storyはactiveQ
+  const currentQuestion = isStoryMode ? activeQ : questions[0]; // storyはactiveQ、PVP/旧AIは先頭
   const qType = getQuestionType(currentQuestion);
 
   const addLog = (msg) => setLog((prev) => [...prev, msg]);
@@ -193,57 +194,65 @@ function BattlePageInner() {
       .catch(() => setMe(null));
   }, []);
 
-// ====== PVP: battle:start を受けて問題開始 ======
-useEffect(() => {
-  if (isAiMode || isStoryMode) return;
+  // ★ meRef 同期（socket effect を張り替えない）
+  useEffect(() => {
+    meRef.current = me;
+  }, [me]);
 
-  if (!socket) {
-    const url =
-      process.env.NEXT_PUBLIC_SOCKET_URL ||
-      `${window.location.protocol}//${window.location.hostname}:4000`;
+  // ====== PVP: socket 接続＆イベント（me変更で張り替えない） ======
+  useEffect(() => {
+    if (isAiMode || isStoryMode) return;
 
-    socket = io(url, { transports: ['websocket'] });
-  }
+    if (!socket) {
+      const url =
+        process.env.NEXT_PUBLIC_SOCKET_URL ||
+        `${window.location.protocol}//${window.location.hostname}:4000`;
 
-  const s = socket;
+      socket = io(url, { transports: ['websocket'] });
+    }
 
-  const onConnect = () => {
-    setSocketId(s.id);
-  };
+    const s = socket;
 
-  const onBattleStart = (payload) => {
-    console.log('[battle:start]', payload);
+    const doJoin = () => {
+      const m = meRef.current;
+      s.emit('battle:join', {
+        roomId,
+        playerName: m?.display_name || m?.username || 'プレイヤー',
+        userId: m?.id ?? null,
+      });
+    };
 
-    setOppName(payload.opponentName || '相手');
-    setMyScore(0);
-    setMyTime(0);
-    setOppScore(0);
-    setOppTime(0);
-    setJudge(null);
-    setResult(null);
+    const onConnect = () => {
+      setSocketId(s.id);
+      doJoin();
+    };
 
-    // ★ここが肝：これが無いと解答もタイマーも動かない
-    setPhase('question');
-  };
+    const onBattleStart = (payload) => {
+      console.log('[battle:start]', payload);
 
-  // ★ roomId を持って join
-  if (roomId) {
-    s.emit('battle:join', {
-      roomId,
-      playerName: me?.display_name || me?.username || 'プレイヤー',
-      userId: me?.id ?? null,
-    });
-  }
+      setOppName(payload.opponentName || '相手');
+      setMyScore(0);
+      setMyTime(0);
+      setOppScore(0);
+      setOppTime(0);
+      setJudge(null);
+      setResult(null);
 
-  s.on('connect', onConnect);
-  s.on('battle:start', onBattleStart);
+      // ★ ここで question へ
+      setPhase('question');
+    };
 
-  return () => {
-    s.off('connect', onConnect);
-    s.off('battle:start', onBattleStart);
-  };
-}, [roomId, isAiMode, isStoryMode, me?.id]);
+    s.on('connect', onConnect);
+    s.on('battle:start', onBattleStart);
 
+    // すでに繋がってるなら即 join
+    if (s.connected) doJoin();
+
+    return () => {
+      s.off('connect', onConnect);
+      s.off('battle:start', onBattleStart);
+    };
+  }, [roomId, isAiMode, isStoryMode]);
 
   // ====== ストーリーAI: 相手決定 & タグ提示 ======
   useEffect(() => {
@@ -446,10 +455,8 @@ useEffect(() => {
 
     // phase
     if (count === 1) {
-      // 自動で問題開始
       setPhase('question');
     } else {
-      // まず問題を選ばせる
       setPhase('pick');
     }
   };
@@ -458,7 +465,6 @@ useEffect(() => {
   const startStoryBattle = () => {
     if (!storyOpp) return;
 
-    // タグが未選択で forced が無いのに開始しようとしたら、全部扱いにする
     let tags = chosenTags;
     if (!tags || tags.length === 0) {
       tags = ['ALL'];
@@ -479,7 +485,7 @@ useEffect(() => {
     buildNextBatch();
   };
 
-  // ====== タイマー制御（ストーリーは “question” かつ activeQ がある時だけ） ======
+  // ====== タイマー制御（question の時だけ） ======
   useEffect(() => {
     if (phase !== 'question' || !currentQuestion) {
       setTimeLeft(0);
@@ -518,7 +524,7 @@ useEffect(() => {
     setJudge({ isCorrect: false, correctAnswer: getDisplayAnswer(currentQuestion) });
     pushHistory('（時間切れ）');
 
-    // AI進行
+    // AI進行 / PVP送信
     sendAnswer(false, limit);
   };
 
@@ -527,16 +533,13 @@ useEffect(() => {
     const opp = storyOpp;
     if (!opp) return { aiCorrect: false, aiUsed: Math.min(limitMs, 15000) };
 
-    // 正解率
     const p = Math.max(0, Math.min(1, Number(opp.correctRate) || 0.6));
     const aiCorrect = Math.random() < p;
 
-    // 解答時間：設定秒±3秒（ミリ秒）
     const baseSec = Math.max(1, Number(opp.answerSec) || 15);
-    const jitter = (Math.random() * 6 - 3); // -3..+3
+    const jitter = Math.random() * 6 - 3;
     let sec = baseSec + jitter;
 
-    // 制限時間内に収める（最低 1秒）
     const limitSec = Math.max(1, Math.floor(limitMs / 1000));
     sec = Math.max(1, Math.min(limitSec, sec));
 
@@ -552,7 +555,7 @@ useEffect(() => {
     else {
       if (myTimeVal < oppTimeVal) outcome = 'win';
       else if (myTimeVal > oppTimeVal) outcome = 'lose';
-      else outcome = 'win'; // 完全一致はユーザー勝ち扱い
+      else outcome = 'win';
     }
 
     const rewardPoints = outcome === 'win' ? (Number(storyOpp?.rewardPoints) || 10) : 0;
@@ -568,8 +571,6 @@ useEffect(() => {
       chosenTags,
     });
 
-    // ★ ナレバトポイント付与（サーバー側APIは後で実装してOK）
-    // ここは「存在しないAPI」でもゲーム進行は止めたくないのでcatch握り潰し
     if (rewardPoints > 0) {
       fetch('/api/solo/narebat-points/reward', {
         method: 'POST',
@@ -586,7 +587,6 @@ useEffect(() => {
       return;
     }
 
-    // 次のバッチへ
     setActiveQ(null);
     setJudge(null);
     setSelected(null);
@@ -602,11 +602,9 @@ useEffect(() => {
     const used = typeof usedMs === 'number' ? usedMs : 0;
 
     if (isStoryMode) {
-      // 自分加算
       const nextMyScore = myScore + (isCorrect ? 1 : 0);
       const nextMyTime = myTime + used;
 
-      // AI加算
       const limit = limitRef.current || calcTimeLimit(currentQuestion);
       const { aiCorrect, aiUsed } = storyAiCompute(limit);
 
@@ -618,7 +616,6 @@ useEffect(() => {
       setOppScore(nextOppScore);
       setOppTime(nextOppTime);
 
-      // 2秒答え表示して次へ
       setTimeout(() => {
         goNextTurnStory(nextMyScore, nextMyTime, nextOppScore, nextOppTime);
       }, 2000);
@@ -628,7 +625,6 @@ useEffect(() => {
 
     // 旧AI
     if (isAiMode) {
-      // 旧AIロジックは最低限だけ残す（今まで通り）
       const limit = calcTimeLimit(currentQuestion);
       const usedSafe = used;
 
@@ -657,9 +653,9 @@ useEffect(() => {
       setOppTime(nextOppTime);
 
       const someoneReached10 = nextMyScore >= 10 || nextOppScore >= 10;
-      const nextIndex = 0; // 旧AIは「questionsを流す」実装が元々あったけど、このファイルでは簡略化してるので結果だけ出す
+      const nextIndex = 0;
+
       if (someoneReached10 || nextIndex >= Math.min(questions.length, MAX_AI_QUESTIONS)) {
-        // 結果
         let outcome = 'draw';
         if (nextMyScore > nextOppScore) outcome = 'win';
         else if (nextMyScore < nextOppScore) outcome = 'lose';
@@ -678,7 +674,6 @@ useEffect(() => {
           aiVariant,
         });
       } else {
-        // 次の問題へ（ここは旧AI簡略のため、同じ問題を続けないように次バッチを作る等は別途やる）
         setJudge(null);
         setSelected(null);
         setMultiSelected([]);
@@ -809,7 +804,7 @@ useEffect(() => {
     sendAnswer(isCorrect, used);
   };
 
-  // ====== ストーリー：問題選択（弱い敵は4問から選ぶ） ======
+  // ====== ストーリー：問題選択 ======
   const pickQuestion = (q) => {
     if (!isStoryMode) return;
     if (!q) return;
@@ -833,13 +828,11 @@ useEffect(() => {
   const myTimeDisplay = useMemo(() => (myTime / 1000).toFixed(1), [myTime]);
   const oppTimeDisplay = useMemo(() => (oppTime / 1000).toFixed(1), [oppTime]);
 
-  // ====== UI 共通 ======
   const progress =
     currentQuestion && calcTimeLimit(currentQuestion) > 0
       ? Math.max(0, Math.min(1, timeLeft / (calcTimeLimit(currentQuestion) || 1)))
       : 0;
 
-  // ====== ストーリー：タグ選択UI ======
   const canStartStory = useMemo(() => {
     if (!isStoryMode) return false;
     if (!storyOpp) return false;
@@ -848,7 +841,8 @@ useEffect(() => {
     return chosenTags.length > 0;
   }, [isStoryMode, storyOpp, chosenTags]);
 
-  // ====== 画面 ======
+  const showQuestionCard = phase === 'question' || phase === 'waiting-opponent' || isAiMode || isStoryMode;
+
   return (
     <main className="min-h-screen bg-sky-50 text-sky-900 flex flex-col">
       {/* ヘッダー */}
@@ -881,6 +875,14 @@ useEffect(() => {
             <p>時間: {oppTimeDisplay} 秒</p>
           </div>
         </div>
+
+        {/* ===== PVP 待機画面（ここが重要：waiting で問題を出さない） ===== */}
+        {!isAiMode && !isStoryMode && phase === 'waiting' && (
+          <div className="bg-white rounded-2xl shadow p-4 text-center space-y-2">
+            <p className="text-sm font-extrabold text-slate-900">マッチング中…</p>
+            <p className="text-xs text-slate-600">相手が見つかると自動で問題が始まります</p>
+          </div>
+        )}
 
         {/* ===== ストーリー：事前画面（タグ選択） ===== */}
         {isStoryMode && (phase === 'prebattle' || phase === 'pick') && !result && (
@@ -990,8 +992,8 @@ useEffect(() => {
           </div>
         )}
 
-        {/* ===== 問題（ストーリーはactiveQがある時だけ） ===== */}
-        {phase !== 'finished' && currentQuestion && (
+        {/* ===== 問題 ===== */}
+        {phase !== 'finished' && showQuestionCard && currentQuestion && (
           <div className="bg-white rounded-2xl shadow p-4 flex flex-col gap-3">
             <div className="flex justify-between text-xs text-slate-500 mb-1">
               <span>残り時間: {timeDisplay} 秒</span>
