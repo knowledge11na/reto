@@ -81,10 +81,11 @@ const TIME_TEXT_SHORT = 60000;
 const TIME_TEXT_LONG = 80000;
 
 const BOSS_LAYOUT_STORAGE_KEY = 'tower_boss_layout_v1';
+const BOSS_LAYOUT_STORAGE_KEY_V2 = 'tower_boss_layout_v2'; // 互換用（今後増やすなら）
 
 function loadBossLayoutForFloor(floor) {
   try {
-    const raw = window.localStorage.getItem(BOSS_LAYOUT_STORAGE_KEY);
+    const raw = window.localStorage.getItem(BOSS_LAYOUT_STORAGE_KEY_V2) || window.localStorage.getItem(BOSS_LAYOUT_STORAGE_KEY);
     const all = raw ? JSON.parse(raw) : {};
     const v = all?.[String(floor)];
     return v && typeof v === 'object' ? v : null;
@@ -353,6 +354,13 @@ function getQuestionId(q, fallbackIndex = 0) {
   return id != null ? String(id) : `idx_${fallbackIndex}`;
 }
 
+// ★ /api/mistakes/add が受け付ける「question_submissions.id（数値）」を確実に作る
+function getQuestionSubmissionId(q) {
+  const id = q?.id ?? q?.question_id ?? q?.questionId ?? q?.qid ?? null;
+  const n = Number(id);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
 function makeTagKey(tags) {
   return (tags || []).map(String).sort().join('|');
 }
@@ -448,7 +456,7 @@ export default function KnowledgeTowerPage() {
 
   // デッキ
   const fullPoolRef = useRef([]);
-  const deckRef = useRef([]); // ★ remainingIds の配列
+  const deckRef = useRef([]); // remainingIds の配列
   const [currentQuestion, setCurrentQuestion] = useState(null);
 
   // 回答
@@ -465,6 +473,11 @@ export default function KnowledgeTowerPage() {
   const [floorAnswerHistory, setFloorAnswerHistory] = useState([]); // [{question_id,text,userAnswerText,correctAnswerText}]
   const [bossAnswerHistory, setBossAnswerHistory] = useState([]);
 
+  // ★ どの結果画面でも「道中+ボス」をまとめて振り返る
+  const mergedAnswerHistory = useMemo(() => {
+    return [...(floorAnswerHistory || []), ...(bossAnswerHistory || [])];
+  }, [floorAnswerHistory, bossAnswerHistory]);
+
   // フロア○×表示
   const [judgeOverlay, setJudgeOverlay] = useState(null); // { ok: true/false }
   const isLockedByOverlayRef = useRef(false);
@@ -473,11 +486,15 @@ export default function KnowledgeTowerPage() {
   const [bossDamaged, setBossDamaged] = useState(false);
   const [bossExplode, setBossExplode] = useState(false);
   const [showCongrats, setShowCongrats] = useState(false);
-  const [playerDamaged, setPlayerDamaged] = useState(false); // ★ミス時、選択肢に傷
+  const [playerDamaged, setPlayerDamaged] = useState(false); // ミス時、選択肢に傷
 
   // refs（タイマー）
   const qTimerRef = useRef(null);
   const bossTimerRef = useRef(null);
+
+  // 結果画面の見出し用（ボス撃破演出中に selectedFloor が進むので固定する）
+  const resultLoopRef = useRef(1);
+  const resultFloorRef = useRef(1);
 
   const storageKey = `tower_progress_${me?.id ?? 'guest'}`;
 
@@ -508,26 +525,20 @@ export default function KnowledgeTowerPage() {
   /* =========================
      ★ 間違えた問題をDBへ登録（API）
      - 失敗してもゲームは止めない
-     - あなたの実装に合わせて endpoint を変えたい場合はここだけ修正
+     - /api/mistakes/add は「questionId」を受け取る（challengeと同じ）
   ========================= */
-  async function recordMistake(questionId) {
-    const qid = questionId != null ? String(questionId) : null;
-    if (!qid) return;
+  async function recordMistake(questionSubmissionId) {
+    const qid = Number(questionSubmissionId);
+    if (!Number.isFinite(qid) || qid <= 0) return;
 
-    // ここがあなたのAPIと違う場合：パスを合わせてOK
-    const endpoints = ['/api/mistakes/add'];
-
-    for (const url of endpoints) {
-      try {
-        const res = await fetch(url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ question_id: qid }),
-        });
-        if (res.ok) return;
-      } catch {
-        // 次へ
-      }
+    try {
+      await fetch('/api/mistakes/add', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ questionId: qid }),
+      });
+    } catch {
+      // 無視（ゲーム進行には影響させない）
     }
   }
 
@@ -825,6 +836,10 @@ export default function KnowledgeTowerPage() {
       saveProgress(next);
     }
 
+    // 結果見出し固定
+    resultLoopRef.current = selectedLoop;
+    resultFloorRef.current = selectedFloor;
+
     setFloorCorrect(0);
     setFloorMiss(0);
     setBossCorrect(0);
@@ -833,7 +848,7 @@ export default function KnowledgeTowerPage() {
     setFloorHistory([]);
     setBossHistory([]);
 
-    // ★ まとめ用も初期化
+    // まとめ用も初期化
     setFloorAnswerHistory([]);
     setBossAnswerHistory([]);
 
@@ -937,18 +952,20 @@ export default function KnowledgeTowerPage() {
       userAnswerText,
     };
 
+    // ★ mistakes/report用：数値ID（question_submissions.id）
+    const qSubmissionId = getQuestionSubmissionId(q);
+
     // ★ まとめ用（meteor同形式）
-    const qid = getQuestionId(q, 0);
     const summaryItem = {
-      question_id: qid,
+      question_id: qSubmissionId, // null もあり得る（その場合mistakesは登録しない）
       text: q.question || q.text || '',
       userAnswerText,
       correctAnswerText: String(correctText ?? ''),
     };
 
-    // ★ 不正解（or 時間切れ）は「間違えた問題リスト」へ登録
-    if (!isCorrect) {
-      recordMistake(qid);
+    // ★ 不正解（or 時間切れ）は「間違えた問題リスト」へ登録（数値IDのみ）
+    if (!isCorrect && qSubmissionId) {
+      recordMistake(qSubmissionId);
     }
 
     setSelectedOption(null);
@@ -966,7 +983,7 @@ export default function KnowledgeTowerPage() {
       else setFloorMiss((v) => v + 1);
 
       setFloorHistory((prev) => [...prev, historyItem]);
-      setFloorAnswerHistory((prev) => [...prev, summaryItem]); // ★追加
+      setFloorAnswerHistory((prev) => [...prev, summaryItem]);
 
       setTimeout(() => {
         setJudgeOverlay(null);
@@ -1001,7 +1018,7 @@ export default function KnowledgeTowerPage() {
     } else {
       setBossMiss((v) => v + 1);
 
-      // ★選択肢にひっかき傷（1回）
+      // 選択肢にひっかき傷（1回）
       setPlayerDamaged(true);
       setTimeout(() => setPlayerDamaged(false), 320);
 
@@ -1011,7 +1028,7 @@ export default function KnowledgeTowerPage() {
     }
 
     setBossHistory((prev) => [...prev, historyItem]);
-    setBossAnswerHistory((prev) => [...prev, summaryItem]); // ★追加
+    setBossAnswerHistory((prev) => [...prev, summaryItem]);
 
     const nextCorrect = bossCorrect + (isCorrect ? 1 : 0);
     if (nextCorrect >= bossNeed) {
@@ -1028,6 +1045,11 @@ export default function KnowledgeTowerPage() {
   function endFloor(success, message) {
     stopQuestionTimer();
     setCurrentQuestion(null);
+
+    // 結果見出し固定
+    resultLoopRef.current = selectedLoop;
+    resultFloorRef.current = selectedFloor;
+
     setPhase('floor_result');
     setFloorResultMessage({ success, message });
   }
@@ -1044,6 +1066,10 @@ export default function KnowledgeTowerPage() {
 
       setTimeout(() => {
         setShowCongrats(false);
+
+        // 結果見出し固定（ここが大事：この後 selectedFloor が進む）
+        resultLoopRef.current = selectedLoop;
+        resultFloorRef.current = selectedFloor;
 
         if (progress) {
           const p = JSON.parse(JSON.stringify(progress));
@@ -1074,6 +1100,10 @@ export default function KnowledgeTowerPage() {
       return;
     }
 
+    // 失敗でも固定
+    resultLoopRef.current = selectedLoop;
+    resultFloorRef.current = selectedFloor;
+
     setBossResultMessage({ success: false, message });
     setPhase('boss_result');
   }
@@ -1085,7 +1115,7 @@ export default function KnowledgeTowerPage() {
   if (initLoading) {
     return (
       <main className="tower-nozoom min-h-screen bg-sky-50 text-sky-900 flex items-center justify-center">
-        {/* ★ iOS入力ズーム防止（このページ限定 / スマホ幅のみ） */}
+        {/* iOS入力ズーム防止（このページ限定 / スマホ幅のみ） */}
         <style jsx global>{`
           @media (max-width: 640px) {
             .tower-nozoom input,
@@ -1104,7 +1134,7 @@ export default function KnowledgeTowerPage() {
   if (initError) {
     return (
       <main className="tower-nozoom min-h-screen bg-sky-50 text-sky-900 flex items-center justify-center px-4">
-        {/* ★ iOS入力ズーム防止（このページ限定 / スマホ幅のみ） */}
+        {/* iOS入力ズーム防止（このページ限定 / スマホ幅のみ） */}
         <style jsx global>{`
           @media (max-width: 640px) {
             .tower-nozoom input,
@@ -1143,7 +1173,7 @@ export default function KnowledgeTowerPage() {
 
     return (
       <main className="tower-nozoom min-h-screen text-slate-900 relative overflow-hidden">
-        {/* ★ iOS入力ズーム防止（このページ限定 / スマホ幅のみ） */}
+        {/* iOS入力ズーム防止（このページ限定 / スマホ幅のみ） */}
         <style jsx global>{`
           @media (max-width: 640px) {
             .tower-nozoom input,
@@ -1196,7 +1226,7 @@ export default function KnowledgeTowerPage() {
                   <div className="absolute bottom-0 left-0 right-0 p-3 bg-gradient-to-t from-white/95 via-white/70 to-transparent">
                     <p className="text-[12px] font-extrabold text-slate-900">章別の問題で登る知識の塔。</p>
                     <p className="text-[10px] text-slate-700 mt-1 leading-relaxed">
-                      フロアごとに異なるタグの問題が出題されます。20階を制覇を目指そう。
+                      フロアごとに異なるタグの問題が出題されます。20階の制覇を目指そう。
                     </p>
                   </div>
                 </div>
@@ -1351,7 +1381,7 @@ export default function KnowledgeTowerPage() {
   if (phase === 'floor') {
     return (
       <main className="tower-nozoom min-h-screen text-white relative overflow-hidden">
-        {/* ★ iOS入力ズーム防止（このページ限定 / スマホ幅のみ） */}
+        {/* iOS入力ズーム防止（このページ限定 / スマホ幅のみ） */}
         <style jsx global>{`
           @media (max-width: 640px) {
             .tower-nozoom input,
@@ -1537,7 +1567,7 @@ export default function KnowledgeTowerPage() {
 
     return (
       <main className="tower-nozoom min-h-screen text-white relative overflow-hidden">
-        {/* ★ iOS入力ズーム防止（このページ限定 / スマホ幅のみ） */}
+        {/* iOS入力ズーム防止（このページ限定 / スマホ幅のみ） */}
         <style jsx global>{`
           @media (max-width: 640px) {
             .tower-nozoom input,
@@ -1916,7 +1946,7 @@ export default function KnowledgeTowerPage() {
             }
           }
 
-          /* ★ミス時：選択肢全体にひっかき傷 */
+          /* ミス時：選択肢全体にひっかき傷 */
           .playerDamage {
             position: relative;
           }
@@ -1975,12 +2005,17 @@ export default function KnowledgeTowerPage() {
 
   /* =========================
      結果（フロア）
+     - チャレンジ寄せの見た目
+     - 道中+ボスをまとめて振り返り
   ========================= */
 
   if (phase === 'floor_result') {
+    const loop = resultLoopRef.current || selectedLoop;
+    const floor = resultFloorRef.current || selectedFloor;
+
     return (
-      <main className="tower-nozoom min-h-screen bg-slate-950 text-white px-4 py-6">
-        {/* ★ iOS入力ズーム防止（このページ限定 / スマホ幅のみ） */}
+      <main className="tower-nozoom min-h-screen bg-sky-50 text-slate-900 px-4 py-6">
+        {/* iOS入力ズーム防止（このページ限定 / スマホ幅のみ） */}
         <style jsx global>{`
           @media (max-width: 640px) {
             .tower-nozoom input,
@@ -1991,38 +2026,35 @@ export default function KnowledgeTowerPage() {
           }
         `}</style>
 
-        <div className="max-w-5xl mx-auto space-y-4">
-          <header className="flex items-start justify-between">
+        <div className="max-w-md mx-auto space-y-4">
+          <header className="flex items-center justify-between">
             <div>
-              <h1 className="text-xl font-extrabold">
-                フロア結果：{selectedLoop}周目 {selectedFloor}階
-              </h1>
-              <p className="text-sm text-white/80 mt-1">{floorResultMessage?.message ?? ''}</p>
+              <h1 className="text-xl font-extrabold">フロア結果</h1>
+              <p className="text-xs text-slate-600 mt-1">
+                {loop}周目 / {floor}階
+              </p>
             </div>
-            <div className="text-right text-sm font-bold">
-              <button onClick={() => setPhase('home')} className="underline hover:text-amber-200">
-                タワーホームへ
-              </button>
-            </div>
+            <button onClick={() => setPhase('home')} className="text-sm font-bold text-sky-700 underline hover:text-sky-500">
+              タワーホームへ
+            </button>
           </header>
 
-          <div className="rounded-3xl border border-white/10 bg-white/5 p-4">
-            <p className="text-sm font-extrabold">
-              正解 {floorCorrect}/{FLOOR_NEED_CORRECT} ／ ミス {floorMiss}/{FLOOR_MAX_MISS}
+          <section className="bg-white border border-sky-100 rounded-3xl p-5 shadow-sm text-center space-y-2">
+            <p className="text-sm font-bold text-slate-800">{floorResultMessage?.message ?? ''}</p>
+            <p className="text-sm text-slate-800">
+              正解 <span className="font-extrabold">{floorCorrect}</span> ／ ミス <span className="font-extrabold">{floorMiss}</span>
             </p>
-          </div>
+          </section>
 
-          {/* ★ meteorと同じ：まとめて振り返り＆不備報告 */}
-          <div className="rounded-3xl border border-white/10 bg-white/5 p-4">
-            <h2 className="text-sm font-extrabold mb-3">問題の振り返り & 不備報告</h2>
-            <QuestionReviewAndReport questions={floorAnswerHistory} sourceMode="solo-knowledge-tower-floor" />
-          </div>
+          {/* ★ 道中+ボスをまとめて振り返り & 不備報告 */}
+          <QuestionReviewAndReport questions={mergedAnswerHistory} sourceMode="solo-knowledge-tower" />
 
-          <div className="flex gap-2">
-            <button onClick={() => setPhase('home')} className="flex-1 py-3 rounded-2xl bg-sky-600 hover:bg-sky-700 font-extrabold">
-              タワーホームへ戻る
-            </button>
-          </div>
+          <button
+            onClick={() => setPhase('home')}
+            className="w-full py-3 rounded-full bg-sky-500 hover:bg-sky-600 text-white text-sm font-bold shadow"
+          >
+            タワーホームへ戻る
+          </button>
         </div>
       </main>
     );
@@ -2030,12 +2062,17 @@ export default function KnowledgeTowerPage() {
 
   /* =========================
      結果（ボス）
+     - チャレンジ寄せの見た目
+     - 道中+ボスをまとめて振り返り
   ========================= */
 
   if (phase === 'boss_result') {
+    const loop = resultLoopRef.current || selectedLoop;
+    const floor = resultFloorRef.current || selectedFloor;
+
     return (
-      <main className="tower-nozoom min-h-screen bg-slate-950 text-white px-4 py-6">
-        {/* ★ iOS入力ズーム防止（このページ限定 / スマホ幅のみ） */}
+      <main className="tower-nozoom min-h-screen bg-sky-50 text-slate-900 px-4 py-6">
+        {/* iOS入力ズーム防止（このページ限定 / スマホ幅のみ） */}
         <style jsx global>{`
           @media (max-width: 640px) {
             .tower-nozoom input,
@@ -2046,38 +2083,35 @@ export default function KnowledgeTowerPage() {
           }
         `}</style>
 
-        <div className="max-w-5xl mx-auto space-y-4">
-          <header className="flex items-start justify-between">
+        <div className="max-w-md mx-auto space-y-4">
+          <header className="flex items-center justify-between">
             <div>
-              <h1 className="text-xl font-extrabold">
-                ボス結果：{selectedLoop}周目 {selectedFloor}階
-              </h1>
-              <p className="text-sm text-white/80 mt-1">{bossResultMessage?.message ?? ''}</p>
+              <h1 className="text-xl font-extrabold">ボス結果</h1>
+              <p className="text-xs text-slate-600 mt-1">
+                {loop}周目 / {floor}階
+              </p>
             </div>
-            <div className="text-right text-sm font-bold">
-              <button onClick={() => setPhase('home')} className="underline hover:text-amber-200">
-                タワーホームへ
-              </button>
-            </div>
+            <button onClick={() => setPhase('home')} className="text-sm font-bold text-sky-700 underline hover:text-sky-500">
+              タワーホームへ
+            </button>
           </header>
 
-          <div className="rounded-3xl border border-white/10 bg-white/5 p-4">
-            <p className="text-sm font-extrabold">
-              正解 {bossCorrect}/{bossNeed} ／ ミス {bossMiss}
+          <section className="bg-white border border-sky-100 rounded-3xl p-5 shadow-sm text-center space-y-2">
+            <p className="text-sm font-bold text-slate-800">{bossResultMessage?.message ?? ''}</p>
+            <p className="text-sm text-slate-800">
+              正解 <span className="font-extrabold">{bossCorrect}</span> ／ ミス <span className="font-extrabold">{bossMiss}</span>
             </p>
-          </div>
+          </section>
 
-          {/* ★ meteorと同じ：まとめて振り返り＆不備報告 */}
-          <div className="rounded-3xl border border-white/10 bg-white/5 p-4">
-            <h2 className="text-sm font-extrabold mb-3">問題の振り返り & 不備報告</h2>
-            <QuestionReviewAndReport questions={bossAnswerHistory} sourceMode="solo-knowledge-tower-boss" />
-          </div>
+          {/* ★ 道中+ボスをまとめて振り返り & 不備報告 */}
+          <QuestionReviewAndReport questions={mergedAnswerHistory} sourceMode="solo-knowledge-tower" />
 
-          <div className="flex gap-2">
-            <button onClick={() => setPhase('home')} className="flex-1 py-3 rounded-2xl bg-sky-600 hover:bg-sky-700 font-extrabold">
-              タワーホームへ戻る
-            </button>
-          </div>
+          <button
+            onClick={() => setPhase('home')}
+            className="w-full py-3 rounded-full bg-sky-500 hover:bg-sky-600 text-white text-sm font-bold shadow"
+          >
+            タワーホームへ戻る
+          </button>
         </div>
       </main>
     );
