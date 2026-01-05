@@ -54,7 +54,10 @@ export default function AdminDashboard() {
       setResetMessage(`シーズン締め処理が完了しました。${newSeasonLabel}`);
 
       // ついでに stats も軽く更新しておく（必要なら）
-      setStats((prev) => ({ ...(prev || {}), lastSeasonClosedAt: new Date().toISOString() }));
+      setStats((prev) => ({
+        ...(prev || {}),
+        lastSeasonClosedAt: new Date().toISOString(),
+      }));
     } catch (e) {
       console.error(e);
       setResetMessage('シーズンリセット中にサーバーエラーが発生しました。');
@@ -112,6 +115,14 @@ export default function AdminDashboard() {
             className="px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-600"
           >
             ♾ エンドレスモードを始める
+          </a>
+
+          {/* ★追加：音声学習モード */}
+          <a
+            href="/admin/voice-learning"
+            className="px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-600"
+          >
+            ♬ 音声学習モード
           </a>
         </div>
       </section>
