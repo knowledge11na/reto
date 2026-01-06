@@ -1,9 +1,14 @@
 // file: app/api/ranking/history/list/route.js
 import db, { getSeasonDisplayLabel } from '@/lib/db.js';
 
+async function queryRows(sql, params = []) {
+  const res = await db.query(sql, params);
+  return Array.isArray(res) ? res : res.rows;
+}
+
 export async function GET() {
   try {
-    const rows = await db.query(
+    const rows = await queryRows(
       `
         SELECT DISTINCT season
         FROM rate_season_rankings
@@ -14,7 +19,7 @@ export async function GET() {
 
     return new Response(
       JSON.stringify({
-        seasons: rows.map((r) => ({
+        seasons: (rows || []).map((r) => ({
           season: r.season,
           label: getSeasonDisplayLabel(r.season),
         })),
