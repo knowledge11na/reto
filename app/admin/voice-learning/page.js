@@ -70,6 +70,14 @@ function typeLabel(t) {
   return '問題';
 }
 
+// ★ 読み上げ用のテキスト整形（「誰」→「だれ」など）
+function fixForSpeech(text) {
+  let s = String(text ?? '');
+  // 「誰」を「すい」と読む端末対策
+  s = s.replace(/誰/g, 'だれ');
+  return s;
+}
+
 function isCorrectAnswer(recognized, q) {
   const rec = normalizeText(recognized);
   if (!rec) return false;
@@ -81,7 +89,6 @@ function isCorrectAnswer(recognized, q) {
   if (correct && rec === correct) return true;
   if (altNorm.includes(rec)) return true;
 
-  // ゆるめ：部分一致（短すぎる場合はやめる）
   if (rec.length >= 3) {
     if (correct && correct.includes(rec)) return true;
     if (correct && rec.includes(correct)) return true;
@@ -100,7 +107,7 @@ function speakUtterance(text, opts = {}) {
     const synth = window.speechSynthesis;
     if (!synth) return resolve();
 
-    const u = new SpeechSynthesisUtterance(text);
+    const u = new SpeechSynthesisUtterance(fixForSpeech(text));
     u.rate = typeof opts.rate === 'number' ? opts.rate : 1.0;
     u.pitch = typeof opts.pitch === 'number' ? opts.pitch : 1.0;
     u.volume = typeof opts.volume === 'number' ? opts.volume : 1.0;
@@ -123,45 +130,41 @@ function cancelSpeech() {
 }
 
 export default function AdminVoiceLearningPage() {
-  // 出題元（承認済み）
   const [allApproved, setAllApproved] = useState([]);
   const [loading, setLoading] = useState(false);
   const [loadErr, setLoadErr] = useState('');
 
-  // 出題モード
   const [poolMode, setPoolMode] = useState('all');
   const [selectedType, setSelectedType] = useState('single');
   const [selectedTag, setSelectedTag] = useState('');
 
-  // 学習モード
   const [learnMode, setLearnMode] = useState('read'); // read / answer
 
-  // 音声設定
   const [speechRate, setSpeechRate] = useState(1.0);
-
-  // 答えを読むまでの秒数（開始前に設定）
   const [revealSeconds, setRevealSeconds] = useState(5);
 
-  // 進行
   const [deck, setDeck] = useState([]);
   const [idx, setIdx] = useState(0);
   const [running, setRunning] = useState(false);
-  const [phase, setPhase] = useState('idle'); // idle/reading/answering/revealing
+  const [phase, setPhase] = useState('idle');
   const [statusMsg, setStatusMsg] = useState('');
 
-  // 音声回答
   const [micSupported, setMicSupported] = useState(false);
   const [heard, setHeard] = useState('');
-  const [judge, setJudge] = useState(null); // null / true / false
+  const [judge, setJudge] = useState(null);
   const recognitionRef = useRef(null);
 
-  // タイマー管理
   const timersRef = useRef([]);
 
-  // ★ 自動遷移用（クロージャ対策）
+  // ★ 自動遷移用
   const runningRef = useRef(false);
   const idxRef = useRef(0);
   const deckLenRef = useRef(0);
+
+  // ★ スリープ防止（Wake Lock）
+  const [wakeSupported, setWakeSupported] = useState(false);
+  const [keepAwake, setKeepAwake] = useState(false);
+  const wakeLockRef = useRef(null);
 
   const current = deck[idx] || null;
 
@@ -177,21 +180,62 @@ export default function AdminVoiceLearningPage() {
     deckLenRef.current = deck.length;
   }, [deck.length]);
 
-  // Web Speech API の対応チェック
+  // 対応チェック
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     setMicSupported(!!SR);
+
+    setWakeSupported(!!(navigator && navigator.wakeLock && navigator.wakeLock.request));
   }, []);
 
-  // 承認済み問題取得
+  // Wake Lock 制御（画面を閉じる=OFFは無理。画面スリープを防ぐ用途）
+  const enableWake = async () => {
+    try {
+      if (!navigator?.wakeLock?.request) return;
+      const lock = await navigator.wakeLock.request('screen');
+      wakeLockRef.current = lock;
+      lock.addEventListener('release', () => {
+        wakeLockRef.current = null;
+      });
+    } catch (e) {
+      console.warn('wakeLock failed', e);
+    }
+  };
+
+  const disableWake = async () => {
+    try {
+      if (wakeLockRef.current) {
+        await wakeLockRef.current.release();
+      }
+    } catch {}
+    wakeLockRef.current = null;
+  };
+
+  useEffect(() => {
+    // 実行中かつ keepAwake が ON のときだけ WakeLock
+    if (!running || !keepAwake) {
+      disableWake();
+      return;
+    }
+    enableWake();
+
+    // タブ復帰で取り直す
+    const onVis = () => {
+      if (document.visibilityState === 'visible' && runningRef.current && keepAwake) {
+        enableWake();
+      }
+    };
+    document.addEventListener('visibilitychange', onVis);
+    return () => document.removeEventListener('visibilitychange', onVis);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [running, keepAwake]);
+
   const loadApproved = async () => {
     setLoading(true);
     setLoadErr('');
     try {
-      const res = await fetch('/api/admin/questions?status=approved', {
-        cache: 'no-store',
-      });
+      const res = await fetch('/api/admin/questions?status=approved', { cache: 'no-store' });
       const data = await res.json().catch(() => ({}));
       if (!res.ok || data.error) throw new Error(data.error || '取得に失敗しました');
 
@@ -227,7 +271,6 @@ export default function AdminVoiceLearningPage() {
         pool = [];
       }
     }
-
     return pool;
   }, [allApproved, poolMode, selectedType, selectedTag]);
 
@@ -258,6 +301,7 @@ export default function AdminVoiceLearningPage() {
       clearTimers();
       stopRecognition();
       cancelSpeech();
+      disableWake();
     };
   }, []);
 
@@ -268,9 +312,7 @@ export default function AdminVoiceLearningPage() {
     setIdx(0);
     setHeard('');
     setJudge(null);
-    setStatusMsg(
-      d.length > 0 ? `デッキ作成：${d.length} 問` : '条件に合う問題がありません'
-    );
+    setStatusMsg(d.length > 0 ? `デッキ作成：${d.length} 問` : '条件に合う問題がありません');
     return d;
   };
 
@@ -305,7 +347,7 @@ export default function AdminVoiceLearningPage() {
     setIdx(nextIdx);
   };
 
-  // ★自動遷移（答え読み上げ後1秒）
+  // ★ 答え読み上げ後1秒で自動で次へ
   const autoGoNextAfterAnswer = () => {
     const t = setTimeout(() => {
       if (!runningRef.current) return;
@@ -323,7 +365,19 @@ export default function AdminVoiceLearningPage() {
     timersRef.current.push(t);
   };
 
-  // メイン：形式(短)→問題→（音声回答なら判定音声）→ 指定秒数後に正解読み上げ → 1秒で次へ
+  // ★ 選択肢読み上げ順をランダムにする（表示はそのまま）
+  const speakOptionsShuffled = async (options) => {
+    const arr = Array.isArray(options) ? options : [];
+    const shuffled = shuffle(arr);
+    for (let i = 0; i < shuffled.length; i++) {
+      const s = String(shuffled[i] || '').trim();
+      if (!s) continue;
+      await speakUtterance(`${i + 1}、${s}`, { rate: speechRate });
+      await sleep(120);
+    }
+  };
+
+  // メイン
   const runSequence = async (q) => {
     if (!q) return;
 
@@ -331,10 +385,9 @@ export default function AdminVoiceLearningPage() {
     setStatusMsg('読み上げ中…');
 
     const qType = q.question_type || q.type;
-    const label = typeLabel(qType);
 
-    // 1) 形式：ラベルだけ（「問題形式は…」は言わない）
-    await speakUtterance(label, { rate: speechRate });
+    // 1) 形式：ラベルだけ
+    await speakUtterance(typeLabel(qType), { rate: speechRate });
 
     // 2) 問題文
     const questionText = String(q.question || '').trim();
@@ -344,31 +397,18 @@ export default function AdminVoiceLearningPage() {
       await speakUtterance('問題文が空です。', { rate: speechRate });
     }
 
-    // 選択肢（単一/複数）
+    // 3) 選択肢（単一/複数/並び替え）→ 読む順番はランダム
     const opts = Array.isArray(q.options) ? q.options : [];
     if ((qType === 'single' || qType === 'multi') && opts.length > 0) {
-      // 「選択肢を読み上げます」→「選択肢」だけ
       await speakUtterance('選択肢', { rate: speechRate });
-      for (let i = 0; i < opts.length; i++) {
-        const s = String(opts[i] || '').trim();
-        if (!s) continue;
-        await speakUtterance(`${i + 1}、${s}`, { rate: speechRate });
-        await sleep(120);
-      }
+      await speakOptionsShuffled(opts);
     }
-
-    // 並び替え：短く「要素」
     if (qType === 'order' && opts.length > 0) {
       await speakUtterance('要素', { rate: speechRate });
-      for (let i = 0; i < opts.length; i++) {
-        const s = String(opts[i] || '').trim();
-        if (!s) continue;
-        await speakUtterance(`${i + 1}、${s}`, { rate: speechRate });
-        await sleep(120);
-      }
+      await speakOptionsShuffled(opts);
     }
 
-    // 3) 音声回答モードならマイク開始
+    // 4) 音声回答モードならマイク開始
     if (learnMode === 'answer') {
       setPhase('answering');
       setStatusMsg('音声入力を待っています…');
@@ -378,14 +418,13 @@ export default function AdminVoiceLearningPage() {
       setStatusMsg(`答え待ち（${Math.max(1, Number(revealSeconds) || 5)}秒）…`);
     }
 
-    // 4) 指定秒数後に：正誤を音声（答えるモードのみ）→ 正解読み上げ（別解は読まない）→ 1秒で次へ
+    // 5) 指定秒数後に：正誤（答えるモードだけ）→ 正解読み上げ（別解は読まない）→ 1秒で次へ
     const waitMs = Math.max(1, Number(revealSeconds) || 5) * 1000;
 
     const t = setTimeout(async () => {
       stopRecognition();
       setPhase('revealing');
 
-      // 音声回答モードなら正誤も読み上げ
       if (learnMode === 'answer') {
         const said = (heard || '').trim();
         const ok = said ? isCorrectAnswer(said, q) : false;
@@ -400,7 +439,6 @@ export default function AdminVoiceLearningPage() {
         }
       }
 
-      // 正解：必ず読む（別解は読まない）
       const ans = String(q.correct_answer || '').trim();
       await speakUtterance(`正解、${ans || '不明'}`, { rate: speechRate });
 
@@ -440,16 +478,11 @@ export default function AdminVoiceLearningPage() {
         const shown = (finalText || text || '').trim();
         setHeard(shown);
 
-        // 画面用の即時判定
         if (shown) setJudge(isCorrectAnswer(shown, q));
       };
 
       rec.onerror = (e) => {
         console.warn('SpeechRecognition error', e);
-      };
-
-      rec.onend = () => {
-        // タイマーで止まる想定
       };
 
       rec.start();
@@ -471,7 +504,6 @@ export default function AdminVoiceLearningPage() {
     await runSequence(d[0]);
   };
 
-  // idx が変わったら、実行中なら自動で次へ読み上げ
   useEffect(() => {
     if (!running) return;
     if (!current) return;
@@ -514,10 +546,6 @@ export default function AdminVoiceLearningPage() {
           <div className="text-xs text-slate-300">
             読み込み件数：
             <span className="font-bold text-slate-50"> {allApproved.length}</span>
-          </div>
-
-          <div className="ml-auto text-xs text-slate-400">
-            ※ 音声はブラウザの読み上げ機能を使用（端末の音量に注意）
           </div>
         </div>
 
@@ -595,11 +623,6 @@ export default function AdminVoiceLearningPage() {
               </>
             )}
           </div>
-
-          <div className="ml-auto text-slate-400">
-            条件一致：
-            <span className="text-slate-50 font-bold"> {filteredPool.length}</span> 件
-          </div>
         </div>
       </section>
 
@@ -607,7 +630,7 @@ export default function AdminVoiceLearningPage() {
       <section className="bg-slate-900 border border-slate-700 rounded-xl p-3 space-y-3">
         <h2 className="text-sm font-bold text-slate-50">学習モード</h2>
 
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-2 text-xs">
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-2 text-xs">
           <label className="space-y-1">
             <div className="text-slate-300">モード</div>
             <select
@@ -623,7 +646,7 @@ export default function AdminVoiceLearningPage() {
             </select>
             {!canAnswerMode && (
               <div className="text-[10px] text-amber-200">
-                ※ このブラウザは音声認識に非対応です（Chrome推奨）
+                ※ 音声認識に非対応のブラウザです（Chrome推奨）
               </div>
             )}
           </label>
@@ -656,6 +679,23 @@ export default function AdminVoiceLearningPage() {
             <div className="text-slate-200">rate: {speechRate.toFixed(2)}</div>
           </label>
 
+          <label className="space-y-1">
+            <div className="text-slate-300">スリープ防止（画面ON前提）</div>
+            <button
+              type="button"
+              disabled={!wakeSupported}
+              onClick={() => setKeepAwake((v) => !v)}
+              className={`w-full px-3 py-2 rounded border text-white font-bold ${
+                keepAwake ? 'bg-emerald-700 border-emerald-500' : 'bg-slate-800 border-slate-600'
+              } ${!wakeSupported ? 'opacity-50' : ''}`}
+            >
+              {wakeSupported ? (keepAwake ? 'ON' : 'OFF') : '非対応'}
+            </button>
+            <div className="text-[10px] text-slate-400">
+              ※ 画面を閉じても継続は端末仕様で難しいです
+            </div>
+          </label>
+
           <div className="space-y-1">
             <div className="text-slate-300">操作</div>
             <div className="flex gap-2 flex-wrap">
@@ -679,26 +719,11 @@ export default function AdminVoiceLearningPage() {
 
               <button
                 type="button"
-                onClick={async () => {
-                  if (!current) return;
-                  clearTimers();
-                  stopRecognition();
-                  cancelSpeech();
-                  await runSequence(current);
-                }}
-                disabled={!current}
-                className="px-3 py-2 rounded bg-slate-700 hover:bg-slate-600 text-white font-bold disabled:opacity-60"
-              >
-                🔁 もう一度
-              </button>
-
-              <button
-                type="button"
                 onClick={nextQuestion}
                 disabled={!running}
                 className="px-3 py-2 rounded bg-emerald-700 hover:bg-emerald-600 text-white font-bold disabled:opacity-60"
               >
-                ⏭ 次の問題
+                ⏭ 次へ
               </button>
             </div>
           </div>
@@ -716,9 +741,7 @@ export default function AdminVoiceLearningPage() {
         <h2 className="text-sm font-bold text-slate-50">現在の問題</h2>
 
         {!current ? (
-          <div className="text-xs text-slate-400">
-            デッキを作成して開始してください。
-          </div>
+          <div className="text-xs text-slate-400">デッキを作成して開始してください。</div>
         ) : (
           <div className="space-y-2">
             <div className="text-xs text-slate-300">
@@ -746,13 +769,7 @@ export default function AdminVoiceLearningPage() {
               </div>
             )}
 
-            <div className="text-xs text-amber-200">
-              正解：{current.correct_answer}
-              {Array.isArray(current.alt_answers) &&
-                current.alt_answers.length > 0 && (
-                  <span className="text-slate-400">（別解あり）</span>
-                )}
-            </div>
+            <div className="text-xs text-amber-200">正解：{current.correct_answer}</div>
 
             {learnMode === 'answer' && (
               <div className="bg-slate-800 border border-slate-600 rounded p-2 space-y-1">
@@ -767,20 +784,14 @@ export default function AdminVoiceLearningPage() {
                   判定：
                   {heard ? (
                     judge === true ? (
-                      <span className="ml-2 text-emerald-300 font-bold">
-                        正解っぽい
-                      </span>
+                      <span className="ml-2 text-emerald-300 font-bold">正解っぽい</span>
                     ) : judge === false ? (
-                      <span className="ml-2 text-rose-300 font-bold">
-                        不正解っぽい
-                      </span>
+                      <span className="ml-2 text-rose-300 font-bold">不正解っぽい</span>
                     ) : (
                       <span className="ml-2 text-slate-300">判定中…</span>
                     )
                   ) : (
-                    <span className="ml-2 text-slate-400">
-                      （発話すると判定します）
-                    </span>
+                    <span className="ml-2 text-slate-400">（発話すると判定します）</span>
                   )}
                 </div>
               </div>
