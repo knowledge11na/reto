@@ -82,10 +82,26 @@ export default function SoloMenuPage() {
     }
   }, []);
 
-  useEffect(() => {
+    useEffect(() => {
     if (!me || !me.id) return;
     if (soloTitlesSentRef.current) return;
-    if (meteorBest <= 0 && sniperBest <= 0) return;
+
+    // 何も記録が無いときは送らない（無駄打ち防止）
+    const hasAny =
+      (meteorBest > 0) ||
+      (sniperBest > 0) ||
+      (typeof dungeonBest === 'number' && dungeonBest > 0) ||
+      (bombBest > 0) ||
+      (bornBest > 0) ||
+      (Math.max(
+        balloonBests.food || 0,
+        balloonBests.height || 0,
+        balloonBests.age || 0,
+        balloonBests.bounty || 0,
+        balloonBests.other || 0
+      ) > 0);
+
+    if (!hasAny) return;
 
     soloTitlesSentRef.current = true;
 
@@ -95,11 +111,25 @@ export default function SoloMenuPage() {
       body: JSON.stringify({
         type: 'solo_menu',
         userId: me.id,
+
         meteorBest,
         sniperBest,
+
+        dungeonBest: typeof dungeonBest === 'number' ? dungeonBest : 0,
+        bombBest,
+        bornBest,
+
+        balloonBests: {
+          food: balloonBests.food || 0,
+          height: balloonBests.height || 0,
+          age: balloonBests.age || 0,
+          bounty: balloonBests.bounty || 0,
+          other: balloonBests.other || 0,
+        },
       }),
     }).catch(() => {});
-  }, [me, meteorBest, sniperBest]);
+  }, [me, meteorBest, sniperBest, dungeonBest, bombBest, bornBest, balloonBests]);
+
 
   return (
     <main className="min-h-screen bg-sky-50 text-sky-900">

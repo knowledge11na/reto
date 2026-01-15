@@ -4,7 +4,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 
-const MAX_SLOTS = 36;
+const MAX_SLOTS = 48;
 
 export default function TitlesPage() {
   const [titles, setTitles] = useState([]);
@@ -44,7 +44,7 @@ export default function TitlesPage() {
     load();
   }, []);
 
-  // スロットを 36 個に埋める
+  // スロットを 48 個に埋める
   const slots = [];
   for (let i = 0; i < MAX_SLOTS; i++) {
     if (i < titles.length) {
