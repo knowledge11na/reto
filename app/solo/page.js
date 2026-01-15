@@ -10,6 +10,9 @@ export default function SoloMenuPage() {
   const [dungeonBest, setDungeonBest] = useState(null);
   const [bombBest, setBombBest] = useState(0);
 
+  // ★ 仕分け（出身）
+  const [bornBest, setBornBest] = useState(0);
+
   // ★ 風船割り：各モード自己ベスト（ローカル保存）
   const [balloonBests, setBalloonBests] = useState({
     food: 0,
@@ -59,6 +62,11 @@ export default function SoloMenuPage() {
       const rawBomb = window.localStorage.getItem('bomb_best_score');
       const b = rawBomb ? Number(rawBomb) : 0;
       if (!Number.isNaN(b) && b > 0) setBombBest(b);
+
+      // ★ 仕分け（出身）
+      const rawBorn = window.localStorage.getItem('born_best_score');
+      const bb = rawBorn ? Number(rawBorn) : 0;
+      if (!Number.isNaN(bb) && bb > 0) setBornBest(bb);
 
       // ★ 風船割り（5モード）
       const keys = ['food', 'height', 'age', 'bounty', 'other'];
@@ -259,9 +267,30 @@ export default function SoloMenuPage() {
                 個
               </span>
               <span className="text-[10px] text-blue-800">
-                好物:{balloonBests.food} / 身長:{balloonBests.height} / 年齢:{balloonBests.age} / 懸賞金:{balloonBests.bounty}{' '}
-                / その他:{balloonBests.other}
+                好物:{balloonBests.food} / 身長:{balloonBests.height} / 年齢:{balloonBests.age} / 懸賞金:
+                {balloonBests.bounty} / その他:{balloonBests.other}
               </span>
+            </div>
+          </div>
+
+          {/* ★ 仕分けゲーム（出身）（風船割りの下 / 未使用色：orange） */}
+          <div className="rounded-2xl border border-orange-400 bg-orange-50 px-3 py-3 shadow-sm">
+            <Link
+              href="/solo/born"
+              className="block hover:bg-orange-100 rounded-2xl -mx-3 -my-3 px-3 py-3 transition"
+            >
+              <p className="text-sm font-bold text-orange-900">仕分けゲーム（出身）</p>
+              <p className="text-[11px] text-orange-950 leading-tight mt-1">
+                動き回るキャラを掴んで、東/西/南/北/偉の正しい仕切りへ運び込む。
+              </p>
+            </Link>
+            <div className="mt-2 flex items-center justify-between text-[11px] text-orange-900">
+              <span>
+                自己ベスト: <span className="font-semibold">{bornBest}</span> 人
+              </span>
+              <Link href="/solo/born/rules" className="underline text-orange-700 hover:text-orange-500">
+                ルールを見る
+              </Link>
             </div>
           </div>
 
