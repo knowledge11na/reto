@@ -103,7 +103,8 @@ export default function CharactersPage() {
   const [characters, setCharacters] = useState([]);
   const [teamIds, setTeamIds] = useState([]); // [character_id,...]
 
-  const [sortMode, setSortMode] = useState('acquired'); // acquired | rarity | no
+  // acquired | rarity | no | no_related
+  const [sortMode, setSortMode] = useState('acquired');
 
   const [loadingUser, setLoadingUser] = useState(true);
   const [loadingData, setLoadingData] = useState(true);
@@ -111,6 +112,13 @@ export default function CharactersPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
+
+  // ★関連問題表示
+  const [relOpen, setRelOpen] = useState(false);
+  const [relLoading, setRelLoading] = useState(false);
+  const [relError, setRelError] = useState('');
+  const [relChar, setRelChar] = useState(null);
+  const [relQs, setRelQs] = useState([]);
 
   /* ------------------------------
      ログインユーザー取得
@@ -194,6 +202,48 @@ export default function CharactersPage() {
   };
 
   /* ------------------------------
+     ★関連問題を開く（IDを安全に決める）
+  ------------------------------ */
+  const openRelated = async (ch) => {
+    setRelOpen(true);
+    setRelLoading(true);
+    setRelError('');
+    setRelQs([]);
+    setRelChar(ch);
+
+    const cidRaw = ch?.character_id ?? ch?.id ?? ch?.char_id ?? null;
+    const cid = Number(cidRaw);
+
+    if (!Number.isFinite(cid) || cid <= 0) {
+      setRelLoading(false);
+      setRelError(
+        `invalid_character_id（このキャラのIDが取れません）: character_id=${String(
+          ch?.character_id
+        )}, id=${String(ch?.id)}, char_no=${String(ch?.char_no)}`
+      );
+      return;
+    }
+
+    try {
+      const res = await fetch(`/api/characters/${cid}/related-questions`, {
+        cache: 'no-store',
+      });
+      const json = await res.json();
+
+      if (!res.ok || !json.ok) {
+        throw new Error(json.error || '関連問題の取得に失敗しました');
+      }
+
+      setRelQs(json.questions || []);
+    } catch (e) {
+      console.error(e);
+      setRelError(e.message || '関連問題の取得に失敗しました');
+    } finally {
+      setRelLoading(false);
+    }
+  };
+
+  /* ------------------------------
      マイチーム保存
   ------------------------------ */
   const saveTeam = async () => {
@@ -238,14 +288,14 @@ export default function CharactersPage() {
       setError('');
       setMessage('');
 
-      setTeamIds([]); // 先にフロント側も空に
+      setTeamIds([]);
 
       const r = await fetch('/api/user/team', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           user_id: Number(user.id),
-          character_ids: [], // 空で送る → user_teams 全削除
+          character_ids: [],
         }),
       });
 
@@ -268,16 +318,24 @@ export default function CharactersPage() {
     if (sortMode === 'rarity') {
       return getStarsValue(b) - getStarsValue(a);
     }
-    if (sortMode === 'no') {
+    if (sortMode === 'no' || sortMode === 'no_related') {
       return (a.char_no ?? a.character_id) - (b.char_no ?? b.character_id);
     }
-    // acquired（登録順） → id の昇順
     return a.id - b.id;
   });
 
   const isSelected = (idRaw) => {
     const id = Number(idRaw);
     return teamIds.includes(id);
+  };
+
+  // ★カードクリックの挙動をソートで切り替え
+  const onCardClick = (ch) => {
+    if (sortMode === 'no_related') {
+      openRelated(ch);
+      return;
+    }
+    toggleCharacter(ch.character_id);
   };
 
   /* ============================================================
@@ -391,41 +449,104 @@ export default function CharactersPage() {
             所持キャラ数：{characters.length} 体
           </p>
 
-          {/* ソート切り替え */}
-          <div className="flex gap-2 mt-3 text-sm">
+          {/* ★関連問題パネル（ここはそのまま） */}
+          {relOpen && (
+            <div className="mt-3 bg-white border border-sky-300 rounded-2xl p-3">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="font-extrabold text-sky-900">
+                    関連問題：{relChar?.name || '---'}
+                  </div>
+                  <div className="text-xs text-slate-600">
+                    （問題文 / 正解 / 別解 に検索ワードが含まれる問題）
+                  </div>
+                </div>
+                <button
+                  onClick={() => setRelOpen(false)}
+                  className="px-3 py-1 rounded-full border bg-white text-xs font-bold text-slate-700"
+                >
+                  閉じる
+                </button>
+              </div>
+
+              {relLoading ? (
+                <div className="mt-2 text-sm text-slate-600">読み込み中…</div>
+              ) : relError ? (
+                <div className="mt-2 text-sm text-red-700 whitespace-pre-wrap">
+                  {relError}
+                </div>
+              ) : relQs.length === 0 ? (
+                <div className="mt-2 text-sm text-slate-600">
+                  該当する問題がありません
+                </div>
+              ) : (
+                <div className="mt-2 max-h-[320px] overflow-auto border rounded-xl p-2 bg-sky-50">
+                  {relQs.map((q) => (
+                    <div key={q.id} className="py-2 border-b last:border-b-0">
+                      <div className="text-[11px] font-extrabold text-slate-700">
+                        #{q.id} / {q.type || 'type'}
+                      </div>
+                      <div className="text-sm font-bold text-slate-900 whitespace-pre-wrap mt-1">
+                        {String(q.question_text ?? q.question ?? '')}
+                      </div>
+                      <div className="text-xs text-slate-700 whitespace-pre-wrap mt-1">
+                        答え：{String(q.correct_answer ?? '')}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ★ソート切り替え：キャラNo順の右に「関連問題」ソートを追加 */}
+          <div className="mt-3 flex items-center justify-between gap-2">
+            <div className="flex gap-2 text-sm">
+              <button
+                onClick={() => setSortMode('acquired')}
+                className={`px-3 py-1 rounded-full border ${
+                  sortMode === 'acquired'
+                    ? 'bg-sky-600 text-white'
+                    : 'bg-white text-sky-700'
+                }`}
+              >
+                入手順
+              </button>
+              <button
+                onClick={() => setSortMode('rarity')}
+                className={`px-3 py-1 rounded-full border ${
+                  sortMode === 'rarity'
+                    ? 'bg-sky-600 text-white'
+                    : 'bg-white text-sky-700'
+                }`}
+              >
+                レア度順
+              </button>
+              <button
+                onClick={() => setSortMode('no')}
+                className={`px-3 py-1 rounded-full border ${
+                  sortMode === 'no'
+                    ? 'bg-sky-600 text-white'
+                    : 'bg-white text-sky-700'
+                }`}
+              >
+                キャラNo.順
+              </button>
+            </div>
+
             <button
-              onClick={() => setSortMode('acquired')}
-              className={`px-3 py-1 rounded-full border ${
-                sortMode === 'acquired'
+              onClick={() => setSortMode('no_related')}
+              className={`px-3 py-1 rounded-full border text-sm whitespace-nowrap ${
+                sortMode === 'no_related'
                   ? 'bg-sky-600 text-white'
                   : 'bg-white text-sky-700'
               }`}
             >
-              入手順
-            </button>
-            <button
-              onClick={() => setSortMode('rarity')}
-              className={`px-3 py-1 rounded-full border ${
-                sortMode === 'rarity'
-                  ? 'bg-sky-600 text-white'
-                  : 'bg-white text-sky-700'
-              }`}
-            >
-              レア度順
-            </button>
-            <button
-              onClick={() => setSortMode('no')}
-              className={`px-3 py-1 rounded-full border ${
-                sortMode === 'no'
-                  ? 'bg-sky-600 text-white'
-                  : 'bg-white text-sky-700'
-              }`}
-            >
-              キャラNo.順
+              関連問題
             </button>
           </div>
 
-          {/* キャラ一覧 */}
+          {/* キャラ一覧：ボタン廃止。カードクリックで挙動切り替え */}
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
             {sorted.map((ch) => {
               const starValue = getStarsValue(ch);
@@ -438,13 +559,13 @@ export default function CharactersPage() {
                 return (
                   <div
                     key={ch.character_id}
-                    onClick={() => toggleCharacter(ch.character_id)}
+                    onClick={() => onCardClick(ch)}
                     className="cursor-pointer"
                   >
                     <div
                       className={
                         'rounded-3xl p-[2px] shadow-md hover:-translate-y-[1px] transition-transform' +
-                        (selected
+                        (sortMode !== 'no_related' && selected
                           ? ' ring-2 ring-sky-400 ring-offset-2 ring-offset-sky-50'
                           : '')
                       }
@@ -480,6 +601,12 @@ export default function CharactersPage() {
                             <div>現在★：{s}</div>
                           </div>
                         </div>
+
+                        {sortMode === 'no_related' && (
+                          <div className="mt-2 text-[11px] font-extrabold text-sky-700">
+                            タップで関連問題
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -487,13 +614,16 @@ export default function CharactersPage() {
               }
 
               // ★1〜5（普通枠）
-              const cardClass = getNormalCardClass(s, selected);
+              const cardClass =
+                sortMode === 'no_related'
+                  ? getNormalCardClass(s, false)
+                  : getNormalCardClass(s, selected);
 
               return (
                 <div
                   key={ch.character_id}
                   className={cardClass}
-                  onClick={() => toggleCharacter(ch.character_id)}
+                  onClick={() => onCardClick(ch)}
                 >
                   <div>
                     <div className="text-[11px] text-slate-600 mb-1">
@@ -518,6 +648,12 @@ export default function CharactersPage() {
                       <div>現在★：{s}</div>
                     </div>
                   </div>
+
+                  {sortMode === 'no_related' && (
+                    <div className="mt-2 text-[11px] font-extrabold text-sky-700">
+                      タップで関連問題
+                    </div>
+                  )}
                 </div>
               );
             })}
