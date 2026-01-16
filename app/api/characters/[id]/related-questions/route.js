@@ -7,31 +7,27 @@ export const dynamic = 'force-dynamic';
 
 export async function GET(req, ctx) {
   try {
-    const params = await ctx?.params; // Next.js 16 対応
+    const params = await ctx?.params;
     const characterId = Number(params?.id);
 
     if (!Number.isFinite(characterId) || characterId <= 0) {
       return NextResponse.json({ ok: false, error: 'invalid_character_id' }, { status: 400 });
     }
 
-    // ★列が無くても落ちないように name だけ取る
-    const ch = await db.get(`SELECT id, name FROM characters WHERE id = $1`, [characterId]);
+    // ★ related_word 前提で取得
+    const ch = await db.get(
+      `SELECT id, name, related_word FROM characters WHERE id = $1`,
+      [characterId]
+    );
 
     if (!ch) {
       return NextResponse.json({ ok: false, error: 'character_not_found' }, { status: 404 });
     }
 
-    const word = (ch.name || '').toString().trim();
-    if (!word) {
-      return NextResponse.json(
-        { ok: true, character: { id: String(ch.id), name: ch.name }, word: '', questions: [] },
-        { status: 200 }
-      );
-    }
-
+    // ★ 必ず related_word を使う
+    const word = ch.related_word.toString().trim();
     const like = `%${word}%`;
 
-    // ★JSON列は ::text にキャストしてから ILIKE
     const rows = await db.query(
       `
       SELECT
@@ -63,15 +59,15 @@ export async function GET(req, ctx) {
       {
         ok: true,
         character: { id: String(ch.id), name: ch.name },
-        word,
-        questions: rows || [],
+        word,              // ← 実際に検索したワード
+        questions: rows,
       },
       { status: 200 }
     );
   } catch (e) {
     console.error('/api/characters/[id]/related-questions GET error:', e);
     return NextResponse.json(
-      { ok: false, error: 'failed_to_load_related_questions', message: e?.message || String(e) },
+      { ok: false, error: 'failed_to_load_related_questions' },
       { status: 500 }
     );
   }
