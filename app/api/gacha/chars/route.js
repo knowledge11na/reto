@@ -3,11 +3,9 @@ import { NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
 
-// 念のためキャッシュされないように（なくても動く）
 export const dynamic = 'force-dynamic';
 
 function loadCharsFromCsv() {
-  // onepiece_gacha/chars.csv を読む
   const filePath = path.join(process.cwd(), 'onepiece_gacha', 'chars.csv');
   const text = fs.readFileSync(filePath, 'utf8');
 
@@ -18,13 +16,14 @@ function loadCharsFromCsv() {
     const trimmed = line.trim();
     if (!trimmed) continue;
 
-    // カンマ区切り（タブ区切りじゃない前提）
+    // CSV: char_no,name,rarity,search_word (4列目は任意)
     const cols = trimmed.split(',');
     if (cols.length < 3) continue;
 
     const idStr = cols[0];
     const nameRaw = cols[1];
     const rarityStr = cols[2];
+    const searchRaw = cols[3]; // 任意
 
     const id = Number(idStr);
     const rarity = Number(rarityStr);
@@ -32,10 +31,19 @@ function loadCharsFromCsv() {
 
     if (!Number.isFinite(id) || !Number.isFinite(rarity)) continue;
 
+    let search_word = (searchRaw ?? '').trim();
+    if (!search_word) {
+      // 4列目が無い/空なら雑に自動生成（最後の単語）
+      const s = name.replace(/\s+/g, ' ').trim();
+      const parts = s.split(/[・\s]/).filter(Boolean);
+      search_word = parts.length ? parts[parts.length - 1] : s;
+    }
+
     chars.push({
-      id,       // 図鑑番号として使う
+      id,         // 図鑑番号（char_no）
       name,
-      rarity,   // ★の数
+      rarity,     // ベースレア度
+      search_word,
     });
   }
 
@@ -45,14 +53,7 @@ function loadCharsFromCsv() {
 export async function GET() {
   try {
     const chars = loadCharsFromCsv();
-
-    return NextResponse.json(
-      {
-        ok: true,
-        chars,
-      },
-      { status: 200 }
-    );
+    return NextResponse.json({ ok: true, chars }, { status: 200 });
   } catch (e) {
     console.error('failed to load gacha chars', e);
     return NextResponse.json(
