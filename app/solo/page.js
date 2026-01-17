@@ -22,6 +22,11 @@ export default function SoloMenuPage() {
     other: 0,
   });
 
+  // ★ 私は誰でしょう：自己ベスト
+  const [whoisBest5, setWhoisBest5] = useState(0);
+  const [whoisBest10, setWhoisBest10] = useState(0);
+  const [whoisBestEndless, setWhoisBestEndless] = useState(0);
+
   const [me, setMe] = useState(null);
 
   const soloTitlesSentRef = useRef(false);
@@ -77,29 +82,37 @@ export default function SoloMenuPage() {
         next[k] = Number.isFinite(n) && n > 0 ? n : 0;
       }
       setBalloonBests((prev) => ({ ...prev, ...next }));
+
+      // ★ 私は誰でしょう
+      const w5 = Number(window.localStorage.getItem('whois_best_5m') || 0);
+      const w10 = Number(window.localStorage.getItem('whois_best_10m') || 0);
+      const wE = Number(window.localStorage.getItem('whois_best_endless') || 0);
+      setWhoisBest5(Number.isFinite(w5) ? w5 : 0);
+      setWhoisBest10(Number.isFinite(w10) ? w10 : 0);
+      setWhoisBestEndless(Number.isFinite(wE) ? wE : 0);
     } catch {
       // 無視
     }
   }, []);
 
-    useEffect(() => {
+  useEffect(() => {
     if (!me || !me.id) return;
     if (soloTitlesSentRef.current) return;
 
     // 何も記録が無いときは送らない（無駄打ち防止）
     const hasAny =
-      (meteorBest > 0) ||
-      (sniperBest > 0) ||
+      meteorBest > 0 ||
+      sniperBest > 0 ||
       (typeof dungeonBest === 'number' && dungeonBest > 0) ||
-      (bombBest > 0) ||
-      (bornBest > 0) ||
-      (Math.max(
+      bombBest > 0 ||
+      bornBest > 0 ||
+      Math.max(
         balloonBests.food || 0,
         balloonBests.height || 0,
         balloonBests.age || 0,
         balloonBests.bounty || 0,
         balloonBests.other || 0
-      ) > 0);
+      ) > 0;
 
     if (!hasAny) return;
 
@@ -129,7 +142,6 @@ export default function SoloMenuPage() {
       }),
     }).catch(() => {});
   }, [me, meteorBest, sniperBest, dungeonBest, bombBest, bornBest, balloonBests]);
-
 
   return (
     <main className="min-h-screen bg-sky-50 text-sky-900">
@@ -271,7 +283,7 @@ export default function SoloMenuPage() {
             <div className="mt-2 flex items-center justify-end text-[11px] text-lime-900" />
           </div>
 
-          {/* ★ 風船割り（ナンバーゲームの下 / 未使用色：blue） */}
+          {/* ★ 風船割り */}
           <div className="rounded-2xl border border-blue-400 bg-blue-50 px-3 py-3 shadow-sm">
             <Link
               href="/solo/balloon"
@@ -303,7 +315,7 @@ export default function SoloMenuPage() {
             </div>
           </div>
 
-          {/* ★ 仕分けゲーム（出身）（風船割りの下 / 未使用色：orange） */}
+          {/* ★ 仕分けゲーム（出身） */}
           <div className="rounded-2xl border border-orange-400 bg-orange-50 px-3 py-3 shadow-sm">
             <Link
               href="/solo/born"
@@ -340,19 +352,29 @@ export default function SoloMenuPage() {
             </div>
           </div>
 
-          {/* ナレッジタワー（未公開） */}
-          {/*
-          <Link
-            href="/solo/knowledge-tower"
-            className="block rounded-2xl border border-violet-500 bg-violet-50 px-3 py-3 shadow-sm hover:bg-violet-100"
-          >
-            <p className="text-sm font-bold text-violet-900">ナレッジタワー（タグ別）</p>
-            <p className="text-[11px] text-violet-950 leading-tight mt-1">
-              20階層の塔を、タグ別問題でひとつずつ攻略していくソロモード。
-              各フロア30問正解→ボス戦で塔のてっぺんを目指そう。
-            </p>
-          </Link>
-          */}
+          {/* ★ 私は誰でしょう（最下部） */}
+          <div className="rounded-2xl border border-violet-400 bg-violet-50 px-3 py-3 shadow-sm">
+            <Link
+              href="/solo/whois"
+              className="block hover:bg-violet-100 rounded-2xl -mx-3 -my-3 px-3 py-3 transition"
+            >
+              <p className="text-sm font-bold text-violet-900">私は誰でしょう（ヒント当て）</p>
+              <p className="text-[11px] text-violet-950 leading-tight mt-1">
+                ヒントを見て答えを当てる。制限時間モード（5分/10分）と、エンドレス（ミス or ギブアップで終了）。
+              </p>
+            </Link>
+
+            <div className="mt-2 flex items-center justify-between text-[11px] text-violet-900">
+              <span>
+                自己ベスト: 5分 <span className="font-semibold">{whoisBest5}</span> / 10分{' '}
+                <span className="font-semibold">{whoisBest10}</span> / エンドレス{' '}
+                <span className="font-semibold">{whoisBestEndless}</span>
+              </span>
+              <Link href="/solo/whois" className="underline text-violet-700 hover:text-violet-500">
+                プレイへ
+              </Link>
+            </div>
+          </div>
         </div>
 
         <div className="mt-6 text-center">

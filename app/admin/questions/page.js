@@ -276,6 +276,15 @@ const approveQuestion = async (q) => {
   return (
     <div className="space-y-4">
       <h1 className="text-xl font-bold mb-2 text-slate-50">問題一覧・承認</h1>
+<div className="flex gap-2 mb-2">
+  <a
+    href="/admin/whois"
+    className="px-3 py-1 rounded-full border border-sky-400 text-sky-100 text-xs"
+  >
+    私は誰でしょう 承認
+  </a>
+</div>
+
 
       {/* フィルタ */}
       <section className="bg-slate-900 border border-slate-700 rounded-xl p-3 space-y-3">
