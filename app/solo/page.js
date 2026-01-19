@@ -13,6 +13,9 @@ export default function SoloMenuPage() {
   // ★ 仕分け（出身）
   const [bornBest, setBornBest] = useState(0);
 
+  // ★ 仕分け（血液型）
+  const [bloodtypeBest, setBloodtypeBest] = useState(0);
+
   // ★ 風船割り：各モード自己ベスト（ローカル保存）
   const [balloonBests, setBalloonBests] = useState({
     food: 0,
@@ -68,6 +71,11 @@ export default function SoloMenuPage() {
       const bb = rawBorn ? Number(rawBorn) : 0;
       if (!Number.isNaN(bb) && bb > 0) setBornBest(bb);
 
+      // ★ 仕分け（血液型）
+      const rawBlood = window.localStorage.getItem('bloodtype_best_score');
+      const bt = rawBlood ? Number(rawBlood) : 0;
+      if (!Number.isNaN(bt) && bt > 0) setBloodtypeBest(bt);
+
       // ★ 風船割り（5モード）
       const keys = ['food', 'height', 'age', 'bounty', 'other'];
       const next = {};
@@ -82,24 +90,25 @@ export default function SoloMenuPage() {
     }
   }, []);
 
-    useEffect(() => {
+  useEffect(() => {
     if (!me || !me.id) return;
     if (soloTitlesSentRef.current) return;
 
     // 何も記録が無いときは送らない（無駄打ち防止）
     const hasAny =
-      (meteorBest > 0) ||
-      (sniperBest > 0) ||
+      meteorBest > 0 ||
+      sniperBest > 0 ||
       (typeof dungeonBest === 'number' && dungeonBest > 0) ||
-      (bombBest > 0) ||
-      (bornBest > 0) ||
-      (Math.max(
+      bombBest > 0 ||
+      bornBest > 0 ||
+      bloodtypeBest > 0 ||
+      Math.max(
         balloonBests.food || 0,
         balloonBests.height || 0,
         balloonBests.age || 0,
         balloonBests.bounty || 0,
         balloonBests.other || 0
-      ) > 0);
+      ) > 0;
 
     if (!hasAny) return;
 
@@ -119,6 +128,9 @@ export default function SoloMenuPage() {
         bombBest,
         bornBest,
 
+        // ★ 血液型も送る（API側で未対応なら無視されるだけ）
+        bloodtypeBest,
+
         balloonBests: {
           food: balloonBests.food || 0,
           height: balloonBests.height || 0,
@@ -128,8 +140,7 @@ export default function SoloMenuPage() {
         },
       }),
     }).catch(() => {});
-  }, [me, meteorBest, sniperBest, dungeonBest, bombBest, bornBest, balloonBests]);
-
+  }, [me, meteorBest, sniperBest, dungeonBest, bombBest, bornBest, bloodtypeBest, balloonBests]);
 
   return (
     <main className="min-h-screen bg-sky-50 text-sky-900">
@@ -319,6 +330,30 @@ export default function SoloMenuPage() {
                 自己ベスト: <span className="font-semibold">{bornBest}</span> 人
               </span>
               <Link href="/solo/born/rules" className="underline text-orange-700 hover:text-orange-500">
+                ルールを見る
+              </Link>
+            </div>
+          </div>
+
+          {/* ★ 仕分けゲーム（血液型）（出身の下 / 同じ色・同じ様式） */}
+          <div className="rounded-2xl border border-orange-400 bg-orange-50 px-3 py-3 shadow-sm">
+            <Link
+              href="/solo/bloodtype"
+              className="block hover:bg-orange-100 rounded-2xl -mx-3 -my-3 px-3 py-3 transition"
+            >
+              <p className="text-sm font-bold text-orange-900">仕分けゲーム（血液型）</p>
+              <p className="text-[11px] text-orange-950 leading-tight mt-1">
+                動き回るキャラを掴んで、X/F/XF/S/S型RH- の正しい仕切りへ運び込む。
+              </p>
+            </Link>
+            <div className="mt-2 flex items-center justify-between text-[11px] text-orange-900">
+              <span>
+                自己ベスト: <span className="font-semibold">{bloodtypeBest}</span> 人
+              </span>
+              <Link
+                href="/solo/bloodtype/rules"
+                className="underline text-orange-700 hover:text-orange-500"
+              >
                 ルールを見る
               </Link>
             </div>
