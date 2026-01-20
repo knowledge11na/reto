@@ -767,7 +767,7 @@ export default function SubmitPage() {
       <div className="max-w-xl mx-auto space-y-4">
         {/* ヘッダー：タイトル + ボタン群 */}
         <header className="flex items-center justify-between mb-2">
-          <h1 className="text-lg sm:text-xl font-bold">問題を投稿する</h1>
+          <h1 className="text-lg sm:text-xl font-bold">問題投稿</h1>
 
           <div className="flex items-center gap-2">
             <button
@@ -783,7 +783,7 @@ export default function SubmitPage() {
               onClick={() => setCarryOpen((v) => !v)}
               className="border border-sky-400 px-2.5 py-1 rounded-full text-[11px] font-bold bg-slate-900 text-sky-100 shadow-sm"
             >
-              前の条件を引き継ぐ
+              条件を引き継ぐ
             </button>
 
             <Link

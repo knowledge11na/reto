@@ -93,7 +93,6 @@ function choicesFrom(pos) {
 }
 
 function findLookaheadTarget(p, tiles = 4) {
-  // プレイヤーの進行方向の先を狙う（壁なら手前で止める）
   const v = dirToVec(p.dir);
   let tx = p.x;
   let ty = p.y;
@@ -139,7 +138,6 @@ function findSpawnPoints4() {
   const cx = Math.floor(COLS / 2);
   const cy = Math.floor(ROWS / 2);
 
-  // 中心からの距離が近い順に通路セルを集める
   const cells = [];
   for (let y = 1; y < ROWS - 1; y++) {
     for (let x = 1; x < COLS - 1; x++) {
@@ -149,14 +147,12 @@ function findSpawnPoints4() {
   }
   cells.sort((a, b) => a.d - b.d);
 
-  // なるべく近いけど、同じ場所にならない4つ
   const picked = [];
   for (const c of cells) {
     if (picked.length >= 4) break;
     if (!picked.some((p) => p.x === c.x && p.y === c.y)) picked.push({ x: c.x, y: c.y });
   }
 
-  // 念のため足りなかったら (1,1) 周辺も含めて埋める
   if (picked.length < 4) {
     const fallback = [
       { x: 1, y: 1 },
@@ -173,14 +169,12 @@ function findSpawnPoints4() {
     }
   }
 
-  // 最終保証（同じ場所でもいいから4つ）
   while (picked.length < 4) picked.push({ x: 1, y: 1 });
-
   return picked.slice(0, 4);
 }
 
 function buildYearMap(list) {
-  const m = new Map(); // yearsAgo -> [{event, yearsAgo}, ...]
+  const m = new Map();
   for (const it of list || []) {
     const y = Number(it.yearsAgo);
     if (!Number.isFinite(y)) continue;
@@ -192,10 +186,9 @@ function buildYearMap(list) {
   return m;
 }
 
-// 「時系列が近いN個」：yearsAgo の連続ウィンドウから抽出（同yearsは同waveで出ない）
 function pickWaveNearN(list, n, rng = Math.random) {
   const yearMap = buildYearMap(list);
-  const years = Array.from(yearMap.keys()).sort((a, b) => a - b); // 小=新しい → 大=古い
+  const years = Array.from(yearMap.keys()).sort((a, b) => a - b);
   if (years.length === 0) return [];
 
   const want = Math.min(n, years.length);
@@ -213,6 +206,8 @@ function pickWaveNearN(list, n, rng = Math.random) {
 function SoloLayout({ title, children }) {
   return (
     <main className="min-h-screen bg-gradient-to-b from-slate-100 via-slate-50 to-slate-100 text-slate-900">
+     
+
       <div className="max-w-3xl mx-auto px-4 py-4 sm:py-6">
         <header className="mb-2 flex items-center justify-between">
           <h1 className="text-lg sm:text-2xl font-bold">{title}</h1>
@@ -270,7 +265,6 @@ function bfsReachable(start, goal, blockedSet) {
   return false;
 }
 
-// ====== 「順番通りに、残りエサを踏まずに到達できる」配置になるまで引き直す ======
 function pickEmptyCellsValidated(count, forbiddenSet, orderCells, startPos) {
   const maxTry = 2200;
 
@@ -328,12 +322,9 @@ function pickEmptyCellsValidated(count, forbiddenSet, orderCells, startPos) {
       curPos = { x: target.x, y: target.y };
     }
 
-    if (ok) {
-      return placed.map((p) => ({ x: p.x, y: p.y }));
-    }
+    if (ok) return placed.map((p) => ({ x: p.x, y: p.y }));
   }
 
-  // fallback
   const cellsFallback = [];
   const localForbid = new Set(forbiddenSet);
   while (cellsFallback.length < count) {
@@ -349,13 +340,13 @@ function pickEmptyCellsValidated(count, forbiddenSet, orderCells, startPos) {
 }
 
 export default function BeforePacmanPage() {
-  const [status, setStatus] = useState('loading'); // loading | choose | preview | playing | finished
+  const [status, setStatus] = useState('loading');
   const [message, setMessage] = useState('');
 
   const [rawList, setRawList] = useState([]);
 
-  const [wave, setWave] = useState([]); // [{event, yearsAgo, letter, x, y, id}]
-  const [mode, setMode] = useState(null); // 'OLD' or 'NEW'
+  const [wave, setWave] = useState([]);
+  const [mode, setMode] = useState(null);
   const [expectedIndex, setExpectedIndex] = useState(0);
 
   const [previewLeft, setPreviewLeft] = useState(PREVIEW_SEC);
@@ -473,7 +464,6 @@ export default function BeforePacmanPage() {
     load();
   }, []);
 
-  // ===== ゴースト初期化：壁セルを避けて4体必ず出す =====
   const resetActors = () => {
     setPlayer({ x: 1, y: 1, dir: 'RIGHT', nextDir: 'RIGHT' });
 
@@ -481,7 +471,6 @@ export default function BeforePacmanPage() {
     const cx = Math.floor(COLS / 2);
     const cy = Math.floor(ROWS / 2);
 
-    // 巡回（縄張り）エリア：中心付近の矩形
     const patrolRect = {
       x0: clamp(cx - 5, 1, COLS - 2),
       x1: clamp(cx + 5, 1, COLS - 2),
@@ -496,7 +485,6 @@ export default function BeforePacmanPage() {
       { x: patrolRect.x0, y: patrolRect.y1 },
     ].filter((pt) => !isWall(pt.x, pt.y));
 
-    // 4体を必ず別セルへ
     const gs = [
       { id: 'g_red', x: sp[0].x, y: sp[0].y, dir: 'LEFT', kind: 'chase' },
       {
@@ -531,9 +519,8 @@ export default function BeforePacmanPage() {
     });
 
     const forbidden = new Set();
-    forbidden.add('1,1'); // player start
+    forbidden.add('1,1');
 
-    // ゴーストのスポーンも避ける（詰み防止）
     const sp = findSpawnPoints4();
     for (const p of sp) forbidden.add(`${p.x},${p.y}`);
 
@@ -565,7 +552,6 @@ export default function BeforePacmanPage() {
     setStatus('preview');
   };
 
-  // previewカウントダウン
   useEffect(() => {
     if (status !== 'preview') return;
 
@@ -593,7 +579,6 @@ export default function BeforePacmanPage() {
     setStatus('choose');
   };
 
-  // ===== 入力（キーボード + スワイプ）=====
   const pushDir = (dir) => {
     if (status !== 'playing') return;
     setPlayer((p) => ({ ...p, nextDir: dir }));
@@ -611,10 +596,8 @@ export default function BeforePacmanPage() {
 
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status]);
 
-  // スワイプ（盤面上で）
   const swipeRef = useRef({ active: false, sx: 0, sy: 0, decided: false });
 
   const decideSwipeDir = (dx, dy) => {
@@ -677,9 +660,8 @@ export default function BeforePacmanPage() {
       el.removeEventListener('pointerup', onUp);
       el.removeEventListener('pointercancel', onUp);
     };
-  }, [status]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [status]);
 
-  // ===== ゲームオーバー（残り問題も全部出す）=====
   const gameOver = ({ reason, wrongPellet }) => {
     const finalScore = scoreRef.current;
 
@@ -945,7 +927,6 @@ export default function BeforePacmanPage() {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
       rafRef.current = null;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status, mode, expectedIndex, wave, expected]);
 
   // ===== UI =====
@@ -1108,7 +1089,7 @@ export default function BeforePacmanPage() {
       <div
         className="absolute flex items-center justify-center font-black"
         style={{
-          left: Math.floor(tilePx * 0.15),
+                    left: Math.floor(tilePx * 0.15),
           top: Math.floor(tilePx * 0.15),
           width: Math.floor(tilePx * 0.7),
           height: Math.floor(tilePx * 0.7),
@@ -1145,65 +1126,59 @@ export default function BeforePacmanPage() {
     </div>
   );
 
-  const GhostSprite = ({ g }) => {
-  const body =
-    g.id === 'g_red'
-      ? '#ff4d4d'
-      : g.id === 'g_yellow'
-        ? '#ffd400'
-        : g.id === 'g_pink'
-          ? '#ff66cc'
-          : '#33dd77';
+// ===== プレイヤー（ドット絵：ペンギン） =====
+const PlayerSprite = ({ x, y }) => {
+  const bodyColor = '#ffffff';   // 白ボール
+  const eyeWhite = '#ffffff';
+  const pupilColor = '#111111';
 
-  // ドットの大きさ（タイルに合わせて自動で調整）
-  const px = Math.max(2, Math.floor(tilePx / 8)); // 例: tilePx 16〜26 → px 2〜3
+  const px = Math.max(2, Math.floor(tilePx / 8));
   const w = px * 8;
   const h = px * 8;
 
-  // 8x8 ドット（1=塗る, 0=透明）
-  // かわいいゴースト（頭丸＋下ギザ）
-  const ghostBits = [
+  // 完全な丸
+  const bodyBits = [
     '00111100',
     '01111110',
     '11111111',
-    '11011011',
     '11111111',
     '11111111',
-    '11011011',
-    '10100101',
+    '11111111',
+    '01111110',
+    '00111100',
   ];
 
-  // 目（白）を上から被せる
+  // 目（左右）
   const eyeBits = [
     '00000000',
     '00000000',
     '00000000',
-    '00100100',
-    '00100100',
+    '01000010',
+    '01000010',
     '00000000',
     '00000000',
     '00000000',
   ];
 
-  // 黒目（ちょいズラして可愛く）
+  // 黒目（ちょい中央寄り）
   const pupilBits = [
     '00000000',
     '00000000',
     '00000000',
-    '00010000',
-    '00010000',
+    '01100110',
+    '01100110',
     '00000000',
     '00000000',
     '00000000',
   ];
 
-  const renderBits = (bits, color, opacity = 1) =>
+  const renderBits = (bits, color, opacity = 1, keyPrefix = 'p') =>
     bits.flatMap((row, yy) =>
       row.split('').map((c, xx) => {
         if (c !== '1') return null;
         return (
           <div
-            key={`${yy}-${xx}-${color}`}
+            key={`${keyPrefix}-${yy}-${xx}`}
             style={{
               position: 'absolute',
               left: xx * px,
@@ -1222,33 +1197,138 @@ export default function BeforePacmanPage() {
     <div
       className="absolute"
       style={{
-        left: g.x * tilePx + Math.floor((tilePx - w) / 2),
-        top: g.y * tilePx + Math.floor((tilePx - h) / 2),
+        left: x * tilePx + Math.floor((tilePx - w) / 2),
+        top: y * tilePx + Math.floor((tilePx - h) / 2),
         width: w,
         height: h,
-        zIndex: 11,
+        zIndex: 12,
         imageRendering: 'pixelated',
       }}
-      title="ghost"
+      title="player"
     >
       {/* 影 */}
       <div
         style={{
           position: 'absolute',
           inset: 0,
-          filter: 'drop-shadow(0 6px 8px rgba(0,0,0,0.45))',
+          filter: 'drop-shadow(0 6px 10px rgba(0,0,0,0.45))',
         }}
       >
-        <div style={{ position: 'absolute', inset: 0 }}>{renderBits(ghostBits, body)}</div>
+        <div style={{ position: 'absolute', inset: 0 }}>
+          {renderBits(bodyBits, bodyColor, 1, 'body')}
+        </div>
       </div>
 
       {/* 目 */}
-      <div style={{ position: 'absolute', inset: 0 }}>{renderBits(eyeBits, 'white', 0.95)}</div>
-      <div style={{ position: 'absolute', inset: 0 }}>{renderBits(pupilBits, '#111', 0.9)}</div>
+      <div style={{ position: 'absolute', inset: 0 }}>
+        {renderBits(eyeBits, eyeWhite, 0.95, 'eye')}
+      </div>
+      <div style={{ position: 'absolute', inset: 0 }}>
+        {renderBits(pupilBits, pupilColor, 0.9, 'pupil')}
+      </div>
     </div>
   );
 };
 
+
+
+  // ===== ゴースト（ドット絵） =====
+  const GhostSprite = ({ g }) => {
+    const body =
+      g.id === 'g_red'
+        ? '#ff4d4d'
+        : g.id === 'g_yellow'
+          ? '#ffd400'
+          : g.id === 'g_pink'
+            ? '#ff66cc'
+            : '#33dd77';
+
+    const px = Math.max(2, Math.floor(tilePx / 8));
+    const w = px * 8;
+    const h = px * 8;
+
+    const ghostBits = [
+      '00111100',
+      '01111110',
+      '11111111',
+      '11011011',
+      '11111111',
+      '11111111',
+      '11011011',
+      '10100101',
+    ];
+
+    const eyeBits = [
+      '00000000',
+      '00000000',
+      '00000000',
+      '00100100',
+      '00100100',
+      '00000000',
+      '00000000',
+      '00000000',
+    ];
+
+    const pupilBits = [
+      '00000000',
+      '00000000',
+      '00000000',
+      '00010000',
+      '00010000',
+      '00000000',
+      '00000000',
+      '00000000',
+    ];
+
+    const renderBits = (bits, color, opacity = 1) =>
+      bits.flatMap((row, yy) =>
+        row.split('').map((c, xx) => {
+          if (c !== '1') return null;
+          return (
+            <div
+              key={`${yy}-${xx}-${color}`}
+              style={{
+                position: 'absolute',
+                left: xx * px,
+                top: yy * px,
+                width: px,
+                height: px,
+                background: color,
+                opacity,
+              }}
+            />
+          );
+        })
+      );
+
+    return (
+      <div
+        className="absolute"
+        style={{
+          left: g.x * tilePx + Math.floor((tilePx - w) / 2),
+          top: g.y * tilePx + Math.floor((tilePx - h) / 2),
+          width: w,
+          height: h,
+          zIndex: 11,
+          imageRendering: 'pixelated',
+        }}
+        title="ghost"
+      >
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            filter: 'drop-shadow(0 6px 8px rgba(0,0,0,0.45))',
+          }}
+        >
+          <div style={{ position: 'absolute', inset: 0 }}>{renderBits(ghostBits, body)}</div>
+        </div>
+
+        <div style={{ position: 'absolute', inset: 0 }}>{renderBits(eyeBits, 'white', 0.95)}</div>
+        <div style={{ position: 'absolute', inset: 0 }}>{renderBits(pupilBits, '#111', 0.9)}</div>
+      </div>
+    );
+  };
 
   const Board = ({ dim }) => (
     <div
@@ -1299,13 +1379,17 @@ export default function BeforePacmanPage() {
           <PelletAndLabel key={q.id} q={q} />
         ))}
 
-        
+        {/* ★プレイヤー（パックマン） */}
+        <PlayerSprite x={player.x} y={player.y} />
+
         {(ghosts || []).map((g) => (
           <GhostSprite key={g.id} g={g} />
         ))}
       </div>
 
-      {dim && <div className="absolute inset-0" style={{ background: 'rgba(2,6,23,0.15)', zIndex: 30 }} />}
+      {dim && (
+        <div className="absolute inset-0" style={{ background: 'rgba(2,6,23,0.15)', zIndex: 30 }} />
+      )}
     </div>
   );
 
@@ -1330,7 +1414,9 @@ export default function BeforePacmanPage() {
           <div className="mt-3 flex flex-col items-center gap-2">
             <Board dim />
 
-            <div className="text-[11px] text-slate-700 text-center">いまは準備時間（操作できません）／ 10秒後に自動で開始</div>
+            <div className="text-[11px] text-slate-700 text-center">
+              いまは準備時間（操作できません）／ 10秒後に自動で開始
+            </div>
 
             <div className="text-center">
               <Link href="/" className="text-xs text-sky-700 hover:underline">
@@ -1373,3 +1459,5 @@ export default function BeforePacmanPage() {
     </SoloLayout>
   );
 }
+
+
