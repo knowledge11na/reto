@@ -92,8 +92,7 @@ export async function POST(request) {
     // ・15問投稿していて復活未使用 → 2
     // ・それ以外 → 1
     // -----------------------------------
-    const maxRuns =
-      hasPostingTicket && !restoredToday ? 2 : 1;
+    const maxRuns = hasPostingTicket && !restoredToday ? 2 : 1;
 
     // 上限に到達している場合
     if (attemptCount >= maxRuns) {
@@ -112,11 +111,7 @@ export async function POST(request) {
     let isRestore = false;
 
     // 1回プレイ済みで、復活未使用で、15問投稿済み → 復活を使う
-    if (
-      attemptCount === 1 &&
-      hasPostingTicket &&
-      !restoredToday
-    ) {
+    if (attemptCount === 1 && hasPostingTicket && !restoredToday) {
       isRestore = true;
 
       await db.run(
@@ -131,6 +126,7 @@ export async function POST(request) {
 
     // -----------------------------------
     // 承認済み問題をランダム取得
+    // ★ ここが重要：question を優先して返す（管理者編集が効く）
     // -----------------------------------
     const rows = await queryRows(
       `
@@ -149,15 +145,19 @@ export async function POST(request) {
       `
     );
 
-    const questions = rows.map((row) => ({
-      id: row.id,
-      type: row.type || 'single',
-      question: row.question_text ?? row.question ?? '',
-      options: toStringArray(row.options_json),
-      correct: row.correct_answer ?? '',
-      altAnswers: toStringArray(row.alt_answers_json),
-      tags: toStringArray(row.tags_json),
-    }));
+    const questions = rows.map((row) => {
+      const qText = (row.question ?? row.question_text ?? '').toString();
+
+      return {
+        id: row.id,
+        type: row.type || 'single',
+        question: qText,
+        options: toStringArray(row.options_json),
+        correct: row.correct_answer ?? '',
+        altAnswers: toStringArray(row.alt_answers_json),
+        tags: toStringArray(row.tags_json),
+      };
+    });
 
     // -----------------------------------
     // 今日の「プレイ済み」フラグを記録

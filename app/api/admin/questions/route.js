@@ -61,7 +61,8 @@ function mapQuestionRow(row) {
     tags = [];
   }
 
-  const questionText = row.question_text ?? row.question ?? '';
+  // ★ ここも challenge 側と同じ思想で question 優先
+  const questionText = (row.question ?? row.question_text ?? '').toString();
 
   return {
     id: row.id,
@@ -105,12 +106,13 @@ export async function GET(request) {
       where.push(
         `
         (
-          qs.question ILIKE '%' || $${idx} || '%'
-          OR COALESCE(qs.correct_answer, '')        ILIKE '%' || $${idx} || '%'
+          COALESCE(qs.question, '')                ILIKE '%' || $${idx} || '%'
+          OR COALESCE(qs.question_text, '')       ILIKE '%' || $${idx} || '%'
+          OR COALESCE(qs.correct_answer, '')      ILIKE '%' || $${idx} || '%'
           OR COALESCE(qs.alt_answers_json::text,'') ILIKE '%' || $${idx} || '%'
-          OR COALESCE(qs.created_by, '')            ILIKE '%' || $${idx} || '%'
-          OR COALESCE(u.display_name, '')           ILIKE '%' || $${idx} || '%'
-          OR COALESCE(u.username, '')               ILIKE '%' || $${idx} || '%'
+          OR COALESCE(qs.created_by, '')          ILIKE '%' || $${idx} || '%'
+          OR COALESCE(u.display_name, '')         ILIKE '%' || $${idx} || '%'
+          OR COALESCE(u.username, '')             ILIKE '%' || $${idx} || '%'
         )
         `.trim()
       );
@@ -131,6 +133,7 @@ export async function GET(request) {
         qs.id,
         qs.type AS question_type,
         qs.question,
+        qs.question_text,
         qs.correct_answer,
         qs.alt_answers_json,
         qs.options_json,
@@ -176,10 +179,7 @@ export async function POST(request) {
       const id = Number(body.id);
 
       if (!id) {
-        return NextResponse.json(
-          { error: 'id が必要です' },
-          { status: 400 }
-        );
+        return NextResponse.json({ error: 'id が必要です' }, { status: 400 });
       }
 
       // reject_reason カラムが無くても動くように、status と reviewed_at だけ更新
@@ -200,10 +200,7 @@ export async function POST(request) {
     // ▼ ここから編集保存（問題内容の変更）
     const id = Number(body.id);
     if (!id) {
-      return NextResponse.json(
-        { error: 'id が必要です' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'id が必要です' }, { status: 400 });
     }
 
     const question = (body.question || '').toString();
@@ -223,19 +220,18 @@ export async function POST(request) {
       ? body.tags.map((s) => String(s).trim()).filter((s) => s !== '')
       : [];
 
-    const optionsJson =
-      optionsArray.length > 0 ? JSON.stringify(optionsArray) : null;
-    const altJson =
-      altArray.length > 0 ? JSON.stringify(altArray) : null;
-    const tagsJson =
-      tagsArray.length > 0 ? JSON.stringify(tagsArray) : null;
+    const optionsJson = optionsArray.length > 0 ? JSON.stringify(optionsArray) : null;
+    const altJson = altArray.length > 0 ? JSON.stringify(altArray) : null;
+    const tagsJson = tagsArray.length > 0 ? JSON.stringify(tagsArray) : null;
 
+    // ★ 重要：question と question_text を両方更新（互換維持）
     await db.query(
       `
         UPDATE question_submissions
         SET
           type = $1,
           question = $2,
+          question_text = $2,
           correct_answer = $3,
           options_json = $4::jsonb,
           alt_answers_json = $5::jsonb,
@@ -248,10 +244,7 @@ export async function POST(request) {
     return NextResponse.json({ ok: true }, { status: 200 });
   } catch (e) {
     console.error('/api/admin/questions POST error', e);
-    return NextResponse.json(
-      { error: '保存に失敗しました' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: '保存に失敗しました' }, { status: 500 });
   }
 }
 
@@ -264,10 +257,7 @@ export async function DELETE(request) {
     const id = Number(searchParams.get('id') || '');
 
     if (!id) {
-      return NextResponse.json(
-        { error: 'id が必要です' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'id が必要です' }, { status: 400 });
     }
 
     // 一応ステータス確認（保険）
@@ -276,10 +266,7 @@ export async function DELETE(request) {
       [id]
     );
     if (!rows.length) {
-      return NextResponse.json(
-        { error: '問題が見つかりません' },
-        { status: 404 }
-      );
+      return NextResponse.json({ error: '問題が見つかりません' }, { status: 404 });
     }
     if (rows[0].status !== 'rejected') {
       return NextResponse.json(
@@ -288,17 +275,11 @@ export async function DELETE(request) {
       );
     }
 
-    await db.query(
-      `DELETE FROM question_submissions WHERE id = $1`,
-      [id]
-    );
+    await db.query(`DELETE FROM question_submissions WHERE id = $1`, [id]);
 
     return NextResponse.json({ ok: true }, { status: 200 });
   } catch (e) {
     console.error('/api/admin/questions DELETE error', e);
-    return NextResponse.json(
-      { error: '削除に失敗しました' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: '削除に失敗しました' }, { status: 500 });
   }
 }

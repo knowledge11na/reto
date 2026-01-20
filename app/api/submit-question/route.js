@@ -28,15 +28,41 @@ async function getCurrentUser() {
   }
 }
 
+// ★ 互換：answer が JSON配列文字列で来ても || 形式に正規化する
+function normalizeAnswer(questionType, answer) {
+  const raw = String(answer ?? '').trim();
+  if (!raw) return '';
+
+  if (questionType === 'multi' || questionType === 'order') {
+    if (raw.startsWith('[') && raw.endsWith(']')) {
+      try {
+        const arr = JSON.parse(raw);
+        if (Array.isArray(arr)) {
+          return arr
+            .map((s) => String(s ?? '').trim())
+            .filter(Boolean)
+            .join('||');
+        }
+      } catch {
+        // 失敗したらそのまま
+      }
+    }
+  }
+
+  return raw;
+}
+
 export async function POST(req) {
   try {
-    const body = await req.json();
+    const body = await req.json().catch(() => ({}));
+
+    // ★ fastMode: true のときだけ超高速（ベリー/デイリー/エンブレム等 全部スキップ）
+    const fastMode = !!body.fastMode;
 
     let { type, question, options = [], answer, tags = [], altAnswers = [] } =
       body;
 
     const questionText = (question || '').trim();
-    const correctAnswer = (answer || '').trim();
 
     if (!questionText) {
       return new Response(
@@ -49,28 +75,21 @@ export async function POST(req) {
       );
     }
 
-    // ログインユーザー
-    const currentUser = await getCurrentUser();
-    const authorUserId = currentUser?.id ?? null;
-    const authorName =
-      currentUser?.display_name || currentUser?.username || null;
-    const isOfficialAuthor = currentUser?.is_official_author ?? 0;
-
-    const initialStatus = isOfficialAuthor ? 'approved' : 'pending';
-
     const cleanedOptions = Array.isArray(options)
-      ? options.map((o) => o.trim()).filter(Boolean)
+      ? options.map((o) => String(o ?? '').trim()).filter(Boolean)
       : [];
 
     const cleanedTags = Array.isArray(tags) ? tags : [];
     const cleanedAltAnswers = Array.isArray(altAnswers)
-      ? altAnswers.map((a) => a.trim()).filter(Boolean)
+      ? altAnswers.map((a) => String(a ?? '').trim()).filter(Boolean)
       : [];
 
     const questionType =
       type || (cleanedOptions.length > 0 ? 'single' : 'text');
 
-    // 複数選択バリデーション
+    const correctAnswer = normalizeAnswer(questionType, answer);
+
+    // 複数選択バリデーション（|| 形式で統一）
     if (questionType === 'multi') {
       const parts = correctAnswer
         .split('||')
@@ -89,6 +108,52 @@ export async function POST(req) {
     }
 
     const legacyOptions = cleanedOptions.join('||');
+
+    // =====================================
+    // ★ 超高速モード：INSERTだけして即return
+    // =====================================
+    if (fastMode) {
+      await db.run(
+        `
+          INSERT INTO question_submissions
+            (type, question, options, answer, status,
+             question_text, options_json, correct_answer,
+             alt_answers_json, tags_json, updated_at)
+          VALUES
+            ($1, $2, $3, $4, 'pending',
+             $5, $6, $7,
+             $8, $9, CURRENT_TIMESTAMP)
+        `,
+        [
+          questionType,
+          questionText,
+          legacyOptions,
+          correctAnswer,
+          questionText,
+          JSON.stringify(cleanedOptions),
+          correctAnswer,
+          JSON.stringify(cleanedAltAnswers),
+          JSON.stringify(cleanedTags),
+        ]
+      );
+
+      return new Response(JSON.stringify({ ok: true, status: 'pending' }), {
+        status: 201,
+      });
+    }
+
+    // =====================================
+    // 通常モード：今まで通り全部やる
+    // =====================================
+
+    // ログインユーザー
+    const currentUser = await getCurrentUser();
+    const authorUserId = currentUser?.id ?? null;
+    const authorName =
+      currentUser?.display_name || currentUser?.username || null;
+    const isOfficialAuthor = currentUser?.is_official_author ?? 0;
+
+    const initialStatus = isOfficialAuthor ? 'approved' : 'pending';
 
     // ---- INSERT ----
     await db.run(
@@ -124,21 +189,17 @@ export async function POST(req) {
       await addBerriesByUserId(
         authorUserId,
         reward,
-        isOfficialAuthor
-          ? '公認作問者・問題投稿報酬'
-          : '問題投稿報酬'
+        isOfficialAuthor ? '公認作問者・問題投稿報酬' : '問題投稿報酬'
       );
     }
 
     // ================================
-    // ★ 投稿数 +1 → 「15件投稿した」という情報だけ持つ
-    //    チャレンジの復活判定は /api/challenge/start 側でやる
+    // ★ 投稿数 +1
     // ================================
     try {
       if (authorUserId) {
         const today = new Date().toISOString().slice(0, 10);
 
-        // 今日の投稿数 +1
         await db.run(
           `
             INSERT INTO challenge_daily_posts (user_id, date, count)
@@ -154,8 +215,7 @@ export async function POST(req) {
     }
 
     // ================================
-    // ★ タグ投稿数 → エンブレム獲得チェック
-    //    自分の全投稿（承認待ち＋承認済み）から tags_json を集計
+    // ★ タグ投稿数 → エンブレム獲得チェック（ここが抜けない版）
     // ================================
     try {
       if (authorUserId && cleanedTags.length > 0 && currentUser) {
@@ -163,7 +223,6 @@ export async function POST(req) {
         const displayName = currentUser.display_name || '';
         const userIdText = String(authorUserId);
 
-        // 自分の投稿を、author_user_id と created_by の全パターンで拾う
         const tagRows = await db.query(
           `
             SELECT tags_json
@@ -180,7 +239,6 @@ export async function POST(req) {
           [authorUserId, username, displayName, userIdText]
         );
 
-        // tags_json を安全に配列に変換してカウント
         const tagCount = {};
         for (const r of tagRows) {
           let arr = [];
@@ -206,44 +264,32 @@ export async function POST(req) {
           }
         }
 
-        // ★ titles テーブルの id に合わせる（1〜18 がストーリー系と想定）
         const EMBLEMS = [
-          { id: 1,  tags: ['東の海'],                 needed: 30 },
-          { id: 2,  tags: ['偉大なる航路突入'],       needed: 30 },
-          { id: 3,  tags: ['アラバスタ'],             needed: 30 },
-          { id: 4,  tags: ['空島'],                   needed: 30 },
-          { id: 5,  tags: ['DBF'],                   needed: 30 },
-          // 管理画面では「W7、エニエス・ロビー」という１つのタグ
-          { id: 6,  tags: ['W7、エニエス・ロビー'],   needed: 30 },
-          { id: 7,  tags: ['スリラーバーク'],         needed: 30 },
-          // シャボン＆女ヶ島は合算
-          {
-            id: 8,
-            tags: ['シャボンディ諸島', '女ヶ島'],
-            needed: 30,
-            mixed: true,
-          },
-          { id: 9,  tags: ['インペルダウン'],         needed: 30 },
-          { id: 10, tags: ['頂上戦争'],               needed: 30 },
-          { id: 11, tags: ['魚人島'],                 needed: 30 },
-          { id: 12, tags: ['パンクハザード'],         needed: 30 },
-          { id: 13, tags: ['ドレスローザ'],           needed: 30 },
-          { id: 14, tags: ['ゾウ'],                   needed: 30 },
-          { id: 15, tags: ['WCI'],                    needed: 30 },
-          { id: 16, tags: ['ワノ国'],                 needed: 30 },
-          { id: 17, tags: ['エッグヘッド'],           needed: 30 },
-          { id: 18, tags: ['エルバフ'],               needed: 30 },
+          { id: 1, tags: ['東の海'], needed: 30 },
+          { id: 2, tags: ['偉大なる航路突入'], needed: 30 },
+          { id: 3, tags: ['アラバスタ'], needed: 30 },
+          { id: 4, tags: ['空島'], needed: 30 },
+          { id: 5, tags: ['DBF'], needed: 30 },
+          { id: 6, tags: ['W7、エニエス・ロビー'], needed: 30 },
+          { id: 7, tags: ['スリラーバーク'], needed: 30 },
+          { id: 8, tags: ['シャボンディ諸島', '女ヶ島'], needed: 30, mixed: true },
+          { id: 9, tags: ['インペルダウン'], needed: 30 },
+          { id: 10, tags: ['頂上戦争'], needed: 30 },
+          { id: 11, tags: ['魚人島'], needed: 30 },
+          { id: 12, tags: ['パンクハザード'], needed: 30 },
+          { id: 13, tags: ['ドレスローザ'], needed: 30 },
+          { id: 14, tags: ['ゾウ'], needed: 30 },
+          { id: 15, tags: ['WCI'], needed: 30 },
+          { id: 16, tags: ['ワノ国'], needed: 30 },
+          { id: 17, tags: ['エッグヘッド'], needed: 30 },
+          { id: 18, tags: ['エルバフ'], needed: 30 },
         ];
 
         for (const emblem of EMBLEMS) {
           let total = 0;
 
           if (emblem.mixed) {
-            // 複数タグの合算
-            total = emblem.tags.reduce(
-              (sum, t) => sum + (tagCount[t] || 0),
-              0
-            );
+            total = emblem.tags.reduce((sum, t) => sum + (tagCount[t] || 0), 0);
           } else {
             total = tagCount[emblem.tags[0]] || 0;
           }
@@ -255,7 +301,7 @@ export async function POST(req) {
                 VALUES ($1, $2)
                 ON CONFLICT (user_id, title_id) DO NOTHING
               `,
-              [authorUserId, emblem.id]  // ← 数値IDをそのまま入れる
+              [authorUserId, emblem.id]
             );
           }
         }
@@ -264,17 +310,15 @@ export async function POST(req) {
       console.error('emblem check failed:', e);
     }
 
-
-    return new Response(
-      JSON.stringify({ ok: true, status: initialStatus }),
-      { status: 201 }
-    );
+    return new Response(JSON.stringify({ ok: true, status: initialStatus }), {
+      status: 201,
+    });
   } catch (e) {
     return new Response(
       JSON.stringify({
         ok: false,
         error: 'failed_to_submit',
-        message: e.message,
+        message: e?.message || 'failed',
       }),
       { status: 500 }
     );

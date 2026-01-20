@@ -60,19 +60,69 @@ export async function POST(req) {
         .filter((o) => o)
         .sort();
 
+    // ★ 答えの正規化：
+    // - "A||B" / '["A","B"]' を吸収
+    // - 各要素を normalizeText して比較（見た目が同じ揺れを吸収）
+    // - set比較（順序違い吸収）も残す
+    const parseAnswerList = (v) => {
+      const raw = String(v ?? '').trim();
+      if (!raw) return [];
+
+      const norm = (x) => normalizeText(String(x ?? '').trim());
+
+      // JSON配列文字列 → 配列化
+      if (raw.startsWith('[') && raw.endsWith(']')) {
+        try {
+          const arr = JSON.parse(raw);
+          if (Array.isArray(arr)) {
+            return arr.map(norm).filter(Boolean);
+          }
+        } catch {
+          // fallthrough
+        }
+      }
+
+      // "A||B" 形式 → 分割
+      if (raw.includes('||')) {
+        return raw
+          .split('||')
+          .map(norm)
+          .filter(Boolean);
+      }
+
+      // 単一
+      return [norm(raw)].filter(Boolean);
+    };
+
+    const buildAnswerKeys = (v) => {
+      const list = parseAnswerList(v);
+      const ordered = list.join('||');
+      const set = list.slice().sort().join('||');
+      return { ordered, set };
+    };
+
+    const isAnswerEqual = (a, b) => {
+      const A = buildAnswerKeys(a);
+      const B = buildAnswerKeys(b);
+      if (!A.ordered || !B.ordered) return false;
+
+      // どっちか一致したらOK（multi/orderはset一致で吸収）
+      return A.ordered === B.ordered || A.set === B.set;
+    };
+
     const thisOptionsKey = normalizeOptions(options).join('|');
     const questionText = question || '';
 
     // DB から questions + question_submissions をまとめて取得（Supabase / Postgres）
-    const rows = await db.query(
+        const rows = await db.query(
       `
         SELECT
           id,
           question_text,
           question,
           correct_answer,
-          NULL AS answer,                 -- questions 側には answer カラムが無いので NULL
-          options_json::text AS options_json,  -- ★ 型を text にそろえる
+          NULL AS answer,
+          options_json::text AS options_json,
           status,
           'questions' AS source
         FROM questions
@@ -84,14 +134,15 @@ export async function POST(req) {
           question,
           correct_answer,
           answer,
-          options_json::text AS options_json,  -- ★ こちらも text にキャスト
+          options_json::text AS options_json,
           status,
           'question_submissions' AS source
         FROM question_submissions
-        WHERE status = 'pending'
+        WHERE status IN ('pending', 'approved')
       `,
       []
     );
+
 
     const duplicates = [];
 
@@ -101,7 +152,6 @@ export async function POST(req) {
 
       let candOptions = [];
 
-      // options_json は text になっているので、必要なら JSON.parse する
       if (row.options_json) {
         if (Array.isArray(row.options_json)) {
           candOptions = row.options_json;
@@ -109,7 +159,7 @@ export async function POST(req) {
           try {
             const parsed = JSON.parse(row.options_json);
             if (Array.isArray(parsed)) candOptions = parsed;
-          } catch (e) {
+          } catch {
             candOptions = [];
           }
         }
@@ -124,15 +174,19 @@ export async function POST(req) {
         continue;
       }
 
-      // 条件①: 問題文7割以上一致 ＋ 答え完全一致
+      // ★ 丸コピペ対策：問題文が完全一致なら答え関係なく弾く
+      const cond0 = normalizeText(questionText) === normalizeText(qText);
+
+
+      // 条件①: 問題文7割以上一致 ＋ 答え一致（正規化して比較）
       const sim = textSimilarity(questionText, qText);
       const cond1 =
         sim >= 0.7 &&
         !!correctAnswer &&
         !!candAnswer &&
-        correctAnswer === candAnswer;
+        isAnswerEqual(correctAnswer, candAnswer);
 
-      // 条件②: 選択肢セット完全一致 ＋ 答え完全一致
+      // 条件②: 選択肢セット完全一致 ＋ 答え一致（正規化して比較）
       let cond2 = false;
       if (thisOptionsKey && candOptions && candOptions.length > 0) {
         const candKey = candOptions
@@ -147,18 +201,17 @@ export async function POST(req) {
           candKey === thisOptionsKey &&
           !!correctAnswer &&
           !!candAnswer &&
-          correctAnswer === candAnswer;
+          isAnswerEqual(correctAnswer, candAnswer);
       }
 
-      // どちらかに当てはまるなら類似問題として追加
-      if (cond1 || cond2) {
+            if (cond0 || cond1 || cond2) {
         duplicates.push({
           id: row.id,
           question_text: qText,
           correct_answer: candAnswer,
           options: candOptions,
           status: row.status,
-          source: row.source, // 'questions' or 'question_submissions'
+          source: row.source,
           similarity: sim,
         });
       }
@@ -175,7 +228,7 @@ export async function POST(req) {
         '||' +
         d.source;
       if (!uniqMap.has(key)) {
-        uniqMap.set(key, d); // 最初の1件だけ残す
+        uniqMap.set(key, d);
       }
     }
 
