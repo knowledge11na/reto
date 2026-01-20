@@ -1,8 +1,9 @@
-// file: app/page.js 
+// file: app/page.js
 'use client';
 
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
+import ThemeSuggestModal from '@/components/ThemeSuggestModal';
 
 export default function HomePage() {
   const [me, setMe] = useState(null);
@@ -43,9 +44,7 @@ export default function HomePage() {
       .then((res) => res.json())
       .then((data) => {
         const c =
-          typeof data.count === 'number' && data.count > 0
-            ? data.count
-            : 0;
+          typeof data.count === 'number' && data.count > 0 ? data.count : 0;
         setUnreadAnnouncements(c);
       })
       .catch(() => setUnreadAnnouncements(0));
@@ -116,11 +115,8 @@ export default function HomePage() {
           <p className="text-sm mb-1">自動でマッチング開始</p>
           <p className="text-sm mb-3">
             現在レート：
-            <span className="font-bold">
-              {loading ? '----' : ratingText}
-            </span>{' '}
-            ／ オンライン：
-            <span className="font-bold">{onlineCount}人</span>
+            <span className="font-bold">{loading ? '----' : ratingText}</span> ／
+            オンライン：<span className="font-bold">{onlineCount}人</span>
           </p>
 
           {/* ログインしてなければ押せない */}
@@ -145,9 +141,7 @@ export default function HomePage() {
         {/* チャレンジモード */}
         <section className="bg-sky-100 border-2 border-emerald-500 rounded-3xl p-4 shadow-sm">
           <h2 className="text-xl font-extrabold mb-2">🔥 チャレンジモード</h2>
-          <p className="text-sm mb-2">
-            1日1回挑戦可能／3問間違えたら終了
-          </p>
+          <p className="text-sm mb-2">1日1回挑戦可能／3問間違えたら終了</p>
           <Link
             href="/challenge"
             className="block w-full text-center py-3 rounded-full text-emerald-50 font-bold bg-emerald-500 active:bg-emerald-600 shadow"
@@ -214,9 +208,7 @@ export default function HomePage() {
             <p className="text-[10px] leading-tight mb-1">
               シーズンの TOP10 をチェック！
             </p>
-            <p className="text-[10px] leading-tight mb-1">
-              過去のシーズンもこちら
-            </p>
+            <p className="text-[10px] leading-tight mb-1">過去のシーズンもこちら</p>
 
             <Link
               href="/ranking"
@@ -226,6 +218,7 @@ export default function HomePage() {
             </Link>
           </section>
         </div>
+
 
         {/* フッターリンク */}
         <footer className="mt-6 text-center space-y-2">

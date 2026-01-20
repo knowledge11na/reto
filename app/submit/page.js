@@ -3,6 +3,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import ThemeSuggestModal from '@/components/ThemeSuggestModal';
 
 const TAGS_STORY = [
   '東の海',
@@ -914,24 +915,102 @@ TSVもOK（Excelからそのまま貼れる）`}
         <form onSubmit={handleSubmit} className="space-y-4">
           {/* 種別 + 高速チェック */}
           <div className="space-y-1 text-sm">
-            <div className="flex items-center justify-between">
-              <label className="block font-semibold">問題タイプ</label>
+           <div className="flex items-center gap-2">
+  <label className="block font-semibold whitespace-nowrap">問題タイプ</label>
 
-              <label className="inline-flex items-center gap-2 cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  className="accent-amber-400"
-                  checked={skipDuplicateCheck}
-                  onChange={() => {
-                    setSkipDuplicateCheck((v) => !v);
-                    // ONにした瞬間、確認モード解除＆類似一覧クリア（迷い防止）
-                    setConfirmMode(false);
-                    setDuplicates([]);
-                  }}
-                />
-                <span className="text-xs text-amber-200 font-semibold">類似を飛ばす（高速）</span>
-              </label>
-            </div>
+  {/* ★右寄せの土台：ここがポイント */}
+  <div className="flex items-center gap-2 ml-auto">
+    {/* テーマ相談（類似チェックの左に寄せる） */}
+    <ThemeSuggestModal
+  onApply={(picked) => {
+    // =========================
+    // ★ タイトルを問題文用に整形
+    // =========================
+    let title = String(picked?.title || '').trim();
+
+    // 「から作問」を削除
+    title = title.replace(/から作問$/, '').trim();
+
+    // kind別処理
+    if (picked?.kind === 'subtitles') {
+      // 第50話「己が路（みち）」 → 第50話“己が路（みち）”
+      title = title.replace(/第(\d+)話「(.+?)」/, '第$1話“$2”');
+    }
+
+    if (picked?.kind === 'char' || picked?.kind === 'waza') {
+      // 「」の中身だけ取り出す
+      const m = title.match(/「(.+?)」/);
+      if (m) {
+        title = m[1];
+      }
+    }
+
+    if (title) {
+      setQuestion(title);
+    }
+
+    // =========================
+    // 以降は既存ロジックそのまま
+    // =========================
+    const d = picked?.draft;
+
+    if (picked?.kind === 'waza' && d?.question) {
+      setQuestionType('single');
+      setQuestion(d.question || title);
+      const opts = Array.isArray(d.options) ? d.options : [];
+      const correct = d.correct ? [String(d.correct)] : [''];
+      const wrong = opts.filter((x) => String(x) !== String(d.correct));
+
+      setCorrectChoices(correct.length ? correct : ['']);
+      setWrongChoices(wrong.length ? wrong : ['']);
+      setTextAnswer('');
+      setAltTextAnswers(['']);
+      setOrderChoices(['']);
+      return;
+    }
+
+    if (picked?.kind === 'subtitles') {
+      setQuestionType('text');
+      setTextAnswer('');
+      setAltTextAnswers(['']);
+      setCorrectChoices(['']);
+      setWrongChoices(['']);
+      setOrderChoices(['']);
+      return;
+    }
+
+    if (picked?.kind === 'char') {
+      setQuestionType('text');
+      setTextAnswer('');
+      setAltTextAnswers(['']);
+      setCorrectChoices(['']);
+      setWrongChoices(['']);
+      setOrderChoices(['']);
+      return;
+    }
+  }}
+/>
+
+
+
+    {/* 類似を飛ばす（高速） */}
+    <label className="inline-flex items-center gap-2 cursor-pointer select-none">
+      <input
+        type="checkbox"
+        className="accent-amber-400"
+        checked={skipDuplicateCheck}
+        onChange={() => {
+          setSkipDuplicateCheck((v) => !v);
+          setConfirmMode(false);
+          setDuplicates([]);
+        }}
+      />
+      <span className="text-xs text-amber-200 font-semibold">類似チェックをしない</span>
+    </label>
+  </div>
+</div>
+
+
 
             <select
               className="w-full px-2 py-1 rounded bg-slate-900 border border-slate-600 text-[16px]"

@@ -533,9 +533,9 @@ const floatCfg = useMemo(() => {
         }
 
         :root {
-          --doorInsetX: 245px;
+          --doorInsetX: 205px;
           --doorInsetTop: 50px;
-          --doorInsetBottom: 60px;
+          --doorInsetBottom: 30px;
         }
 
         .whoisDoorStage {

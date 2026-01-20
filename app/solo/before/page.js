@@ -9,7 +9,6 @@ const GAME_W = 360;
 const GAME_H = 520;
 
 // ====== 迷路（0=通路, 1=壁） ======
-// シンプルだけど「パックマンっぽく遊べる」固定迷路
 const MAZE = [
   '1111111111111111111',
   '1000000001000000001',
@@ -37,12 +36,13 @@ const MAZE = [
 const ROWS = MAZE.length;
 const COLS = MAZE[0].length;
 
-const TILE = 1; // ここは論理タイル。描画はコンテナに合わせてスケール
+const STEP_MS = 140; // プレイヤー移動（タイル）
+const GHOST_STEP_MS = 175; // ゴースト移動（少し遅め）
 
-const STEP_MS = 140; // プレイヤー 1タイル移動速度
-const GHOST_STEP_MS = 170; // ゴースト速度（少し遅め）
+const PELLET_COUNT = 5;
+const LETTERS = 'ABCDE'.split('');
 
-const LETTERS = 'ABCDEFGHIJ'.split('');
+const PREVIEW_SEC = 10; // ★問題を見せる時間（各WAVE開始前）
 
 function clamp(n, a, b) {
   return Math.max(a, Math.min(b, n));
@@ -61,8 +61,6 @@ function manhattan(a, b) {
   return Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
 }
 
-// yearsAgo：数字が大きいほど古い
-// ルール：同じyearsAgoは同じ回に出さない（= wave内でユニーク）
 function buildYearMap(list) {
   const m = new Map(); // yearsAgo -> [{event, yearsAgo}, ...]
   for (const it of list || []) {
@@ -76,59 +74,22 @@ function buildYearMap(list) {
   return m;
 }
 
-// 「時系列が近い10個」を、ユニークyearsAgoで作る
-function pickWaveNear10(list, rng = Math.random) {
+// 「時系列が近いN個」：yearsAgo の連続ウィンドウから抽出（同yearsは同waveで出ない）
+function pickWaveNearN(list, n, rng = Math.random) {
   const yearMap = buildYearMap(list);
   const years = Array.from(yearMap.keys()).sort((a, b) => a - b); // 小=新しい → 大=古い
   if (years.length === 0) return [];
 
-  // 取りたい数（最大10）
-  const want = Math.min(10, years.length);
-
-  // 近い10個 = yearsの連続ウィンドウ
+  const want = Math.min(n, years.length);
   const maxStart = Math.max(0, years.length - want);
   const start = Math.floor(rng() * (maxStart + 1));
   const windowYears = years.slice(start, start + want);
 
-  // 同じyearsAgoはwave内で出さない（ここはyears自体がユニークなのでOK）
-  // 同yearsに複数eventがある場合は、その中からランダムに1つ
-  const picked = windowYears.map((y) => {
+  return windowYears.map((y) => {
     const arr = yearMap.get(y) || [];
     const idx = Math.floor(rng() * arr.length);
     return arr[idx] || { event: String(y), yearsAgo: y };
   });
-
-  return picked;
-}
-
-function pickEmptyCells(count, forbiddenSet) {
-  const cells = [];
-  const tries = 4000;
-  let t = 0;
-
-  while (cells.length < count && t < tries) {
-    t++;
-    const x = Math.floor(Math.random() * COLS);
-    const y = Math.floor(Math.random() * ROWS);
-
-    if (isWall(x, y)) continue;
-
-    const key = `${x},${y}`;
-    if (forbiddenSet.has(key)) continue;
-
-    // 周辺が詰まりすぎると置きづらいので、少しだけ制約（任意）
-    const n =
-      (isWall(x + 1, y) ? 1 : 0) +
-      (isWall(x - 1, y) ? 1 : 0) +
-      (isWall(x, y + 1) ? 1 : 0) +
-      (isWall(x, y - 1) ? 1 : 0);
-    if (n >= 3) continue;
-
-    forbiddenSet.add(key);
-    cells.push({ x, y });
-  }
-
-  return cells;
 }
 
 function dirToVec(dir) {
@@ -165,9 +126,9 @@ function choicesFrom(pos) {
 function SoloLayout({ title, children }) {
   return (
     <main className="min-h-screen bg-gradient-to-b from-slate-100 via-slate-50 to-slate-100 text-slate-900">
-      <div className="max-w-3xl mx-auto px-4 py-6">
-        <header className="mb-3 flex items-center justify-between">
-          <h1 className="text-xl sm:text-2xl font-bold">{title}</h1>
+      <div className="max-w-3xl mx-auto px-4 py-4 sm:py-6">
+        <header className="mb-2 flex items-center justify-between">
+          <h1 className="text-lg sm:text-2xl font-bold">{title}</h1>
           <Link href="/" className="text-xs text-sky-700 hover:underline">
             ホームへ戻る
           </Link>
@@ -178,68 +139,139 @@ function SoloLayout({ title, children }) {
   );
 }
 
-function TouchPad({ onDir }) {
-  // スマホ用：押してる間は同じ方向を出し続けたいので pointerdown/up で制御
-  const holdRef = useRef({ dir: null, timer: null });
+function formatStartYears(mode, wave) {
+  if (!mode || !wave || wave.length === 0) return null;
+  // OLD: yearsAgo 大きい→小さい（最初=最大）
+  // NEW: yearsAgo 小さい→大きい（最初=最小）
+  let v = wave[0]?.yearsAgo;
+  for (const it of wave) {
+    if (mode === 'OLD') v = Math.max(v, it.yearsAgo);
+    else v = Math.min(v, it.yearsAgo);
+  }
+  return Number.isFinite(v) ? v : null;
+}
 
-  const startHold = (dir) => {
-    onDir(dir);
-    holdRef.current.dir = dir;
-    if (holdRef.current.timer) clearInterval(holdRef.current.timer);
-    holdRef.current.timer = setInterval(() => onDir(dir), 90);
-  };
+// ====== BFS（壁 + ブロックセル回避） ======
+function bfsReachable(start, goal, blockedSet) {
+  if (!start || !goal) return false;
+  const sk = `${start.x},${start.y}`;
+  const gk = `${goal.x},${goal.y}`;
+  if (blockedSet?.has(gk)) return false;
 
-  const stopHold = () => {
-    holdRef.current.dir = null;
-    if (holdRef.current.timer) clearInterval(holdRef.current.timer);
-    holdRef.current.timer = null;
-  };
+  const q = [start];
+  const seen = new Set([sk]);
 
-  useEffect(() => {
-    return () => stopHold();
-  }, []);
+  while (q.length) {
+    const cur = q.shift();
+    const ck = `${cur.x},${cur.y}`;
+    if (ck === gk) return true;
 
-  const Btn = ({ label, dir }) => (
-    <button
-      type="button"
-      className="w-16 h-12 rounded-xl border border-slate-300 bg-white text-slate-900 font-black shadow-sm active:scale-[0.98]"
-      onPointerDown={(e) => {
-        e.preventDefault();
-        startHold(dir);
-      }}
-      onPointerUp={(e) => {
-        e.preventDefault();
-        stopHold();
-      }}
-      onPointerCancel={(e) => {
-        e.preventDefault();
-        stopHold();
-      }}
-      style={{ touchAction: 'none' }}
-    >
-      {label}
-    </button>
-  );
+    const ns = [
+      { x: cur.x + 1, y: cur.y },
+      { x: cur.x - 1, y: cur.y },
+      { x: cur.x, y: cur.y + 1 },
+      { x: cur.x, y: cur.y - 1 },
+    ];
 
-  return (
-    <div className="select-none" style={{ touchAction: 'none' }}>
-      <div className="flex justify-center">
-        <Btn label="▲" dir="UP" />
-      </div>
-      <div className="flex justify-center gap-3 mt-2">
-        <Btn label="◀" dir="LEFT" />
-        <Btn label="▼" dir="DOWN" />
-        <Btn label="▶" dir="RIGHT" />
-      </div>
-      <p className="mt-2 text-[11px] text-slate-600 text-center">
-        スマホ：ボタン押しっぱなしで移動（PCは矢印キーでもOK）
-      </p>
-    </div>
-  );
+    for (const n of ns) {
+      if (isWall(n.x, n.y)) continue;
+      const nk = `${n.x},${n.y}`;
+      if (seen.has(nk)) continue;
+      if (blockedSet?.has(nk)) continue;
+      seen.add(nk);
+      q.push(n);
+    }
+  }
+  return false;
+}
+
+// ====== 「順番通りに、残りエサを踏まずに到達できる」配置になるまで引き直す ======
+function pickEmptyCellsValidated(count, forbiddenSet, orderCells, startPos) {
+  // orderCells: [{id, yearsAgo, ...}] を置くためのセル配列を作る
+  const maxTry = 2200;
+
+  for (let attempt = 0; attempt < maxTry; attempt++) {
+    const cells = [];
+    const localForbid = new Set(forbiddenSet);
+
+    // ランダムにセルを選ぶ
+    let guard = 0;
+    while (cells.length < count && guard < 12000) {
+      guard++;
+
+      const x = Math.floor(Math.random() * COLS);
+      const y = Math.floor(Math.random() * ROWS);
+
+      if (isWall(x, y)) continue;
+      const key = `${x},${y}`;
+      if (localForbid.has(key)) continue;
+
+      // 行き止まりっぽい所は避ける（詰みやすい）
+      const n =
+        (isWall(x + 1, y) ? 1 : 0) +
+        (isWall(x - 1, y) ? 1 : 0) +
+        (isWall(x, y + 1) ? 1 : 0) +
+        (isWall(x, y - 1) ? 1 : 0);
+      if (n >= 3) continue;
+
+      localForbid.add(key);
+      cells.push({ x, y });
+    }
+
+    if (cells.length < count) continue;
+
+    // cells を orderCells と同じ順番で割り当てる
+    const placed = orderCells.map((it, idx) => ({ ...it, x: cells[idx].x, y: cells[idx].y }));
+
+    // 検証：順番通りに、残りエサセルを壁として扱って到達できるか
+    let ok = true;
+    let curPos = { ...startPos };
+
+    for (let i = 0; i < placed.length; i++) {
+      const target = placed[i];
+
+      // まだ取ってないエサ（target以外）は踏めない＝ブロック
+      const blocked = new Set();
+      for (let j = i + 1; j < placed.length; j++) {
+        blocked.add(`${placed[j].x},${placed[j].y}`);
+      }
+
+      // 現在地がブロックに入ってたらアウト（基本起きない）
+      if (blocked.has(`${curPos.x},${curPos.y}`)) {
+        ok = false;
+        break;
+      }
+
+      if (!bfsReachable(curPos, { x: target.x, y: target.y }, blocked)) {
+        ok = false;
+        break;
+      }
+
+      curPos = { x: target.x, y: target.y };
+    }
+
+    if (ok) {
+      return placed.map((p) => ({ x: p.x, y: p.y }));
+    }
+  }
+
+  // 最悪、検証なしの簡易版（ここに来ることは基本ない想定）
+  const cellsFallback = [];
+  const localForbid = new Set(forbiddenSet);
+  while (cellsFallback.length < count) {
+    const x = Math.floor(Math.random() * COLS);
+    const y = Math.floor(Math.random() * ROWS);
+    if (isWall(x, y)) continue;
+    const key = `${x},${y}`;
+    if (localForbid.has(key)) continue;
+    localForbid.add(key);
+    cellsFallback.push({ x, y });
+  }
+  return cellsFallback;
 }
 
 export default function BeforePacmanPage() {
-  const [status, setStatus] = useState('loading'); // loading | choose | playing | finished
+  const [status, setStatus] = useState('loading'); // loading | choose | preview | playing | finished
   const [message, setMessage] = useState('');
 
   const [rawList, setRawList] = useState([]);
@@ -247,6 +279,8 @@ export default function BeforePacmanPage() {
   const [wave, setWave] = useState([]); // [{event, yearsAgo, letter, x, y, id}]
   const [mode, setMode] = useState(null); // 'OLD' or 'NEW'
   const [expectedIndex, setExpectedIndex] = useState(0);
+
+  const [previewLeft, setPreviewLeft] = useState(PREVIEW_SEC);
 
   const [score, setScore] = useState(0);
   const scoreRef = useRef(0);
@@ -258,6 +292,25 @@ export default function BeforePacmanPage() {
   const [isNewRecord, setIsNewRecord] = useState(false);
 
   const [answerHistory, setAnswerHistory] = useState([]);
+
+  // ★gameOver時に最新を参照するref
+  const waveRef = useRef([]);
+  useEffect(() => {
+    waveRef.current = wave;
+  }, [wave]);
+
+  const modeRef = useRef(null);
+  useEffect(() => {
+    modeRef.current = mode;
+  }, [mode]);
+
+  const expectedIndexRef = useRef(0);
+  useEffect(() => {
+    expectedIndexRef.current = expectedIndex;
+  }, [expectedIndex]);
+
+  // ★二重登録防止：食べたエサのID
+  const eatenIdsRef = useRef(new Set());
 
   // 盤サイズ
   const boardRef = useRef(null);
@@ -278,7 +331,7 @@ export default function BeforePacmanPage() {
     const w = boardRect.w || GAME_W;
     const h = boardRect.h || GAME_H;
     const s = Math.floor(Math.min(w / COLS, h / ROWS));
-    return clamp(s, 12, 26);
+    return clamp(s, 14, 26);
   }, [boardRect.w, boardRect.h]);
 
   const boardW = tilePx * COLS;
@@ -297,19 +350,25 @@ export default function BeforePacmanPage() {
     ghostsRef.current = ghosts;
   }, [ghosts]);
 
-  // ===== next pellet order =====
   const ordered = useMemo(() => {
     const arr = [...(wave || [])];
     if (!mode) return arr;
-    if (mode === 'OLD') {
-      // 古い順：yearsAgo 大きい -> 小さい
-      return arr.sort((a, b) => b.yearsAgo - a.yearsAgo);
-    }
-    // 新しい順：yearsAgo 小さい -> 大きい
-    return arr.sort((a, b) => a.yearsAgo - b.yearsAgo);
+    if (mode === 'OLD') return arr.sort((a, b) => b.yearsAgo - a.yearsAgo); // 古い順
+    return arr.sort((a, b) => a.yearsAgo - b.yearsAgo); // 新しい順
   }, [wave, mode]);
 
   const expected = ordered[expectedIndex] || null;
+
+  const startYears = useMemo(() => {
+    return formatStartYears(mode, wave);
+  }, [mode, wave]);
+
+  const compactLegend = useMemo(() => {
+    const arr = [...(wave || [])].sort((a, b) => (a.letter < b.letter ? -1 : 1));
+    const left = arr.slice(0, Math.ceil(arr.length / 2));
+    const right = arr.slice(Math.ceil(arr.length / 2));
+    return { left, right };
+  }, [wave]);
 
   // ===== 初期化（best読み込み + データ取得）=====
   useEffect(() => {
@@ -327,7 +386,6 @@ export default function BeforePacmanPage() {
         const data = await res.json();
         if (!data.ok) throw new Error(data.message || 'failed');
         setRawList(data.list || []);
-        // wave生成 → モード選択へ
         setStatus('choose');
       } catch (e) {
         console.error(e);
@@ -341,55 +399,104 @@ export default function BeforePacmanPage() {
 
   const resetActors = () => {
     setPlayer({ x: 1, y: 1, dir: 'RIGHT', nextDir: 'RIGHT' });
+    const cx = Math.floor(COLS / 2);
+    const cy = Math.floor(ROWS / 2);
+
     const gs = [
-      { id: 'g1', x: Math.floor(COLS / 2), y: Math.floor(ROWS / 2), dir: 'LEFT', kind: 'chase' },
-      { id: 'g2', x: Math.floor(COLS / 2) - 1, y: Math.floor(ROWS / 2), dir: 'RIGHT', kind: 'random' },
-      { id: 'g3', x: Math.floor(COLS / 2) + 1, y: Math.floor(ROWS / 2), dir: 'UP', kind: 'random' },
-      { id: 'g4', x: Math.floor(COLS / 2), y: Math.floor(ROWS / 2) + 1, dir: 'DOWN', kind: 'random' },
+      { id: 'g1', x: cx, y: cy, dir: 'LEFT', kind: 'chase' },
+      { id: 'g2', x: cx - 1, y: cy, dir: 'RIGHT', kind: 'random' },
+      { id: 'g3', x: cx + 1, y: cy, dir: 'UP', kind: 'random' },
+      { id: 'g4', x: cx, y: cy + 1, dir: 'DOWN', kind: 'random' },
     ].filter((g) => !isWall(g.x, g.y));
+
     setGhosts(gs);
   };
 
-  const makeWave = () => {
-    const picked = pickWaveNear10(rawList);
-    // pellet配置
-    const forbidden = new Set();
-    forbidden.add('1,1');
-    forbidden.add(`${Math.floor(COLS / 2)},${Math.floor(ROWS / 2)}`);
-    forbidden.add(`${Math.floor(COLS / 2) - 1},${Math.floor(ROWS / 2)}`);
-    forbidden.add(`${Math.floor(COLS / 2) + 1},${Math.floor(ROWS / 2)}`);
-    forbidden.add(`${Math.floor(COLS / 2)},${Math.floor(ROWS / 2) + 1}`);
+  const makeWave = (m) => {
+    const picked = pickWaveNearN(rawList, PELLET_COUNT);
 
-    const cells = pickEmptyCells(picked.length, forbidden);
-
-    const wave2 = picked.map((it, idx) => {
-      const c = cells[idx] || { x: 2 + idx, y: 2 };
+    // 付番
+    const base = picked.map((it, idx) => {
       const letter = LETTERS[idx] || '?';
       const id = `p_${it.yearsAgo}_${idx}_${Math.random().toString(16).slice(2)}`;
-      return { ...it, letter, x: c.x, y: c.y, id };
+      return { ...it, letter, id };
     });
 
+    // 「答える順」基準で検証したいので並びを作る
+    const orderForCheck = [...base].sort((a, b) => {
+      if (m === 'OLD') return b.yearsAgo - a.yearsAgo; // 古い→新しい
+      return a.yearsAgo - b.yearsAgo; // 新しい→古い
+    });
+
+    const forbidden = new Set();
+    forbidden.add('1,1'); // player start
+    const cx = Math.floor(COLS / 2);
+    const cy = Math.floor(ROWS / 2);
+    forbidden.add(`${cx},${cy}`);
+    forbidden.add(`${cx - 1},${cy}`);
+    forbidden.add(`${cx + 1},${cy}`);
+    forbidden.add(`${cx},${cy + 1}`);
+
+    // ★重要：検証付き配置（Aを取るのにBを踏まないといけない…を排除）
+    const startPos = { x: 1, y: 1 };
+    const cells = pickEmptyCellsValidated(orderForCheck.length, forbidden, orderForCheck, startPos);
+
+    // cells は orderForCheck 順に対応してるので、元baseへ位置を反映
+    const posById = new Map();
+    for (let i = 0; i < orderForCheck.length; i++) {
+      posById.set(orderForCheck[i].id, cells[i]);
+    }
+
+    const wave2 = base.map((it) => {
+      const c = posById.get(it.id) || { x: 2, y: 2 };
+      return { ...it, x: c.x, y: c.y };
+    });
+
+    eatenIdsRef.current = new Set(); // ★二重登録防止をリセット
     setWave(wave2);
     setExpectedIndex(0);
   };
 
-  // ===== モード決定して開始（または次waveへ）=====
+  // ===== WAVE開始（choose -> preview -> playing）=====
   const startWaveWithMode = (m) => {
     setMode(m);
+    modeRef.current = m; // 念のため
     setMessage('');
     resetActors();
-    makeWave();
-    setStatus('playing');
+    makeWave(m);
+    setPreviewLeft(PREVIEW_SEC);
+    setStatus('preview');
   };
 
+  // previewカウントダウン
+  useEffect(() => {
+    if (status !== 'preview') return;
+
+    let alive = true;
+    const t0 = Date.now();
+    const id = setInterval(() => {
+      if (!alive) return;
+      const elapsed = Math.floor((Date.now() - t0) / 1000);
+      const left = clamp(PREVIEW_SEC - elapsed, 0, PREVIEW_SEC);
+      setPreviewLeft(left);
+      if (left <= 0) {
+        clearInterval(id);
+        setStatus('playing');
+      }
+    }, 200);
+
+    return () => {
+      alive = false;
+      clearInterval(id);
+    };
+  }, [status]);
+
   const nextWave = () => {
-    // 次の10個を「追加」扱いにしたいけど、画面が渋滞するので
-    // ルールの意図を守りつつ、実装は「次waveへ切替」で同じ体験にする
     setMode(null);
     setStatus('choose');
   };
 
-  // ===== 入力（キーボード + タッチ）=====
+  // ===== 入力（キーボード + スワイプ）=====
   const pushDir = (dir) => {
     if (status !== 'playing') return;
     setPlayer((p) => ({ ...p, nextDir: dir }));
@@ -410,7 +517,72 @@ export default function BeforePacmanPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status]);
 
-  // ===== ゲームオーバー =====
+  // スワイプ（盤面上で）
+  const swipeRef = useRef({ active: false, sx: 0, sy: 0, decided: false });
+
+  const decideSwipeDir = (dx, dy) => {
+    if (Math.abs(dx) < 18 && Math.abs(dy) < 18) return null;
+    if (Math.abs(dx) > Math.abs(dy)) return dx > 0 ? 'RIGHT' : 'LEFT';
+    return dy > 0 ? 'DOWN' : 'UP';
+  };
+
+  useEffect(() => {
+    const el = boardRef.current;
+    if (!el) return;
+    if (status !== 'playing') return;
+
+    const onDown = (e) => {
+      swipeRef.current.active = true;
+      swipeRef.current.sx = e.clientX;
+      swipeRef.current.sy = e.clientY;
+      swipeRef.current.decided = false;
+      try {
+        el.setPointerCapture(e.pointerId);
+      } catch {}
+      e.preventDefault?.();
+    };
+
+    const onMove = (e) => {
+      if (!swipeRef.current.active) return;
+
+      const dx = e.clientX - swipeRef.current.sx;
+      const dy = e.clientY - swipeRef.current.sy;
+
+      const d = decideSwipeDir(dx, dy);
+      if (d && !swipeRef.current.decided) {
+        swipeRef.current.decided = true;
+        pushDir(d);
+      }
+
+      if (swipeRef.current.decided && (Math.abs(dx) > 60 || Math.abs(dy) > 60)) {
+        swipeRef.current.sx = e.clientX;
+        swipeRef.current.sy = e.clientY;
+        swipeRef.current.decided = false;
+      }
+
+      e.preventDefault?.();
+    };
+
+    const onUp = (e) => {
+      swipeRef.current.active = false;
+      swipeRef.current.decided = false;
+      e.preventDefault?.();
+    };
+
+    el.addEventListener('pointerdown', onDown, { passive: false });
+    el.addEventListener('pointermove', onMove, { passive: false });
+    el.addEventListener('pointerup', onUp, { passive: false });
+    el.addEventListener('pointercancel', onUp, { passive: false });
+
+    return () => {
+      el.removeEventListener('pointerdown', onDown);
+      el.removeEventListener('pointermove', onMove);
+      el.removeEventListener('pointerup', onUp);
+      el.removeEventListener('pointercancel', onUp);
+    };
+  }, [status]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ===== ゲームオーバー（残り問題も全部出す）=====
   const gameOver = ({ reason, wrongPellet }) => {
     const finalScore = scoreRef.current;
 
@@ -433,21 +605,56 @@ export default function BeforePacmanPage() {
       } catch {}
     }
 
-    // 間違いエサを踏んだ時は、その1問も履歴に入れる（不備報告に出る）
-    if (wrongPellet && expected) {
-      setAnswerHistory((prev) => [
-        ...prev,
-        {
-          question_id: `before_${wrongPellet.id}`,
-          text: `順番ミス`,
-          userAnswerText: `${wrongPellet.letter}：${wrongPellet.event}（${wrongPellet.yearsAgo}年前）`,
-          correctAnswerText: `${expected.letter}：${expected.event}（${expected.yearsAgo}年前）`,
-        },
-      ]);
-    }
+    const w = waveRef.current || [];
+    const m = modeRef.current;
+    const idx = expectedIndexRef.current || 0;
+
+    const ord = [...w].sort((a, b) => {
+      if (m === 'OLD') return b.yearsAgo - a.yearsAgo;
+      return a.yearsAgo - b.yearsAgo;
+    });
+
+    const expectedNow = ord[idx] || null;
+    const remaining = ord.slice(idx);
+
+    setAnswerHistory((prev) => {
+      const seen = new Set(prev.map((x) => x.question_id));
+      const added = [];
+
+      // ミス表示（順番ミス時のみ）
+      if (wrongPellet && expectedNow) {
+        const qid = `before_${wrongPellet.id}_mistake`;
+        if (!seen.has(qid)) {
+          seen.add(qid);
+          added.push({
+            question_id: qid,
+            text: `順番ミス`,
+            userAnswerText: `${wrongPellet.letter}：${wrongPellet.event}（${wrongPellet.yearsAgo}年前）`,
+            correctAnswerText: `${expectedNow.letter}：${expectedNow.event}（${expectedNow.yearsAgo}年前）`,
+          });
+        }
+      }
+
+      // 残り問題（未回答）を全部
+      const wrongId = wrongPellet?.id || null;
+      for (const q of remaining) {
+        if (wrongId && q.id === wrongId) continue;
+        const qid = `before_${q.id}_remain`;
+        if (seen.has(qid)) continue;
+        seen.add(qid);
+        added.push({
+          question_id: qid,
+          text: `未回答`,
+          userAnswerText: `—`,
+          correctAnswerText: `${q.letter}：${q.event}（${q.yearsAgo}年前）`,
+        });
+      }
+
+      return [...prev, ...added];
+    });
   };
 
-  // ===== メインループ（プレイヤー＆ゴースト移動 + 当たり判定）=====
+  // ===== メインループ（preview中は動かさない）=====
   const rafRef = useRef(null);
   const lastRef = useRef(nowMs());
   const accRef = useRef({ p: 0, g: 0 });
@@ -466,19 +673,16 @@ export default function BeforePacmanPage() {
       accRef.current.p += dt;
       accRef.current.g += dt;
 
-      // ===== プレイヤー移動（タイル単位）=====
       if (accRef.current.p >= STEP_MS) {
         accRef.current.p -= STEP_MS;
 
         setPlayer((p0) => {
           let p = p0;
 
-          // nextDirが行けるなら向きを変える
           if (p.nextDir && canMove(p, p.nextDir)) {
             p = { ...p, dir: p.nextDir };
           }
 
-          // 現dirで進めるなら進む
           if (p.dir && canMove(p, p.dir)) {
             const n = nextCell(p, p.dir);
             p = { ...p, x: n.x, y: n.y };
@@ -488,20 +692,17 @@ export default function BeforePacmanPage() {
         });
       }
 
-      // ===== ゴースト移動 =====
       if (accRef.current.g >= GHOST_STEP_MS) {
         accRef.current.g -= GHOST_STEP_MS;
 
         setGhosts((gs0) => {
           const p = playerRef.current;
 
-          const gs1 = (gs0 || []).map((g0, idx) => {
+          const gs1 = (gs0 || []).map((g0) => {
             let g = { ...g0 };
             const opts = choicesFrom(g);
-
             if (opts.length === 0) return g;
 
-            // 交差点っぽい（3方向以上）なら選択
             const atJunction = opts.length >= 3 || !canMove(g, g.dir);
 
             if (atJunction) {
@@ -510,7 +711,6 @@ export default function BeforePacmanPage() {
               const usable = filtered.length ? filtered : opts;
 
               if (g.kind === 'chase' && Math.random() < 0.72) {
-                // 追跡：マンハッタン距離が最小になる方向を優先
                 let best = usable[0];
                 let bestScore = Infinity;
                 for (const d of usable) {
@@ -523,18 +723,15 @@ export default function BeforePacmanPage() {
                 }
                 g.dir = best;
               } else {
-                // ランダム
                 g.dir = usable[Math.floor(Math.random() * usable.length)];
               }
             }
 
-            // 進む
             if (canMove(g, g.dir)) {
               const n = nextCell(g, g.dir);
               g.x = n.x;
               g.y = n.y;
             } else {
-              // 行けないなら適当に
               const usable = opts;
               g.dir = usable[Math.floor(Math.random() * usable.length)];
               const n = nextCell(g, g.dir);
@@ -551,8 +748,7 @@ export default function BeforePacmanPage() {
         });
       }
 
-      // ===== 当たり判定 =====
-      // ゴーストに触れたら即死
+      // ゴースト接触
       {
         const p = playerRef.current;
         const gs = ghostsRef.current || [];
@@ -570,23 +766,38 @@ export default function BeforePacmanPage() {
         if (currentExpected) {
           const pelletHere = (wave || []).find((q) => q.x === p.x && q.y === p.y);
           if (pelletHere) {
+            // ★同一エサの二重処理防止
+            if (eatenIdsRef.current.has(pelletHere.id)) {
+              rafRef.current = requestAnimationFrame(loop);
+              return;
+            }
+
+            // 順番ミス
             if (pelletHere.id !== currentExpected.id) {
+              // ミスも二重発火防止
+              eatenIdsRef.current.add(pelletHere.id);
               gameOver({ reason: '順番ミス', wrongPellet: pelletHere });
               return;
             }
 
-            // 正解：食べる
+            eatenIdsRef.current.add(pelletHere.id);
+
             setWave((prev) => prev.filter((q) => q.id !== pelletHere.id));
 
-            setAnswerHistory((prev) => [
-              ...prev,
-              {
-                question_id: `before_${pelletHere.id}`,
-                text: `順番OK`,
-                userAnswerText: `${pelletHere.letter}：${pelletHere.event}（${pelletHere.yearsAgo}年前）`,
-                correctAnswerText: `${pelletHere.letter}：${pelletHere.event}（${pelletHere.yearsAgo}年前）`,
-              },
-            ]);
+            // ★順番OKも「何年前」を不備報告で見れるようにする
+            setAnswerHistory((prev) => {
+              const qid = `before_${pelletHere.id}`;
+              if (prev.some((x) => x.question_id === qid)) return prev;
+              return [
+                ...prev,
+                {
+                  question_id: qid,
+                  text: `順番OK`,
+                  userAnswerText: `${pelletHere.letter}：${pelletHere.event}（${pelletHere.yearsAgo}年前）`,
+                  correctAnswerText: `${pelletHere.letter}：${pelletHere.event}（${pelletHere.yearsAgo}年前）`,
+                },
+              ];
+            });
 
             setScore((s) => {
               const ns = s + 1;
@@ -599,13 +810,10 @@ export default function BeforePacmanPage() {
         }
       }
 
-      // 10個食べたら次wave（chooseに戻す）
+      // 5個食べたら次WAVE（次も10秒確認するため chooseへ）
       {
-        // expectedIndex が 10 になっていたら wave消えてるはず
-        // ただし state更新の順序ずれに備えて、waveが空でも判定
         const w = wave || [];
         if (mode && w.length === 0) {
-          // 次の10個は「近い10個をランダム」→ 再度順序選択させる
           nextWave();
           return;
         }
@@ -622,22 +830,7 @@ export default function BeforePacmanPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status, mode, expectedIndex, wave]);
 
-  // expectedIndex を進めたら expected がズレるので補正（wave削除→order再計算後にOK）
-  useEffect(() => {
-    if (status !== 'playing') return;
-    if (!mode) return;
-
-    // ordered は waveから作るので、削除後に expectedIndex が残ってると
-    // 次の expected が一つ詰まる → expectedIndexは「食べた数」なので正しい。
-    // waveが消えた時に chooseへ戻す処理はループ側でやってる。
-  }, [status, mode, ordered, expectedIndex]);
-
-  // ===== UI: 上の「A〜J: 出来事」 =====
-  const letterLines = useMemo(() => {
-    const arr = [...(wave || [])].sort((a, b) => (a.letter < b.letter ? -1 : 1));
-    return arr;
-  }, [wave]);
-
+  // ===== UI =====
   if (status === 'loading') {
     return (
       <SoloLayout title="パックマン（時系列）">
@@ -649,7 +842,7 @@ export default function BeforePacmanPage() {
   if (status === 'finished') {
     return (
       <SoloLayout title="パックマン（時系列）">
-        <div className="mt-4 max-w-md mx-auto bg-white/95 rounded-2xl shadow-lg border border-slate-200 p-4 sm:p-6 space-y-3">
+        <div className="mt-3 max-w-md mx-auto bg-white/95 rounded-2xl shadow-lg border border-slate-200 p-4 sm:p-6 space-y-3">
           <p className="text-lg font-semibold text-slate-900">結果</p>
           <p className="text-sm text-slate-900">
             スコア： <span className="font-bold text-emerald-700">{score}</span>
@@ -698,42 +891,29 @@ export default function BeforePacmanPage() {
     );
   }
 
-  // choose（毎waveの開始前に「古い順 / 新しい順」を選ばせる）
   if (status === 'choose') {
     return (
       <SoloLayout title="パックマン（時系列）">
         <div className="max-w-2xl mx-auto space-y-3">
           <div className="bg-white/95 rounded-2xl border border-slate-200 shadow-sm p-4">
-            <p className="text-sm text-slate-800 font-semibold">ルール</p>
-            <ul className="mt-2 text-xs text-slate-700 space-y-1">
-              <li>・A〜Jのエサを、指定された「古い順 or 新しい順」で食べる</li>
-              <li>・順番を間違える or ゴーストに触れるとゲームオーバー</li>
-              <li>・10個食べたら次の「近い10個」が出る（エンドレス）</li>
-              <li>・before.xlsx（A列=出来事 / B列=何年前）を使用</li>
-            </ul>
-          </div>
-
-          <div className="bg-white/95 rounded-2xl border border-slate-200 shadow-sm p-4">
-            <p className="text-sm font-bold text-slate-900">この回はどっちの順で食べる？</p>
-
+            <p className="text-sm font-bold text-slate-900">このWAVEはどっちの順で食べる？（A〜Eの5個）</p>
             <div className="mt-3 flex flex-wrap gap-3">
               <button
                 onClick={() => startWaveWithMode('OLD')}
                 className="px-4 py-2 rounded-xl bg-slate-900 text-white font-bold text-sm hover:bg-slate-800"
               >
-                古い順（何年前が大きい → 小さい）
+                古い順
               </button>
               <button
                 onClick={() => startWaveWithMode('NEW')}
                 className="px-4 py-2 rounded-xl border border-slate-300 bg-white text-slate-900 font-bold text-sm hover:bg-slate-50"
               >
-                新しい順（何年前が小さい → 大きい）
+                新しい順
               </button>
             </div>
-
-            <div className="mt-3 text-xs text-slate-600">
-              ※ 同じ「何年前」は同じ回に出ません（1つだけ）
-            </div>
+            <p className="mt-3 text-xs text-slate-600">
+              次：10秒だけ問題を表示してからスタート（最初に考える時間）
+            </p>
           </div>
 
           <div className="text-center">
@@ -746,68 +926,254 @@ export default function BeforePacmanPage() {
     );
   }
 
+  // ===== preview / playing 共通の上部HUD（盤面に被せない） =====
+  const LegendBox = (
+    <div className="bg-white/92 rounded-2xl border border-slate-200 shadow-sm p-3">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-xs text-slate-600 font-semibold">
+            順： <span className="font-bold text-slate-900">{mode === 'OLD' ? '古い順' : '新しい順'}</span>
+            {Number.isFinite(startYears) && (
+              <span className="ml-2 text-slate-700 font-semibold">（{startYears}年前スタート）</span>
+            )}
+          </p>
+
+          <p className="mt-1 text-sm text-slate-900">
+            次に食べる：{' '}
+            {expected ? (
+              <span className="font-black text-slate-900">{expected.letter}</span>
+            ) : (
+              <span className="text-slate-600">…</span>
+            )}
+          </p>
+          <p className="mt-1 text-[10px] text-slate-600">※次のエサは赤く光りません</p>
+        </div>
+
+        <div className="text-right">
+          <p className="text-xs text-slate-600 font-semibold">スコア</p>
+          <p className="text-lg font-bold text-emerald-700">{score}</p>
+        </div>
+      </div>
+
+      <div className="mt-2 grid grid-cols-2 gap-x-2 gap-y-1 text-[11px] leading-snug">
+        <div className="space-y-1">
+          {compactLegend.left.map((q) => (
+            <div key={q.id} className="flex gap-2 items-start">
+              <span
+                className="inline-flex items-center justify-center w-5 h-5 rounded-full font-black"
+                style={{
+                  background: 'linear-gradient(180deg, rgba(250,204,21,1), rgba(245,158,11,1))',
+                  color: 'rgba(2,6,23,0.95)',
+                  flex: '0 0 auto',
+                }}
+              >
+                {q.letter}
+              </span>
+              <span className="text-slate-900">{q.event}</span>
+            </div>
+          ))}
+        </div>
+
+        <div className="space-y-1">
+          {compactLegend.right.map((q) => (
+            <div key={q.id} className="flex gap-2 items-start">
+              <span
+                className="inline-flex items-center justify-center w-5 h-5 rounded-full font-black"
+                style={{
+                  background: 'linear-gradient(180deg, rgba(250,204,21,1), rgba(245,158,11,1))',
+                  color: 'rgba(2,6,23,0.95)',
+                  flex: '0 0 auto',
+                }}
+              >
+                {q.letter}
+              </span>
+              <span className="text-slate-900">{q.event}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+
+  // ===== preview =====
+  if (status === 'preview') {
+    return (
+      <SoloLayout title="パックマン（時系列）">
+        <div className="max-w-3xl mx-auto">
+          <div className="bg-white/92 rounded-2xl border border-slate-200 shadow-sm px-4 py-3 flex items-center justify-between">
+            <div>
+              <p className="text-xs text-slate-600 font-semibold">自己ベスト</p>
+              <p className="text-sm font-bold text-slate-800">{bestScore}</p>
+            </div>
+            <div className="text-right">
+              <p className="text-xs text-slate-600 font-semibold">スタートまで</p>
+              <p className="text-lg font-black text-slate-900">{previewLeft}s</p>
+            </div>
+          </div>
+
+          <div className="mt-2">{LegendBox}</div>
+
+          <div className="mt-3 flex flex-col items-center gap-2">
+            <div
+              ref={boardRef}
+              className="relative rounded-2xl overflow-hidden border border-slate-500 shadow-lg bg-slate-950"
+              style={{
+                width: '100%',
+                maxWidth: 520,
+                aspectRatio: `${COLS}/${ROWS}`,
+                touchAction: 'none',
+                WebkitUserSelect: 'none',
+                userSelect: 'none',
+              }}
+            >
+              <div
+                className="absolute inset-0"
+                style={{
+                  width: boardW,
+                  height: boardH,
+                  transformOrigin: 'top left',
+                }}
+              >
+                {MAZE.map((row, y) =>
+                  row.split('').map((c, x) => {
+                    const wall = c === '1';
+                    return (
+                      <div
+                        key={`${x},${y}`}
+                        className="absolute"
+                        style={{
+                          left: x * tilePx,
+                          top: y * tilePx,
+                          width: tilePx,
+                          height: tilePx,
+                          background: wall
+                            ? 'linear-gradient(180deg, rgba(30,41,59,1), rgba(15,23,42,1))'
+                            : 'rgba(2,6,23,1)',
+                          boxShadow: wall
+                            ? 'inset 0 0 0 1px rgba(255,255,255,0.06)'
+                            : 'inset 0 0 0 1px rgba(255,255,255,0.02)',
+                        }}
+                      />
+                    );
+                  })
+                )}
+
+                {(wave || []).map((q) => (
+                  <div
+                    key={q.id}
+                    className="absolute flex items-center justify-center font-black"
+                    style={{
+                      left: q.x * tilePx + Math.floor(tilePx * 0.15),
+                      top: q.y * tilePx + Math.floor(tilePx * 0.15),
+                      width: Math.floor(tilePx * 0.7),
+                      height: Math.floor(tilePx * 0.7),
+                      borderRadius: 999,
+                      background: 'linear-gradient(180deg, rgba(250,204,21,1), rgba(245,158,11,1))',
+                      color: 'rgba(2,6,23,0.95)',
+                      boxShadow: '0 4px 10px rgba(0,0,0,0.25), inset 0 0 0 2px rgba(255,255,255,0.22)',
+                      fontSize: Math.max(11, Math.floor(tilePx * 0.48)),
+                      zIndex: 10,
+                    }}
+                    title={`${q.letter}: ${q.event}`}
+                  >
+                    {q.letter}
+                  </div>
+                ))}
+
+                <div
+                  className="absolute"
+                  style={{
+                    left: player.x * tilePx,
+                    top: player.y * tilePx,
+                    width: tilePx,
+                    height: tilePx,
+                    zIndex: 12,
+                    opacity: 0.9,
+                  }}
+                >
+                  <div
+                    className="w-full h-full rounded-full"
+                    style={{
+                      background:
+                        'radial-gradient(circle at 30% 30%, rgba(253,230,138,1), rgba(245,158,11,1))',
+                      boxShadow: '0 6px 12px rgba(0,0,0,0.35), inset 0 0 0 2px rgba(255,255,255,0.20)',
+                    }}
+                  />
+                </div>
+
+                {(ghosts || []).map((g) => {
+                  const color =
+                    g.id === 'g1'
+                      ? 'linear-gradient(180deg, rgba(248,113,113,1), rgba(220,38,38,1))'
+                      : g.id === 'g2'
+                        ? 'linear-gradient(180deg, rgba(167,139,250,1), rgba(124,58,237,1))'
+                        : g.id === 'g3'
+                          ? 'linear-gradient(180deg, rgba(96,165,250,1), rgba(37,99,235,1))'
+                          : 'linear-gradient(180deg, rgba(251,146,60,1), rgba(234,88,12,1))';
+
+                  return (
+                    <div
+                      key={g.id}
+                      className="absolute"
+                      style={{
+                        left: g.x * tilePx,
+                        top: g.y * tilePx,
+                        width: tilePx,
+                        height: tilePx,
+                        zIndex: 11,
+                        opacity: 0.9,
+                      }}
+                      title="ghost"
+                    >
+                      <div
+                        className="w-full h-full"
+                        style={{
+                          borderRadius: Math.floor(tilePx * 0.35),
+                          background: color,
+                          boxShadow: '0 6px 12px rgba(0,0,0,0.35), inset 0 0 0 2px rgba(255,255,255,0.18)',
+                        }}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="absolute inset-0" style={{ background: 'rgba(2,6,23,0.15)', zIndex: 30 }} />
+            </div>
+
+            <div className="text-[11px] text-slate-700 text-center">
+              いまは準備時間（操作できません）／ 10秒後に自動で開始
+            </div>
+
+            <div className="text-center">
+              <Link href="/" className="text-xs text-sky-700 hover:underline">
+                ホームへ戻る
+              </Link>
+            </div>
+          </div>
+        </div>
+      </SoloLayout>
+    );
+  }
+
   // ===== playing =====
   return (
     <SoloLayout title="パックマン（時系列）">
       <div className="max-w-3xl mx-auto">
         <div className="bg-white/92 rounded-2xl border border-slate-200 shadow-sm px-4 py-3 flex items-center justify-between gap-3">
           <div>
-            <p className="text-xs text-slate-600 font-semibold">スコア</p>
-            <p className="text-lg font-bold text-emerald-700">{score}</p>
-          </div>
-
-          <div className="text-right">
             <p className="text-xs text-slate-600 font-semibold">自己ベスト</p>
             <p className="text-sm font-bold text-slate-800">{bestScore}</p>
           </div>
-        </div>
-
-        {/* 次に食べるべき */}
-        <div className="mt-2 bg-white/92 rounded-2xl border border-slate-200 shadow-sm p-3">
-          <p className="text-xs text-slate-600 font-semibold">
-            この回の順： <span className="font-bold text-slate-900">{mode === 'OLD' ? '古い順' : '新しい順'}</span>
-          </p>
-          <p className="mt-1 text-sm text-slate-900">
-            次に食べる：{' '}
-            {expected ? (
-              <>
-                <span className="font-black text-rose-700">{expected.letter}</span>
-                <span className="ml-2 text-slate-800">
-                  {expected.event}（{expected.yearsAgo}年前）
-                </span>
-              </>
-            ) : (
-              <span className="text-slate-600">…</span>
-            )}
-          </p>
-        </div>
-
-        {/* A〜J一覧 */}
-        <div className="mt-2 bg-white/92 rounded-2xl border border-slate-200 shadow-sm p-3">
-          <p className="text-xs text-slate-600 font-semibold">A〜J：出来事</p>
-          <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2">
-            {letterLines.map((q) => {
-              const isNext = expected && q.id === expected.id;
-              return (
-                <div
-                  key={q.id}
-                  className={`rounded-xl border px-3 py-2 text-xs ${
-                    isNext ? 'border-rose-300 bg-rose-50' : 'border-slate-200 bg-white'
-                  }`}
-                >
-                  <div className="font-black text-slate-900">
-                    <span className={isNext ? 'text-rose-700' : 'text-slate-900'}>{q.letter}</span>
-                    <span className="ml-2 font-semibold text-slate-700">（{q.yearsAgo}年前）</span>
-                  </div>
-                  <div className="mt-1 text-slate-800">{q.event}</div>
-                </div>
-              );
-            })}
+          <div className="text-right">
+            <p className="text-xs text-slate-600 font-semibold">スワイプ操作</p>
+            <p className="text-[11px] text-slate-700">盤面をスワイプ（PCは矢印キー）</p>
           </div>
         </div>
 
-        {/* 盤面 */}
-        <div className="mt-3 flex flex-col items-center gap-3">
+        <div className="mt-2">{LegendBox}</div>
+
+        <div className="mt-3 flex flex-col items-center gap-2">
           <div
             ref={boardRef}
             className="relative rounded-2xl overflow-hidden border border-slate-500 shadow-lg bg-slate-950"
@@ -816,9 +1182,10 @@ export default function BeforePacmanPage() {
               maxWidth: 520,
               aspectRatio: `${COLS}/${ROWS}`,
               touchAction: 'none',
+              WebkitUserSelect: 'none',
+              userSelect: 'none',
             }}
           >
-            {/* タイル描画 */}
             <div
               className="absolute inset-0"
               style={{
@@ -839,40 +1206,40 @@ export default function BeforePacmanPage() {
                         top: y * tilePx,
                         width: tilePx,
                         height: tilePx,
-                        background: wall ? 'linear-gradient(180deg, rgba(30,41,59,1), rgba(15,23,42,1))' : 'rgba(2,6,23,1)',
-                        boxShadow: wall ? 'inset 0 0 0 1px rgba(255,255,255,0.06)' : 'inset 0 0 0 1px rgba(255,255,255,0.02)',
+                        background: wall
+                          ? 'linear-gradient(180deg, rgba(30,41,59,1), rgba(15,23,42,1))'
+                          : 'rgba(2,6,23,1)',
+                        boxShadow: wall
+                          ? 'inset 0 0 0 1px rgba(255,255,255,0.06)'
+                          : 'inset 0 0 0 1px rgba(255,255,255,0.02)',
                       }}
                     />
                   );
                 })
               )}
 
-              {/* エサ */}
-              {(wave || []).map((q) => {
-                const isNext = expected && q.id === expected.id;
-                return (
-                  <div
-                    key={q.id}
-                    className="absolute flex items-center justify-center font-black"
-                    style={{
-                      left: q.x * tilePx + Math.floor(tilePx * 0.15),
-                      top: q.y * tilePx + Math.floor(tilePx * 0.15),
-                      width: Math.floor(tilePx * 0.7),
-                      height: Math.floor(tilePx * 0.7),
-                      borderRadius: 999,
-                      background: isNext ? 'linear-gradient(180deg, rgba(251,113,133,1), rgba(225,29,72,1))' : 'linear-gradient(180deg, rgba(250,204,21,1), rgba(245,158,11,1))',
-                      color: 'rgba(2,6,23,0.95)',
-                      boxShadow: '0 4px 10px rgba(0,0,0,0.25), inset 0 0 0 2px rgba(255,255,255,0.22)',
-                      fontSize: Math.max(10, Math.floor(tilePx * 0.42)),
-                    }}
-                    title={`${q.letter}: ${q.event} (${q.yearsAgo}年前)`}
-                  >
-                    {q.letter}
-                  </div>
-                );
-              })}
+              {(wave || []).map((q) => (
+                <div
+                  key={q.id}
+                  className="absolute flex items-center justify-center font-black"
+                  style={{
+                    left: q.x * tilePx + Math.floor(tilePx * 0.15),
+                    top: q.y * tilePx + Math.floor(tilePx * 0.15),
+                    width: Math.floor(tilePx * 0.7),
+                    height: Math.floor(tilePx * 0.7),
+                    borderRadius: 999,
+                    background: 'linear-gradient(180deg, rgba(250,204,21,1), rgba(245,158,11,1))',
+                    color: 'rgba(2,6,23,0.95)',
+                    boxShadow: '0 4px 10px rgba(0,0,0,0.25), inset 0 0 0 2px rgba(255,255,255,0.22)',
+                    fontSize: Math.max(11, Math.floor(tilePx * 0.48)),
+                    zIndex: 10,
+                  }}
+                  title={`${q.letter}: ${q.event}`}
+                >
+                  {q.letter}
+                </div>
+              ))}
 
-              {/* プレイヤー */}
               <div
                 className="absolute"
                 style={{
@@ -880,6 +1247,7 @@ export default function BeforePacmanPage() {
                   top: player.y * tilePx,
                   width: tilePx,
                   height: tilePx,
+                  zIndex: 12,
                 }}
               >
                 <div
@@ -891,8 +1259,7 @@ export default function BeforePacmanPage() {
                 />
               </div>
 
-              {/* ゴースト */}
-              {(ghosts || []).map((g, idx) => {
+              {(ghosts || []).map((g) => {
                 const color =
                   g.id === 'g1'
                     ? 'linear-gradient(180deg, rgba(248,113,113,1), rgba(220,38,38,1))'
@@ -911,6 +1278,7 @@ export default function BeforePacmanPage() {
                       top: g.y * tilePx,
                       width: tilePx,
                       height: tilePx,
+                      zIndex: 11,
                     }}
                     title="ghost"
                   >
@@ -927,8 +1295,6 @@ export default function BeforePacmanPage() {
               })}
             </div>
           </div>
-
-          <TouchPad onDir={pushDir} />
 
           <div className="text-center">
             <Link href="/" className="text-xs text-sky-700 hover:underline">
