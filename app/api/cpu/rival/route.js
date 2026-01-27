@@ -363,7 +363,6 @@ const sql = `
 `;
 
 
-
     const { rows } = await pool.query(sql, [clean]);
 
     // Excelで最終補完（DBが1/NULLっぽいときだけ）

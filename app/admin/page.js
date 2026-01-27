@@ -84,6 +84,11 @@ export default function AdminDashboard() {
           <div className="text-xs text-slate-400 mb-1">未対応の不備報告</div>
           <div className="text-3xl font-bold">{stats?.openReports ?? '--'}</div>
         </div>
+        <div className="bg-slate-900 rounded-xl p-4 border border-slate-700">
+          <div className="text-xs text-slate-400 mb-1">未対応の目安箱</div>
+          <div className="text-3xl font-bold">{stats?.openSuggestions ?? '--'}</div>
+        </div>
+
       </section>
 
       {/* ショートカット */}
@@ -121,6 +126,14 @@ export default function AdminDashboard() {
           >
             ♬ 音声学習モード
           </a>
+
+          <a
+            href="/admin/suggestions"
+            className="px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-600"
+          >
+            📮 目安箱（意見投稿）確認へ
+          </a>
+
         </div>
       </section>
 

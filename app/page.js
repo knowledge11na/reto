@@ -219,6 +219,32 @@ export default function HomePage() {
           </section>
         </div>
 
+        {/* 目安箱（運営への意見投稿） */}
+        <section className="bg-sky-100 border-2 border-amber-500 rounded-3xl p-4 shadow-sm">
+          <h2 className="text-xl font-extrabold mb-2">📮 目安箱</h2>
+          <p className="text-[11px] text-sky-900 mb-3">
+            運営への意見・改善案・不具合の報告などを送れます。
+          </p>
+
+          {me ? (
+            <Link
+              href="/suggestions"
+              className="block w-full text-center py-3 rounded-full text-white font-bold text-lg shadow bg-amber-500 active:bg-amber-600"
+            >
+              目安箱に送る
+            </Link>
+          ) : (
+            <button
+              type="button"
+              disabled
+              className="block w-full text-center py-3 rounded-full text-white font-bold text-lg shadow bg-gray-400 cursor-not-allowed"
+            >
+              ログインが必要です
+            </button>
+          )}
+        </section>
+
+
 
         {/* フッターリンク */}
         <footer className="mt-6 text-center space-y-2">
