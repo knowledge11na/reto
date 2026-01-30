@@ -2,19 +2,19 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 
+// 全角→半角（英数記号）寄せ
 function toHalfWidthAscii(s) {
   return String(s ?? '')
-    .replace(/[！-～]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) - 0xFEE0))
+    .replace(/[！-～]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) - 0xfee0))
     .replace(/　/g, ' ');
 }
 
+// 共通：軽い正規化（空白除去・小文字）
 function normalizeBasic(s) {
-  return toHalfWidthAscii(String(s ?? '').trim())
-    .toLowerCase()
-    .replace(/\s+/g, '');
+  return toHalfWidthAscii(String(s ?? '').trim()).toLowerCase().replace(/\s+/g, '');
 }
 
 // （）と中身を除去（全角/半角）
@@ -25,23 +25,30 @@ function stripParensAll(s) {
   return x;
 }
 
-// 巻タイトル用：記号と空白をガッツリ無視
+// 巻タイトル用：記号と空白をガッツリ無視 + （）内も不問
 function normalizeTitleLoose(s) {
   let x = toHalfWidthAscii(String(s ?? '').trim()).toLowerCase();
-  x = stripParensAll(x); // 必要なければ消してOK（サブタイ同様に無視したいなら残す）
+
+  // ★（）と中身は不問
+  x = stripParensAll(x);
+
+  // 空白消す
   x = x.replace(/\s+/g, '');
 
   // ★「!」「-」など、だいたいの記号を消す（半角/全角）
   x = x
     .replace(/[!"#$%&'()*+,\-./:;<=>?@[\\\]^_`{|}~]/g, '')
-    .replace(/[、。・「」『』【】〔〕［］｛｝〈〉《》“”‘’＂＇…‥〜～ー−―–—・]/g, '')
+    .replace(
+      /[、。・「」『』【】〔〕［］｛｝〈〉《》“”‘’＂＇…‥〜～ー−―–—・]/g,
+      ''
+    )
     .replace(/[①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳]/g, '')
     .replace(/[！-～]/g, ''); // 全角ASCII帯も削る
 
   return x;
 }
 
-
+// セルが「ルフィ/モンキー・D・ルフィ」なら、どちらでもOK
 function splitAlts(cellStr) {
   const s = String(cellStr ?? '').trim();
   if (!s) return [];
@@ -55,12 +62,17 @@ function buildSaveKey(mode) {
   return `study_cover_save_${mode || 'chars'}`;
 }
 
-export default function StudyCoverPlayPage() {
+/**
+ * Inner：useSearchParams() を使うのはここだけ
+ * （export default側は Suspense で包むだけ）
+ */
+function StudyCoverPlayInner() {
   const router = useRouter();
   const sp = useSearchParams();
 
   const modeRaw = sp.get('mode') || 'chars';
   const mode = modeRaw === 'title' ? 'title' : modeRaw === 'both' ? 'both' : 'chars';
+
   const ignoreWrongAndGo = sp.get('ignoreWrongAndGo') === '1';
   const resume = sp.get('resume') === '1';
 
@@ -80,6 +92,7 @@ export default function StudyCoverPlayPage() {
   const titleRef = useRef(null);
   const firstCharRef = useRef(null);
 
+  // データ取得
   useEffect(() => {
     const load = async () => {
       setLoading(true);
@@ -154,6 +167,7 @@ export default function StudyCoverPlayPage() {
     setLastJudge(null);
     initInputsForRow(rows[0]);
     focusMain();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loading, rows.length, saveKey, resume]);
 
   // idx変化で入力欄リセット
@@ -200,17 +214,19 @@ export default function StudyCoverPlayPage() {
     setLastJudge(null);
   }
 
- function judgeTitle(userText, correctTitle) {
-  const user = normalizeTitleLoose(userText);
-  const correct = normalizeTitleLoose(correctTitle);
-  return !!user && user === correct;
-}
+  function judgeTitle(userText, correctTitle) {
+    const user = normalizeTitleLoose(userText);
+    const correct = normalizeTitleLoose(correctTitle);
+    return !!user && user === correct;
+  }
 
   function judgeCharAt(userText, correctCell) {
     const user = normalizeBasic(userText);
     if (!user) return false;
+
     const alts = splitAlts(correctCell).map(normalizeBasic);
     if (!alts.length) return false;
+
     return alts.includes(user);
   }
 
@@ -226,6 +242,7 @@ export default function StudyCoverPlayPage() {
       if (mode === 'title' || mode === 'both') {
         if (!judgeTitle(titleInput, correctTitle)) ok = false;
       }
+
       if (mode === 'chars' || mode === 'both') {
         for (let i = 0; i < correctChars.length; i++) {
           const u = charInputs[i] ?? '';
@@ -357,6 +374,9 @@ export default function StudyCoverPlayPage() {
                   placeholder="巻タイトル"
                   className="w-full rounded-xl border border-slate-300 bg-white p-3 text-slate-900 placeholder:text-slate-400 outline-none focus:ring-2 focus:ring-sky-300"
                 />
+                <p className="mt-2 text-[11px] text-cyan-800">
+                  ※「!」「-」など記号の有無は不問／（ ）内も不問
+                </p>
               </div>
             )}
 
@@ -388,7 +408,7 @@ export default function StudyCoverPlayPage() {
                 </div>
 
                 <p className="mt-2 text-[11px] text-emerald-800">
-                  ※セルが「ルフィ/モンキー・D・ルフィ」なら、どちらでも正解
+                  ※セルが「ルフィ/モンキー・D・ルフィ」なら、どちらでも正解（順番は固定）
                 </p>
               </div>
             )}
@@ -432,7 +452,8 @@ export default function StudyCoverPlayPage() {
                   )}
                   {(mode === 'chars' || mode === 'both') && (
                     <p>
-                      正解（キャラ）：<b className="text-slate-900">{(lastJudge.correctChars || []).join(' / ')}</b>
+                      正解（キャラ）：{' '}
+                      <b className="text-slate-900">{(lastJudge.correctChars || []).join(' / ')}</b>
                     </p>
                   )}
                 </div>
@@ -461,5 +482,17 @@ export default function StudyCoverPlayPage() {
         </div>
       </div>
     </main>
+  );
+}
+
+/**
+ * export default：Suspenseで包むだけ
+ * （ここでは useSearchParams を呼ばない）
+ */
+export default function StudyCoverPlayPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-sky-50" />}>
+      <StudyCoverPlayInner />
+    </Suspense>
   );
 }
