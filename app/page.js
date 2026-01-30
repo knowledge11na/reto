@@ -173,6 +173,31 @@ export default function HomePage() {
             </button>
           )}
         </section>
+        {/* 📘 学習（ソロゲームの下） */}
+        <section className="bg-sky-100 border-2 border-indigo-500 rounded-3xl p-4 shadow-sm">
+          <h2 className="text-xl font-extrabold mb-2">📘 学習</h2>
+          <p className="text-[11px] text-sky-900 mb-3">
+            技・サブタイトルなどをカテゴリ別に練習できます。（内容は後で追加）
+          </p>
+
+          {me ? (
+            <Link
+              href="/study"
+              className="block w-full text-center py-3 rounded-full text-indigo-50 font-bold bg-indigo-500 active:bg-indigo-600 shadow"
+            >
+              学習する
+            </Link>
+          ) : (
+            <button
+              type="button"
+              disabled
+              className="block w-full text-center py-3 rounded-full text-indigo-50 font-bold bg-gray-400 cursor-not-allowed shadow"
+            >
+              ログインが必要です
+            </button>
+          )}
+        </section>
+
 
         {/* 問題投稿 & ランキング */}
         <div className="grid grid-cols-2 gap-4">
