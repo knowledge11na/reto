@@ -2,7 +2,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 
 function shuffle(arr) {
@@ -73,7 +73,8 @@ function colorClassByDigit(d) {
   return { bg: 'bg-amber-50', bd: 'border-amber-300', tx: 'text-amber-900' };
 }
 
-export default function StudyDoorCardsPlayPage() {
+// ✅ useSearchParams() は Inner の中だけ
+function StudyDoorCardsPlayInner() {
   const router = useRouter();
   const sp = useSearchParams();
 
@@ -378,7 +379,9 @@ export default function StudyDoorCardsPlayPage() {
             <h1 className="text-xl font-extrabold">🗂️ 単語カード：扉絵</h1>
             <p className="text-[11px] text-slate-700">
               {headerText}
-              {randomOrder ? <span className="ml-2 text-[10px] text-slate-600">（ランダム）</span> : null}
+              {randomOrder ? (
+                <span className="ml-2 text-[10px] text-slate-600">（ランダム）</span>
+              ) : null}
             </p>
           </div>
 
@@ -391,7 +394,10 @@ export default function StudyDoorCardsPlayPage() {
               戻る
             </button>
 
-            <Link href="/study" className="text-xs font-bold text-sky-700 underline hover:text-sky-500">
+            <Link
+              href="/study"
+              className="text-xs font-bold text-sky-700 underline hover:text-sky-500"
+            >
               学習メニュー
             </Link>
           </div>
@@ -406,10 +412,12 @@ export default function StudyDoorCardsPlayPage() {
         <div className="rounded-2xl border border-slate-300 bg-white p-4 shadow-sm">
           <div className="flex items-center justify-between">
             <p className="text-[12px] text-slate-600">
-              進捗：<b className="text-slate-900">{learnedSet.size}</b> / {totalTargets || 0}（残り {remaining}）
+              進捗：<b className="text-slate-900">{learnedSet.size}</b> / {totalTargets || 0}
+              （残り {remaining}）
             </p>
             <p className="text-[12px] text-slate-600">
-              デッキ：<b className="text-slate-900">{deck.length ? idx + 1 : 0}</b> / {deck.length || 0}
+              デッキ：<b className="text-slate-900">{deck.length ? idx + 1 : 0}</b> /{' '}
+              {deck.length || 0}
             </p>
           </div>
 
@@ -444,7 +452,9 @@ export default function StudyDoorCardsPlayPage() {
                 ) : (
                   <>
                     <p className={`text-[12px] font-bold ${color.tx}`}>答え</p>
-                    <p className={`mt-2 text-lg font-extrabold ${color.tx} leading-relaxed`}>{currentRow.a}</p>
+                    <p className={`mt-2 text-lg font-extrabold ${color.tx} leading-relaxed`}>
+                      {currentRow.a}
+                    </p>
                     <p className="mt-3 text-[12px] text-slate-700">（裏：扉絵サブタイトル）</p>
                   </>
                 )}
@@ -455,7 +465,9 @@ export default function StudyDoorCardsPlayPage() {
                     className="mt-3 rounded-2xl border border-violet-200 bg-violet-50 p-3"
                     onClick={(e) => e.stopPropagation()}
                   >
-                    <p className="text-[12px] font-extrabold text-violet-900 mb-2">ヒント（表のみ）</p>
+                    <p className="text-[12px] font-extrabold text-violet-900 mb-2">
+                      ヒント（表のみ）
+                    </p>
 
                     <div className="grid grid-cols-3 gap-2">
                       <button
@@ -519,7 +531,11 @@ export default function StudyDoorCardsPlayPage() {
               </>
             ) : (
               <div className="text-center text-slate-700">
-                {loading ? '読み込み中...' : deck.length === 0 ? 'このシートは全て「覚えた」になりました！' : 'データがありません'}
+                {loading
+                  ? '読み込み中...'
+                  : deck.length === 0
+                  ? 'このシートは全て「覚えた」になりました！'
+                  : 'データがありません'}
               </div>
             )}
           </div>
@@ -586,5 +602,14 @@ export default function StudyDoorCardsPlayPage() {
         </div>
       </div>
     </main>
+  );
+}
+
+// ✅ export default は Suspense で包むだけ（useSearchParams禁止）
+export default function StudyDoorCardsPlayPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-sky-50" />}>
+      <StudyDoorCardsPlayInner />
+    </Suspense>
   );
 }
