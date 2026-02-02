@@ -2,7 +2,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 
 function pad2(n) {
@@ -57,7 +57,7 @@ function buildSaveKey({ sheet }) {
   return `study_door_save_${s}`;
 }
 
-export default function StudyDoorPlayPage() {
+function StudyDoorPlayInner() {
   const router = useRouter();
   const sp = useSearchParams();
 
@@ -392,10 +392,10 @@ export default function StudyDoorPlayPage() {
                 </p>
 
                 {(ignoreWrongAndGo || lastJudge.ok || lastJudge.isSkip) && (
-     <p className="text-[12px] text-slate-700 mt-1">
-       正解：<b className="text-slate-900">{lastJudge.correct || ''}</b>
-     </p>
-   )}
+                  <p className="text-[12px] text-slate-700 mt-1">
+                    正解：<b className="text-slate-900">{lastJudge.correct || ''}</b>
+                  </p>
+                )}
 
                 {!lastJudge.ok && !ignoreWrongAndGo && (
                   <p className="text-[11px] text-slate-600 mt-2">
@@ -430,5 +430,13 @@ export default function StudyDoorPlayPage() {
         </div>
       </div>
     </main>
+  );
+}
+
+export default function StudyDoorPlayPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-sky-50" />}>
+      <StudyDoorPlayInner />
+    </Suspense>
   );
 }
