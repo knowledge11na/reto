@@ -177,7 +177,7 @@ export default function HomePage() {
         <section className="bg-sky-100 border-2 border-indigo-500 rounded-3xl p-4 shadow-sm">
           <h2 className="text-xl font-extrabold mb-2">📘 学習</h2>
           <p className="text-[11px] text-sky-900 mb-3">
-            技・サブタイトルなどをカテゴリ別に練習できます。（内容は後で追加）
+            技・サブタイトルなどをカテゴリ別に練習できます。
           </p>
 
           {me ? (
