@@ -2,7 +2,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 
 function pad2(n) {
@@ -83,7 +83,7 @@ function buildSaveKey({ mode, rangeStart, rangeEnd, randomOrder }) {
   return `study_subtitle_save_${m}_${rs}_${re}_${rnd}`;
 }
 
-export default function StudySubtitlePlayPage() {
+function StudySubtitlePlayInner() {
   const router = useRouter();
   const sp = useSearchParams();
 
@@ -100,8 +100,10 @@ export default function StudySubtitlePlayPage() {
       ignoreWrongAndGo: sp.get('ignoreWrongAndGo') === '1',
       randomOrder: sp.get('randomOrder') === '1',
     };
+    // ✅ 依存は sp だけでOK（useSearchParamsのオブジェクトは遷移で更新される）
   }, [sp]);
-const resume = sp.get('resume') === '1';
+
+  const resume = sp.get('resume') === '1';
 
   const saveKey = useMemo(() => {
     return buildSaveKey({
@@ -195,8 +197,6 @@ const resume = sp.get('resume') === '1';
     if (!current) return '';
     return normalizeAnswer(current.title, opts);
   }, [current, opts]);
-
-  const titleDisplay = useMemo(() => current?.title || '', [current]);
 
   // タイマー
   useEffect(() => {
@@ -468,10 +468,7 @@ const resume = sp.get('resume') === '1';
               中断
             </button>
 
-            <Link
-              href="/study/subtitle"
-              className="text-xs font-bold text-sky-700 underline hover:text-sky-500"
-            >
+            <Link href="/study/subtitle" className="text-xs font-bold text-sky-700 underline hover:text-sky-500">
               戻る
             </Link>
           </div>
@@ -496,9 +493,7 @@ const resume = sp.get('resume') === '1';
           <div className="mt-3 rounded-2xl border border-cyan-300 bg-cyan-50 p-4">
             <p className="text-[12px] text-cyan-900 font-bold mb-1">
               第{current?.episode ?? '---'}話
-              {opts.randomOrder ? (
-                <span className="ml-2 text-[10px] text-cyan-800">（ランダム出題）</span>
-              ) : null}
+              {opts.randomOrder ? <span className="ml-2 text-[10px] text-cyan-800">（ランダム出題）</span> : null}
             </p>
             <p className="text-sm text-cyan-950 leading-relaxed">サブタイトルを入力してください</p>
           </div>
@@ -535,19 +530,15 @@ const resume = sp.get('resume') === '1';
 
           {lastJudge && (
             <div className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 p-3">
-              <p
-                className={`text-sm font-extrabold ${
-                  lastJudge.ok ? 'text-emerald-700' : 'text-rose-700'
-                }`}
-              >
+              <p className={`text-sm font-extrabold ${lastJudge.ok ? 'text-emerald-700' : 'text-rose-700'}`}>
                 {lastJudge.ok ? '正解！' : lastJudge.isSkip ? 'スキップ' : '不正解'}
               </p>
 
-               {(opts.ignoreWrongAndGo || lastJudge.ok || lastJudge.isSkip) && (
-     <p className="text-[12px] text-slate-700 mt-1">
-       正解：<b className="text-slate-900">{lastJudge.correct || ''}</b>
-     </p>
-   )}
+              {(opts.ignoreWrongAndGo || lastJudge.ok || lastJudge.isSkip) && (
+                <p className="text-[12px] text-slate-700 mt-1">
+                  正解：<b className="text-slate-900">{lastJudge.correct || ''}</b>
+                </p>
+              )}
 
               {!lastJudge.ok && !opts.ignoreWrongAndGo && (
                 <p className="text-[11px] text-slate-600 mt-2">
@@ -581,5 +572,13 @@ const resume = sp.get('resume') === '1';
         </div>
       </div>
     </main>
+  );
+}
+
+export default function StudySubtitlePlayPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-sky-50" />}>
+      <StudySubtitlePlayInner />
+    </Suspense>
   );
 }

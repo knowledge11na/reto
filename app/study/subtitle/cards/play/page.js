@@ -2,7 +2,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 
 // ---- 色ルール：下一桁で色 ----
@@ -40,7 +40,7 @@ function buildCardsKey({ mode, rangeStart, rangeEnd, randomOrder }) {
   return `study_subtitle_cards_${m}_${rs}_${re}_${rnd}`;
 }
 
-export default function StudySubtitleCardsPlayPage() {
+function StudySubtitleCardsPlayInner() {
   const router = useRouter();
   const sp = useSearchParams();
 
@@ -123,7 +123,13 @@ export default function StudySubtitleCardsPlayPage() {
   // 復元（targetsが揃ったタイミングで）
   useEffect(() => {
     if (loading) return;
-    if (!targets.length) return;
+    if (!targets.length) {
+      setLearnedSet(new Set());
+      setDeck([]);
+      setIdx(0);
+      setSide('front');
+      return;
+    }
 
     // localStorageから復元
     if (typeof window !== 'undefined') {
@@ -133,7 +139,9 @@ export default function StudySubtitleCardsPlayPage() {
           const obj = JSON.parse(raw);
 
           const learnedArr = Array.isArray(obj?.learned) ? obj.learned : [];
-          const learned = new Set(learnedArr.map((x) => Number(x)).filter((x) => Number.isFinite(x) && x > 0));
+          const learned = new Set(
+            learnedArr.map((x) => Number(x)).filter((x) => Number.isFinite(x) && x > 0)
+          );
 
           const savedDeck = Array.isArray(obj?.deck) ? obj.deck : null;
           const savedIdx = typeof obj?.idx === 'number' ? obj.idx : 0;
@@ -176,7 +184,7 @@ export default function StudySubtitleCardsPlayPage() {
     setDeck(nextDeck);
     setIdx(0);
     setSide('front');
-  }, [loading, targets.length, saveKey, randomOrder]);
+  }, [loading, targets.length, saveKey, randomOrder]); // ←元の依存のまま
 
   // 自動セーブ（頻繁すぎないように軽く間引く）
   useEffect(() => {
@@ -386,7 +394,11 @@ export default function StudySubtitleCardsPlayPage() {
               </>
             ) : (
               <div className="text-center text-slate-700">
-                {loading ? '読み込み中...' : deck.length === 0 ? 'この範囲は全て「覚えた」になりました！' : 'データがありません'}
+                {loading
+                  ? '読み込み中...'
+                  : deck.length === 0
+                  ? 'この範囲は全て「覚えた」になりました！'
+                  : 'データがありません'}
               </div>
             )}
           </button>
@@ -453,5 +465,13 @@ export default function StudySubtitleCardsPlayPage() {
         </div>
       </div>
     </main>
+  );
+}
+
+export default function StudySubtitleCardsPlayPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-sky-50" />}>
+      <StudySubtitleCardsPlayInner />
+    </Suspense>
   );
 }

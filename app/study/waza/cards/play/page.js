@@ -2,7 +2,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 
 // ---- 色ルール：下一桁で色（サブタイと同じ）----
@@ -30,7 +30,7 @@ function buildCardsKey({ mode, rangeStart, rangeEnd, who, whom }) {
   return `study_waza_cards_${m}_${rs}_${re}_${a}_${b}`;
 }
 
-export default function StudyWazaCardsPlayPage() {
+function StudyWazaCardsPlayInner() {
   const router = useRouter();
   const sp = useSearchParams();
 
@@ -155,7 +155,15 @@ export default function StudyWazaCardsPlayPage() {
   // 復元
   useEffect(() => {
     if (loading) return;
-    if (!targets.length) return;
+
+    if (!targets.length) {
+      setLearnedSet(new Set());
+      setDeck([]);
+      setIdx(0);
+      setSide('front');
+      resetHints();
+      return;
+    }
 
     if (typeof window !== 'undefined') {
       try {
@@ -623,5 +631,13 @@ export default function StudyWazaCardsPlayPage() {
         </div>
       </div>
     </main>
+  );
+}
+
+export default function StudyWazaCardsPlayPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-sky-50" />}>
+      <StudyWazaCardsPlayInner />
+    </Suspense>
   );
 }

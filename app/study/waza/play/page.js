@@ -2,7 +2,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 
 function pad2(n) {
@@ -142,7 +142,7 @@ function buildSaveKey({ mode, rangeStart, rangeEnd, who, whom }) {
   return `study_waza_save_${m}_${rs}_${re}_${a}_${b}`;
 }
 
-export default function StudyWazaPlayPage() {
+function StudyWazaPlayInner() {
   const router = useRouter();
   const sp = useSearchParams();
 
@@ -714,12 +714,11 @@ export default function StudyWazaPlayPage() {
                   {lastJudge.ok ? '正解！' : lastJudge.isSkip ? 'スキップ' : '不正解'}
                 </p>
 
-                {/* ★ current じゃなく lastJudge.correct を出す（ズレ防止） */}
                 {(opts.ignoreWrongAndGo || lastJudge.ok || lastJudge.isSkip) && (
-     <p className="text-[12px] text-slate-700 mt-1">
-       正解：<b className="text-slate-900">{lastJudge.correct || ''}</b>
-     </p>
-   )}
+                  <p className="text-[12px] text-slate-700 mt-1">
+                    正解：<b className="text-slate-900">{lastJudge.correct || ''}</b>
+                  </p>
+                )}
 
                 {!lastJudge.ok && !opts.ignoreWrongAndGo && (
                   <p className="text-[11px] text-slate-600 mt-2">
@@ -738,7 +737,9 @@ export default function StudyWazaPlayPage() {
               </span>
             </div>
 
-            <div className="mt-3 text-[11px] text-slate-500">※プレイ中は自動セーブされます（中断しても「続きから再開」できます）</div>
+            <div className="mt-3 text-[11px] text-slate-500">
+              ※プレイ中は自動セーブされます（中断しても「続きから再開」できます）
+            </div>
           </div>
         )}
 
@@ -752,5 +753,13 @@ export default function StudyWazaPlayPage() {
         </div>
       </div>
     </main>
+  );
+}
+
+export default function StudyWazaPlayPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-sky-50" />}>
+      <StudyWazaPlayInner />
+    </Suspense>
   );
 }
