@@ -9,6 +9,8 @@ export default function SoloMenuPage() {
   const [sniperBest, setSniperBest] = useState(0);
   const [dungeonBest, setDungeonBest] = useState(null);
   const [bombBest, setBombBest] = useState(0);
+const [beforeBest, setBeforeBest] = useState(0);
+
 
   // ★ 仕分け（出身）
   const [bornBest, setBornBest] = useState(0);
@@ -75,6 +77,12 @@ export default function SoloMenuPage() {
       const rawBlood = window.localStorage.getItem('bloodtype_best_score');
       const bt = rawBlood ? Number(rawBlood) : 0;
       if (!Number.isNaN(bt) && bt > 0) setBloodtypeBest(bt);
+
+      // ★ 時系列（before pacman）
+      const rawBefore = window.localStorage.getItem('before_pac_best_score');
+      const bp = rawBefore ? Number(rawBefore) : 0;
+      if (!Number.isNaN(bp) && bp > 0) setBeforeBest(bp);
+
 
       // ★ 風船割り（5モード）
       const keys = ['food', 'height', 'age', 'bounty', 'other'];
@@ -359,6 +367,33 @@ export default function SoloMenuPage() {
             </div>
           </div>
 
+{/* ★ 時系列（仕分けの下 / 薄い黄色） */}
+<div className="rounded-2xl border border-amber-300 bg-amber-50 px-3 py-3 shadow-sm">
+  <Link
+    href="/solo/before"
+    className="block hover:bg-amber-100 rounded-2xl -mx-3 -my-3 px-3 py-3 transition"
+  >
+    <p className="text-sm font-bold text-amber-900">時系列</p>
+    <p className="text-[11px] text-amber-950 leading-tight mt-1">
+      A〜Eの出来事を、古い順 or 新しい順で選択する。
+          </p>
+  </Link>
+
+  <div className="mt-2 flex items-center justify-between text-[11px] text-amber-900">
+    <span>
+      自己ベスト:{' '}
+      <span className="font-semibold">
+        {beforeBest > 0 ? beforeBest : '--'}
+      </span>
+    </span>
+    <Link href="/solo/before/rules" className="underline text-amber-700 hover:text-amber-500">
+      ルールを見る
+    </Link>
+  </div>
+</div>
+
+
+
           {/* ワードル */}
           <div className="rounded-2xl border border-slate-400 bg-slate-50 px-3 py-3 shadow-sm">
             <Link
@@ -378,15 +413,18 @@ export default function SoloMenuPage() {
           {/* ナレッジタワー（未公開） */}
           {/*
           <Link
-            href="/solo/knowledge-tower"
-            className="block rounded-2xl border border-violet-500 bg-violet-50 px-3 py-3 shadow-sm hover:bg-violet-100"
-          >
-            <p className="text-sm font-bold text-violet-900">ナレッジタワー（タグ別）</p>
-            <p className="text-[11px] text-violet-950 leading-tight mt-1">
-              20階層の塔を、タグ別問題でひとつずつ攻略していくソロモード。
-              各フロア30問正解→ボス戦で塔のてっぺんを目指そう。
-            </p>
-          </Link>
+  href="/solo/knowledge-tower"
+  className="block rounded-2xl border border-violet-500 bg-violet-50 px-4 py-5 shadow-sm hover:bg-violet-100 transition"
+>
+  <p className="text-base font-extrabold text-violet-900">
+    ナレッジタワー（タグ別）
+  </p>
+  <p className="text-[12px] text-violet-950 leading-relaxed mt-2">
+    20階層の塔を、タグ別問題でひとつずつ攻略していくソロモード。
+    <br />
+    各フロア30問正解 → ボス戦で塔のてっぺんを目指そう。
+  </p>
+</Link>
           */}
         </div>
 

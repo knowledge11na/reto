@@ -1,7 +1,7 @@
 // file: app/solo/before/page.js
 'use client';
 
-import { useEffect, useMemo, useRef, useState, useId } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import QuestionReviewAndReport from '@/components/QuestionReviewAndReport';
 
@@ -11,7 +11,6 @@ const GAME_H = 520;
 /**
  * ====== クラシック風 28x31 迷路 ======
  * 0=通路, 1=壁
- * ※「見た目をそれっぽく」寄せた固定迷路（中央にペン/箱）
  * ※左右ワープ（トンネル）あり
  */
 const MAZE = [
@@ -52,35 +51,31 @@ const ROWS = MAZE.length; // 31
 const COLS = MAZE[0].length; // 28
 
 // ===== スピード・タイミング =====
-const STEP_MS = 140; // プレイヤー基本移動（タイル）
-const GHOST_STEP_MS = 160; // ゴースト基本移動（タイル）
+const STEP_MS = 140;
+const GHOST_STEP_MS = 160;
 
-const PREVIEW_SEC = 10; // 問題を最初に見せる秒数（WAVE開始前）
-const WAVE_FREEZE_SEC = 10; // 次WAVE生成時に10秒停止
+const PREVIEW_SEC = 10;
+const WAVE_FREEZE_SEC = 10;
 
 // A〜E（問題エサ）
 const PELLET_COUNT = 5;
 const LETTERS = 'ABCDE'.split('');
 
-// ===== 新要素（全部盛り）=====
-const POWER_SEC = 5; // A〜Eを取ったら5秒
-const SPEED_BOOST = 1.25; // 速度UP倍率（ちょい）
-const RESPAWN_MS = 3500; // 倒したゴーストの復活まで
-const FRUIT_INTERVAL_MS = 10000; // 10秒
-const FRUIT_REVEAL_MS = 1000; // 1秒だけ答え表示
+// ===== 新要素 =====
+const POWER_SEC = 5;
+const SPEED_BOOST = 1.25;
+const RESPAWN_MS = 3500;
+const FRUIT_INTERVAL_MS = 10000;
+const FRUIT_REVEAL_MS = 1000;
 
-// ===== 固定配置（クラシック寄せ）=====
-const PLAYER_START = { x: 13, y: 22 }; // 下側中央付近
-const PEN = { x: 13, y: 13 }; // 中央箱の中心
-
-// ペン（中央箱）の「内部判定」用（だいたいこの範囲を箱扱い）
+// ===== 固定配置 =====
+const PLAYER_START = { x: 13, y: 22 };
+const PEN = { x: 13, y: 13 };
 const PEN_RECT = { x0: 10, x1: 17, y0: 12, y1: 16 };
-
-// 出入口（このマスへ向かって出ていく）
 const PEN_EXIT = { x: 13, y: 11 };
-
-// 出入口の「通行許可」座標
 const PEN_DOORS = new Set([`${PEN_EXIT.x},${PEN_EXIT.y}`]);
+
+const MAP_IMG_SRC = '/before/before_map.png';
 
 function inPen(x, y) {
   return x >= PEN_RECT.x0 && x <= PEN_RECT.x1 && y >= PEN_RECT.y0 && y <= PEN_RECT.y1;
@@ -407,79 +402,6 @@ function pickEmptyCellsValidated(count, forbiddenSet, orderCells, startPos) {
   return cellsFallback;
 }
 
-// ===== 壁を「外周パス」にする =====
-function buildWallPaths() {
-  const isWallCell = (x, y) => {
-    if (y < 0 || y >= ROWS || x < 0 || x >= COLS) return false;
-    if (PEN_DOORS.has(`${x},${y}`)) return false;
-    return MAZE[y][x] === '1';
-  };
-
-  const edges = [];
-  for (let y = 0; y < ROWS; y++) {
-    for (let x = 0; x < COLS; x++) {
-      if (!isWallCell(x, y)) continue;
-
-      if (!isWallCell(x, y - 1)) edges.push({ a: [x, y], b: [x + 1, y] });
-      if (!isWallCell(x + 1, y)) edges.push({ a: [x + 1, y], b: [x + 1, y + 1] });
-      if (!isWallCell(x, y + 1)) edges.push({ a: [x + 1, y + 1], b: [x, y + 1] });
-      if (!isWallCell(x - 1, y)) edges.push({ a: [x, y + 1], b: [x, y] });
-    }
-  }
-
-  const key = (p) => `${p[0]},${p[1]}`;
-  const map = new Map();
-  for (const e of edges) {
-    const ka = key(e.a);
-    const kb = key(e.b);
-    if (!map.has(ka)) map.set(ka, []);
-    map.get(ka).push(kb);
-  }
-
-  const paths = [];
-  const takeOneEdge = () => {
-    for (const [ka, arr] of map.entries()) {
-      if (arr.length) {
-        const kb = arr.pop();
-        return { ka, kb };
-      }
-    }
-    return null;
-  };
-
-  while (true) {
-    const first = takeOneEdge();
-    if (!first) break;
-
-    const start = first.ka;
-    let cur = first.kb;
-
-    const pts = [start, cur];
-
-    for (let guard = 0; guard < 200000; guard++) {
-      if (cur === start) break;
-      const arr = map.get(cur);
-      if (!arr || arr.length === 0) break;
-      const next = arr.pop();
-      pts.push(next);
-      cur = next;
-    }
-
-    const toXY = (k) => k.split(',').map((v) => Number(v));
-    const p0 = toXY(pts[0]);
-    let d = `M ${p0[0]} ${p0[1]}`;
-    for (let i = 1; i < pts.length; i++) {
-      const p = toXY(pts[i]);
-      d += ` L ${p[0]} ${p[1]}`;
-    }
-    d += ' Z';
-
-    paths.push(d);
-  }
-
-  return paths;
-}
-
 export default function BeforePacmanPage() {
   const [status, setStatus] = useState('loading');
   const [message, setMessage] = useState('');
@@ -580,22 +502,6 @@ export default function BeforePacmanPage() {
   }, [boardRect.w, boardRect.h]);
 
   const pelletLabelFont = Math.max(10, Math.floor(tilePx * 0.42));
-
-  const wallPaths = useMemo(() => buildWallPaths(), []);
-
-  const wallUid = useId();
-
-  const wallStrokeBase = useMemo(() => {
-    const px = Math.max(0.9, tilePx * 0.06);
-    return px / tilePx;
-  }, [tilePx]);
-
-  const wallStrokeOuter = wallStrokeBase * 2.0;
-  const wallStrokeInner = wallStrokeBase * 1.15;
-
-  const WALL_GRAD_ID = `wallGrad-${wallUid}`;
-  const WALL_GLOW_OUTER_ID = `wallGlowOuter-${wallUid}`;
-  const WALL_GLOW_INNER_ID = `wallGlowInner-${wallUid}`;
 
   // ===== スマホ判定（coarse pointer or touch）=====
   const isCoarse = useMemo(() => {
@@ -1336,325 +1242,117 @@ export default function BeforePacmanPage() {
     const bh = tilePx * ROWS;
 
     const t3d = (x, y) => `translate3d(${x}px, ${y}px, 0)`;
+    const isMobileLite = isCoarse;
 
-    const isMobileLite = isCoarse; // coarseは軽量描画（超効く）
-
-    // ===== 壁SVG（軽量/通常 分岐）=====
-    const wallSvg = useMemo(() => {
-      if (isMobileLite) {
-  // ★スマホ：フィルタ/マスク無しで「面 + 線」だけ（軽いのに見やすい）
-  return (
-    <svg
-      className="absolute inset-0"
-      width={bw}
-      height={bh}
-      viewBox={`0 0 ${COLS} ${ROWS}`}
-      shapeRendering="geometricPrecision"
-      style={{ pointerEvents: 'none' }}
-    >
-      {/* 1) 壁の面（明るい青） */}
-      <g opacity="0.95">
-        {wallPaths.map((d, i) => (
-          <path
-            key={`mf-${i}`}
-            d={d}
-            fill="rgba(96,165,250,0.55)"   // ←ここが「中身明るい青」
-            stroke="none"
-          />
-        ))}
-      </g>
-
-      {/* 2) 外側の青ライン */}
-      <g opacity="1">
-        {wallPaths.map((d, i) => (
-          <path
-            key={`m-${i}`}
-            d={d}
-            fill="none"
-            stroke="rgba(96,165,250,1)"
-            strokeWidth={wallStrokeOuter}
-            strokeLinejoin="round"
-            strokeLinecap="round"
-          />
-        ))}
-      </g>
-
-      {/* 3) 内側の白ライン */}
-      <g opacity="0.9">
-        {wallPaths.map((d, i) => (
-          <path
-            key={`mi-${i}`}
-            d={d}
-            fill="none"
-            stroke="rgba(240,248,255,0.85)"
-            strokeWidth={wallStrokeInner}
-            strokeLinejoin="round"
-            strokeLinecap="round"
-          />
-        ))}
-      </g>
-    </svg>
-  );
-}
-
-
-      // ★PC：豪華版（あなたの見た目）
-      return (
-        <svg
-          className="absolute inset-0"
-          width={bw}
-          height={bh}
-          viewBox={`0 0 ${COLS} ${ROWS}`}
-          shapeRendering="geometricPrecision"
-          style={{ pointerEvents: 'none' }}
-        >
-          <defs>
-            <linearGradient id={WALL_GRAD_ID} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="rgba(147,197,253,1)" />
-              <stop offset="100%" stopColor="rgba(59,130,246,1)" />
-            </linearGradient>
-
-            <filter id={WALL_GLOW_OUTER_ID} x="-70%" y="-70%" width="240%" height="240%">
-              <feGaussianBlur stdDeviation="0.18" result="b" />
-              <feColorMatrix
-                in="b"
-                type="matrix"
-                values="
-                  0 0 0 0 0.25
-                  0 0 0 0 0.60
-                  0 0 0 0 1.00
-                  0 0 0 1.35 0"
-                result="g"
-              />
-              <feMerge>
-                <feMergeNode in="g" />
-                <feMergeNode in="SourceGraphic" />
-              </feMerge>
-            </filter>
-
-            <filter id={`outerGlow-${wallUid}`} x="-80%" y="-80%" width="260%" height="260%">
-              <feGaussianBlur stdDeviation="0.22" result="b" />
-              <feColorMatrix
-                in="b"
-                type="matrix"
-                values="
-                  0 0 0 0 0.18
-                  0 0 0 0 0.50
-                  0 0 0 0 1.00
-                  0 0 0 0.90 0"
-                result="g"
-              />
-              <feMerge>
-                <feMergeNode in="g" />
-                <feMergeNode in="SourceGraphic" />
-              </feMerge>
-            </filter>
-
-            <filter id={WALL_GLOW_INNER_ID} x="-60%" y="-60%" width="220%" height="220%">
-              <feGaussianBlur stdDeviation="0.10" result="b2" />
-              <feMerge>
-                <feMergeNode in="b2" />
-                <feMergeNode in="SourceGraphic" />
-              </feMerge>
-            </filter>
-
-            <filter id={`wallInset-${wallUid}`} x="-20%" y="-20%" width="140%" height="140%">
-              <feGaussianBlur stdDeviation="0.25" result="b" />
-              <feMorphology in="b" operator="erode" radius="0.2" result="e" />
-              <feGaussianBlur in="e" stdDeviation="0.08" result="bb" />
-              <feColorMatrix
-                in="bb"
-                type="matrix"
-                values="
-                  0 0 0 0 0
-                  0 0 0 0 0
-                  0 0 0 0 0
-                  0 0 0 28 -14"
-              />
-            </filter>
-
-            <mask id={`wallSolidMask-${wallUid}`} maskUnits="userSpaceOnUse" mask-type="alpha">
-              <g filter={`url(#wallInset-${wallUid})`}>
-                {wallPaths.map((d, i) => (
-                  <path key={`ms-${i}`} d={d} fill="white" stroke="none" />
-                ))}
-              </g>
-            </mask>
-          </defs>
-
-          <g mask={`url(#wallSolidMask-${wallUid})`}>
-            <g opacity="0.9">
-              {wallPaths.map((d, i) => (
-                <path key={`fill-${i}`} d={d} fill="rgba(96,165,250,1)" stroke="none" />
-              ))}
-            </g>
-
-            <g filter={`url(#outerGlow-${wallUid})`} opacity="0.9">
-              {wallPaths.map((d, i) => (
-                <path
-                  key={`og-${i}`}
-                  d={d}
-                  fill="none"
-                  stroke="rgba(96,165,250,1)"
-                  strokeWidth={wallStrokeOuter * 1.9}
-                  strokeLinejoin="round"
-                  strokeLinecap="round"
-                />
-              ))}
-            </g>
-
-            <g filter={`url(#${WALL_GLOW_OUTER_ID})`} opacity="1">
-              {wallPaths.map((d, i) => (
-                <path
-                  key={`o-${i}`}
-                  d={d}
-                  fill="none"
-                  stroke={`url(#${WALL_GRAD_ID})`}
-                  strokeWidth={wallStrokeOuter}
-                  strokeLinejoin="round"
-                  strokeLinecap="round"
-                />
-              ))}
-            </g>
-
-            <g filter={`url(#${WALL_GLOW_INNER_ID})`} opacity="1">
-              {wallPaths.map((d, i) => (
-                <path
-                  key={`i-${i}`}
-                  d={d}
-                  fill="none"
-                  stroke="rgba(240,248,255,0.92)"
-                  strokeWidth={wallStrokeInner}
-                  strokeLinejoin="round"
-                  strokeLinecap="round"
-                />
-              ))}
-            </g>
-          </g>
-        </svg>
-      );
-    }, [
-      bw,
-      bh,
-      isMobileLite,
-      wallUid,
-      WALL_GRAD_ID,
-      WALL_GLOW_OUTER_ID,
-      WALL_GLOW_INNER_ID,
-      wallStrokeOuter,
-      wallStrokeInner,
-      wallPaths,
-    ]);
-
-    // ===== A〜E（丸＋ラベル）=====
-// ===== A〜E（丸＋ラベル）=====
-const PelletAndLabel = ({ q }) => {
-  // ここから追加（端に近いときラベルを内側に寄せる）
-  const LABEL_W = Math.floor(tilePx * 6.6);
-  const LABEL_H = Math.floor(tilePx * 1.9); // だいたい（2行想定）
-  const PAD = Math.floor(tilePx * 0.2);
-
-  const boardW = bw; // tilePx*COLS
-  const boardH = bh; // tilePx*ROWS
-
-  // デフォは「左ちょい」「下」
-  let labelLeft = Math.floor(tilePx * -0.2);
-  let labelTop = Math.floor(tilePx * 0.95);
-
-  // 右端ではみ出すなら左へ寄せる
-  const labelAbsX = q.x * tilePx + labelLeft;
-  if (labelAbsX + LABEL_W > boardW - PAD) {
-    labelLeft = boardW - PAD - LABEL_W - q.x * tilePx;
-  }
-
-  // 左端も念のため
-  if (q.x * tilePx + labelLeft < PAD) {
-    labelLeft = PAD - q.x * tilePx;
-  }
-
-  // 下端ではみ出すなら「上に出す」
-  const labelAbsY = q.y * tilePx + labelTop;
-  if (labelAbsY + LABEL_H > boardH - PAD) {
-    labelTop = Math.floor(tilePx * -1.25); // 上側に逃がす
-  }
-  // ここまで追加
-
-  return (
-    <div
-      className="absolute"
-      style={{
-        left: 0,
-        top: 0,
-        transform: t3d(q.x * tilePx, q.y * tilePx),
-        zIndex: 10,
-        pointerEvents: 'none',
-        willChange: 'transform',
-      }}
-    >
-      <div
-        className="absolute flex items-center justify-center font-black"
-        style={{
-          left: Math.floor(tilePx * 0.15),
-          top: Math.floor(tilePx * 0.15),
-          width: Math.floor(tilePx * 0.7),
-          height: Math.floor(tilePx * 0.7),
-          borderRadius: 999,
-          background: 'linear-gradient(180deg, rgba(250,204,21,1), rgba(245,158,11,1))',
-          color: 'rgba(2,6,23,0.95)',
-          boxShadow: '0 4px 10px rgba(0,0,0,0.25), inset 0 0 0 2px rgba(255,255,255,0.22)',
-          fontSize: Math.max(11, Math.floor(tilePx * 0.48)),
-        }}
-        title={`${q.letter}: ${q.event}`}
-      >
-        {q.letter}
-      </div>
-
-      {showReveal && (
-        <div
-          className="absolute font-black"
-          style={{
-            left: Math.floor(tilePx * 0.05),
-            top: Math.floor(tilePx * -0.28),
-            padding: '2px 6px',
-            borderRadius: 999,
-            background: 'rgba(255,255,255,0.92)',
-            color: 'rgba(2,6,23,0.95)',
-            fontSize: Math.max(10, Math.floor(tilePx * 0.36)),
-            boxShadow: '0 6px 14px rgba(0,0,0,0.25)',
-            pointerEvents: 'none',
-            whiteSpace: 'nowrap',
-          }}
-        >
-          {q.yearsAgo}
-        </div>
-      )}
-
-      <div
-        className="absolute pointer-events-none"
-        style={{
-          left: labelLeft,          // ★ここが差し替わる
-          top: labelTop,            // ★ここが差し替わる
-          width: LABEL_W,           // ★widthも合わせる
-          padding: '2px 6px',
-          borderRadius: 10,
-          fontSize: Math.max(10, pelletLabelFont),
-          lineHeight: 1.15,
-          color: 'rgba(255,255,255,0.92)',
-          background: 'rgba(0,0,0,0.40)',
-          backdropFilter: isMobileLite ? 'none' : 'blur(2px)',
-          whiteSpace: 'normal',
-          wordBreak: 'break-word',
-          boxShadow: '0 6px 14px rgba(0,0,0,0.25)',
-        }}
-      >
-        {q.event}
-      </div>
-    </div>
-  );
+// ==== 背景画像の微調整（px単位）====
+// +x で右へ、+y で下へ
+const MAP_ADJUST = {
+  x: -5,   // 例: 2
+  y: -5,   // 例: -3
+  scale: 1.0, // 例: 1.01
 };
 
 
-    // ===== プレイヤー/ゴースト/フルーツ（transform統一）=====
+    // ===== A〜E（丸＋ラベル）=====
+    const PelletAndLabel = ({ q }) => {
+      const LABEL_W = Math.floor(tilePx * 6.6);
+      const LABEL_H = Math.floor(tilePx * 1.9);
+      const PAD = Math.floor(tilePx * 0.2);
+
+      const boardW = bw;
+      const boardH = bh;
+
+      let labelLeft = Math.floor(tilePx * -0.2);
+      let labelTop = Math.floor(tilePx * 0.95);
+
+      const labelAbsX = q.x * tilePx + labelLeft;
+      if (labelAbsX + LABEL_W > boardW - PAD) {
+        labelLeft = boardW - PAD - LABEL_W - q.x * tilePx;
+      }
+      if (q.x * tilePx + labelLeft < PAD) {
+        labelLeft = PAD - q.x * tilePx;
+      }
+
+      const labelAbsY = q.y * tilePx + labelTop;
+      if (labelAbsY + LABEL_H > boardH - PAD) {
+        labelTop = Math.floor(tilePx * -1.25);
+      }
+
+      return (
+        <div
+          className="absolute"
+          style={{
+            left: 0,
+            top: 0,
+            transform: t3d(q.x * tilePx, q.y * tilePx),
+            zIndex: 10,
+            pointerEvents: 'none',
+            willChange: 'transform',
+          }}
+        >
+          <div
+            className="absolute flex items-center justify-center font-black"
+            style={{
+              left: Math.floor(tilePx * 0.15),
+              top: Math.floor(tilePx * 0.15),
+              width: Math.floor(tilePx * 0.7),
+              height: Math.floor(tilePx * 0.7),
+              borderRadius: 999,
+              background: 'linear-gradient(180deg, rgba(250,204,21,1), rgba(245,158,11,1))',
+              color: 'rgba(2,6,23,0.95)',
+              boxShadow: '0 4px 10px rgba(0,0,0,0.25), inset 0 0 0 2px rgba(255,255,255,0.22)',
+              fontSize: Math.max(11, Math.floor(tilePx * 0.48)),
+            }}
+            title={`${q.letter}: ${q.event}`}
+          >
+            {q.letter}
+          </div>
+
+          {showReveal && (
+            <div
+              className="absolute font-black"
+              style={{
+                left: Math.floor(tilePx * 0.05),
+                top: Math.floor(tilePx * -0.28),
+                padding: '2px 6px',
+                borderRadius: 999,
+                background: 'rgba(255,255,255,0.92)',
+                color: 'rgba(2,6,23,0.95)',
+                fontSize: Math.max(10, Math.floor(tilePx * 0.36)),
+                boxShadow: '0 6px 14px rgba(0,0,0,0.25)',
+                pointerEvents: 'none',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {q.yearsAgo}
+            </div>
+          )}
+
+          <div
+            className="absolute pointer-events-none"
+            style={{
+              left: labelLeft,
+              top: labelTop,
+              width: LABEL_W,
+              padding: '2px 6px',
+              borderRadius: 10,
+              fontSize: Math.max(10, pelletLabelFont),
+              lineHeight: 1.15,
+              color: 'rgba(255,255,255,0.92)',
+              background: 'rgba(0,0,0,0.40)',
+              backdropFilter: isMobileLite ? 'none' : 'blur(2px)',
+              whiteSpace: 'normal',
+              wordBreak: 'break-word',
+              boxShadow: '0 6px 14px rgba(0,0,0,0.25)',
+            }}
+          >
+            {q.event}
+          </div>
+        </div>
+      );
+    };
+
+    // ===== プレイヤー/ゴースト/フルーツ =====
     const PlayerSprite = ({ x, y }) => {
       const bodyColor = '#ffffff';
       const pupilColor = '#111111';
@@ -1736,7 +1434,13 @@ const PelletAndLabel = ({ q }) => {
           }}
           title="player"
         >
-          <div style={{ position: 'absolute', inset: 0, filter: isMobileLite ? 'none' : 'drop-shadow(0 6px 10px rgba(0,0,0,0.45))' }}>
+          <div
+            style={{
+              position: 'absolute',
+              inset: 0,
+              filter: isMobileLite ? 'none' : 'drop-shadow(0 6px 10px rgba(0,0,0,0.45))',
+            }}
+          >
             <div style={{ position: 'absolute', inset: 0 }}>{renderBits(bodyBits, bodyColor, 1, 'body')}</div>
           </div>
 
@@ -1837,7 +1541,13 @@ const PelletAndLabel = ({ q }) => {
           }}
           title="ghost"
         >
-          <div style={{ position: 'absolute', inset: 0, filter: isMobileLite ? 'none' : 'drop-shadow(0 6px 8px rgba(0,0,0,0.45))' }}>
+          <div
+            style={{
+              position: 'absolute',
+              inset: 0,
+              filter: isMobileLite ? 'none' : 'drop-shadow(0 6px 8px rgba(0,0,0,0.45))',
+            }}
+          >
             <div style={{ position: 'absolute', inset: 0 }}>{renderBits(ghostBits, body)}</div>
           </div>
 
@@ -1894,17 +1604,31 @@ const PelletAndLabel = ({ q }) => {
           WebkitUserSelect: 'none',
           userSelect: 'none',
           pointerEvents: 'auto',
-          background: 'radial-gradient(120% 120% at 50% 50%, rgba(2,6,23,1) 0%, rgba(0,0,0,1) 65%)',
 
           // ★スマホで効くやつ
           transform: 'translateZ(0)',
           contain: 'layout paint size',
+          background: 'rgba(0,0,0,1)',
         }}
       >
-        <div className="absolute inset-0" style={{ background: 'rgba(2,6,23,1)' }} />
+        {/* ★壁/背景は画像に一本化（PC/スマホ共通） */}
+       <img
+  src={MAP_IMG_SRC}
+  alt=""
+  draggable={false}
+  className="absolute inset-0 w-full h-full"
+  style={{
+    pointerEvents: 'none',
+    transformOrigin: 'center center',
+    transform: `translate3d(${MAP_ADJUST.x}px, ${MAP_ADJUST.y}px, 0) scale(${MAP_ADJUST.scale})`,
+    imageRendering: 'auto',
+    // まずは "fill" 維持（歪みが気になるなら下の 3) を使う）
+    objectFit: 'fill',
+  }}
+/>
 
-        {wallSvg}
 
+        {/* 盤面上のスプライト類 */}
         <div
           className="absolute inset-0"
           style={{
@@ -1925,7 +1649,6 @@ const PelletAndLabel = ({ q }) => {
         </div>
 
         {dim && <div className="absolute inset-0" style={{ background: 'rgba(2,6,23,0.15)', zIndex: 30 }} />}
-
         {isWaveFrozen && <div className="absolute inset-0" style={{ background: 'rgba(0,0,0,0.12)', zIndex: 40 }} />}
       </div>
     );
@@ -1934,7 +1657,7 @@ const PelletAndLabel = ({ q }) => {
   // ===== UI分岐 =====
   if (status === 'loading') {
     return (
-      <SoloLayout title="パックマン（時系列）">
+      <SoloLayout title="（時系列）">
         <p className="text-sm text-slate-800 bg-white/90 rounded-xl px-4 py-3 inline-block">読み込み中...</p>
       </SoloLayout>
     );
@@ -1942,7 +1665,7 @@ const PelletAndLabel = ({ q }) => {
 
   if (status === 'finished') {
     return (
-      <SoloLayout title="パックマン（時系列）">
+      <SoloLayout title="（時系列）">
         <div className="mt-3 max-w-md mx-auto bg-white/95 rounded-2xl shadow-lg border border-slate-200 p-4 sm:p-6 space-y-3">
           <p className="text-lg font-semibold text-slate-900">結果</p>
           <p className="text-sm text-slate-900">
@@ -1996,7 +1719,7 @@ const PelletAndLabel = ({ q }) => {
 
   if (status === 'choose') {
     return (
-      <SoloLayout title="パックマン（時系列）">
+      <SoloLayout title="時系列">
         <div className="max-w-2xl mx-auto space-y-3">
           <div className="bg-white/95 rounded-2xl border border-slate-200 shadow-sm p-4">
             <p className="text-sm font-bold text-slate-900">このWAVEはどっちの順で食べる？（A〜Eの5個）</p>
@@ -2029,7 +1752,7 @@ const PelletAndLabel = ({ q }) => {
 
   if (status === 'preview') {
     return (
-      <SoloLayout title="パックマン（時系列）">
+      <SoloLayout title="時系列">
         <div className="max-w-3xl mx-auto">
           <div className="bg-white/92 rounded-2xl border border-slate-200 shadow-sm px-4 py-3 flex items-center justify-between">
             <div>
@@ -2067,7 +1790,7 @@ const PelletAndLabel = ({ q }) => {
   const powerLeft = boosted ? Math.max(0, Math.ceil((powerUntilRef.current - Date.now()) / 1000)) : 0;
 
   return (
-    <SoloLayout title="パックマン（時系列）">
+    <SoloLayout title="時系列">
       <div className="max-w-3xl mx-auto">
         <div className="bg-white/92 rounded-2xl border border-slate-200 shadow-sm px-4 py-3 flex items-center justify-between gap-3">
           <div>
