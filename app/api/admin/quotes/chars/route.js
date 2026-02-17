@@ -1,31 +1,22 @@
+// file: app/api/admin/quotes/chars/route.js
 import { NextResponse } from 'next/server';
 import fs from 'fs';
+import path from 'path';
+import db from '@/lib/db.js';
 
 export const runtime = 'nodejs';
 
-// 変更しない（あなたの絶対パス縛り）
-const CSV_PATH = 'C:\\Users\\aoba10\\OneDrive\\Desktop\\reto\\onepiece_gacha\\chars.csv';
+// ローカル用（今まで通り）
+const ABS_CSV = 'C:\\Users\\aoba10\\OneDrive\\Desktop\\reto\\onepiece_gacha\\chars.csv';
 
-function ensureFileExists() {
-  if (fs.existsSync(CSV_PATH)) return;
+// 本番用のフォールバック（どっちかを使う）
+const REL_CSV = path.join(process.cwd(), 'data', 'chars.csv'); // ← repoに置く場合
+// さらに最終フォールバック：DB（quote_characters）を使う
 
-  // 無いなら最小ヘッダで作る（既にあるなら何もしない）
-  fs.writeFileSync(CSV_PATH, 'char_no,name\n', 'utf8');
-}
+function parseCsv(text) {
+  const cleaned = String(text || '').replace(/^\uFEFF/, '');
+  const lines = cleaned.split(/\r?\n/);
 
-function readLines() {
-  ensureFileExists();
-  const text = fs.readFileSync(CSV_PATH, 'utf8');
-
-  // BOM除去
-  const cleaned = text.replace(/^\uFEFF/, '');
-  return cleaned.split(/\r?\n/);
-}
-
-function parseCsvRows() {
-  const lines = readLines();
-
-  // 1行目がヘッダっぽいなら飛ばす
   let start = 0;
   if (lines[0] && !/^\s*\d+/.test(lines[0])) start = 1;
 
@@ -33,13 +24,11 @@ function parseCsvRows() {
   for (let i = start; i < lines.length; i++) {
     const line = (lines[i] || '').trim();
     if (!line) continue;
-
     const cols = line.split(',');
     if (cols.length < 2) continue;
 
     const id = Number(cols[0]);
     const name = (cols[1] || '').trim();
-
     if (!Number.isFinite(id) || !name) continue;
 
     rows.push({ id, char_no: id, name });
@@ -49,25 +38,31 @@ function parseCsvRows() {
   return rows;
 }
 
-function escapeCsvCell(s) {
-  // name にカンマや改行が入る可能性を考慮してCSVエスケープ
-  const x = String(s ?? '');
-  if (/[,"\r\n]/.test(x)) {
-    return `"${x.replace(/"/g, '""')}"`;
+function loadAllFromCsvIfExists(filePath) {
+  try {
+    if (!filePath) return null;
+    if (!fs.existsSync(filePath)) return null;
+    const text = fs.readFileSync(filePath, 'utf8');
+    return parseCsv(text);
+  } catch {
+    return null;
   }
-  return x;
 }
 
-function appendRow(charNo, name) {
-  ensureFileExists();
-
-  // ファイル末尾が改行で終わってなければ足す
-  const buf = fs.readFileSync(CSV_PATH);
-  const endsWithNewline =
-    buf.length === 0 ? true : buf[buf.length - 1] === 0x0a || buf[buf.length - 1] === 0x0d;
-
-  const line = `${charNo},${escapeCsvCell(name)}\n`;
-  fs.appendFileSync(CSV_PATH, (endsWithNewline ? '' : '\n') + line, 'utf8');
+async function loadAllFromDb() {
+  try {
+    // quote_characters が無い/空でも落ちないように
+    const rows = await db.query(
+      `SELECT id, char_no, name FROM quote_characters ORDER BY char_no NULLS LAST, id ASC LIMIT 100000`
+    );
+    return (rows || []).map((r) => ({
+      id: r.id ?? r.char_no,
+      char_no: r.char_no ?? null,
+      name: r.name,
+    }));
+  } catch {
+    return [];
+  }
 }
 
 export async function GET(req) {
@@ -76,12 +71,22 @@ export async function GET(req) {
     const q = String(searchParams.get('q') || '').trim();
     const limit = Math.max(1, Math.min(200, Number(searchParams.get('limit') || 50)));
 
-    const all = parseCsvRows();
+    // ① 絶対パス（ローカル）
+    let all = loadAllFromCsvIfExists(ABS_CSV);
+
+    // ② リポジトリ内 data/chars.csv（本番）
+    if (!all || all.length === 0) {
+      all = loadAllFromCsvIfExists(REL_CSV);
+    }
+
+    // ③ DB（本番の最終保険）
+    if (!all || all.length === 0) {
+      all = await loadAllFromDb();
+    }
 
     if (!q) {
-      // 全件返すと重い＆UIで意味がないので先頭だけ
       return NextResponse.json(
-        { ok: true, rows: all.slice(0, limit), total: all.length },
+        { ok: true, rows: all.slice(0, limit), total: all.length, source: all.length ? 'loaded' : 'empty' },
         { status: 200 }
       );
     }
@@ -89,19 +94,23 @@ export async function GET(req) {
     const qq = q.toLowerCase();
     const hit = [];
     for (const r of all) {
-      if (r.name.toLowerCase().includes(qq)) {
+      if (String(r.name || '').toLowerCase().includes(qq)) {
         hit.push(r);
         if (hit.length >= limit) break;
       }
     }
 
-    return NextResponse.json({ ok: true, rows: hit, total: all.length }, { status: 200 });
+    return NextResponse.json(
+      { ok: true, rows: hit, total: all.length, source: 'loaded' },
+      { status: 200 }
+    );
   } catch (e) {
     console.error(e);
     return NextResponse.json({ ok: false, message: 'キャラ一覧取得失敗' }, { status: 500 });
   }
 }
 
+// 重要：本番でCSV追記は基本できない（Vercelのファイルは永続化されない）ので、POSTはDBへ保存にする
 export async function POST(request) {
   try {
     const body = await request.json().catch(() => ({}));
@@ -112,39 +121,25 @@ export async function POST(request) {
       return NextResponse.json({ ok: false, message: 'name は必須です。' }, { status: 400 });
     }
 
-    const all = parseCsvRows();
+    // 既存チェック（DB）
+    const existed = await db.get(`SELECT id, char_no, name FROM quote_characters WHERE name = $1`, [name]);
+    if (existed) return NextResponse.json({ ok: true, row: existed, existed: true }, { status: 200 });
 
-    // 既にいるならそれを返す（重複防止）
-    const existed = all.find((r) => r.name === name);
-    if (existed) {
-      return NextResponse.json({ ok: true, row: existed, existed: true }, { status: 200 });
-    }
-
-    // char_no 未指定なら最大+1
     if (charNo === undefined || charNo === null || charNo === '') {
-      const maxNo = all.reduce((m, r) => Math.max(m, Number(r.char_no) || 0), 0);
-      charNo = maxNo + 1;
+      const mx = await db.get(`SELECT COALESCE(MAX(char_no), 0) AS m FROM quote_characters`);
+      charNo = Number(mx?.m || 0) + 1;
     } else {
       charNo = Number(charNo);
       if (!Number.isFinite(charNo) || charNo <= 0) {
-        return NextResponse.json(
-          { ok: false, message: 'char_no は正の整数で指定してください。' },
-          { status: 400 }
-        );
-      }
-      // その番号が既に使われてたら弾く（事故防止）
-      const used = all.find((r) => Number(r.char_no) === charNo);
-      if (used) {
-        return NextResponse.json(
-          { ok: false, message: `char_no=${charNo} は既に使用されています（${used.name}）` },
-          { status: 400 }
-        );
+        return NextResponse.json({ ok: false, message: 'char_no は正の整数で指定してください。' }, { status: 400 });
       }
     }
 
-    appendRow(charNo, name);
+    const row = await db.get(
+      `INSERT INTO quote_characters (char_no, name) VALUES ($1, $2) RETURNING id, char_no, name`,
+      [charNo, name]
+    );
 
-    const row = { id: charNo, char_no: charNo, name };
     return NextResponse.json({ ok: true, row, existed: false }, { status: 201 });
   } catch (e) {
     console.error(e);
