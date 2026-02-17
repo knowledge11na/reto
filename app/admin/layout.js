@@ -85,6 +85,13 @@ export default async function AdminLayout({ children }) {
               ユーザー＆ランキング
             </a>
 
+<a  href="/admin/quotes"
+  className="block px-3 py-2 rounded hover:bg-slate-800">
+
+  セリフ管理
+</a>
+
+
             <a href="/admin/endless" className="block px-3 py-2 rounded hover:bg-slate-800">
               エンドレスモード
             </a>

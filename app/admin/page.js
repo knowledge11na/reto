@@ -113,6 +113,13 @@ export default function AdminDashboard() {
           >
             🏴‍☠️ ユーザー＆ランキングへ
           </a>
+<a
+  href="/admin/quotes"
+  className="px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-600"
+>
+  💬 セリフ管理へ
+</a>
+
           <a
             href="/admin/endless"
             className="px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-600"
