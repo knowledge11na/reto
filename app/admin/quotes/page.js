@@ -97,6 +97,8 @@ export default function AdminQuotesPage() {
 
   const [msg, setMsg] = useState('');
 
+const [bulkText, setBulkText] = useState('');
+
   const episodeCharOptions = useMemo(() => {
     const set = new Set();
     for (const r of episodeRows || []) {
@@ -809,6 +811,57 @@ export default function AdminQuotesPage() {
             )}
           </div>
         </section>
+
+{/* キャラ一括投入 */}
+<section className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 md:p-5 space-y-3">
+  <h2 className="font-extrabold">キャラ一括投入（本番DBに入れる）</h2>
+  <p className="text-xs text-slate-700 leading-relaxed">
+    ここに <span className="font-bold">char_no と name</span> の一覧（タブ区切り推奨）を貼って、
+    「一括投入」を押すと <span className="font-bold">quote_characters</span> に保存されます。
+  </p>
+
+  <textarea
+    value={bulkText}
+    onChange={(e) => setBulkText(e.target.value)}
+    className="w-full rounded-xl border border-slate-300 px-3 py-2 bg-white text-slate-900 min-h-[220px]"
+    placeholder={'例：\nchar_no\tname\n1\tモンキー・D・ルフィ\n2\tロロノア・ゾロ'}
+  />
+
+  <div className="flex flex-wrap gap-2 items-center">
+    <button
+      type="button"
+      onClick={async () => {
+        setMsg('');
+        try {
+          const res = await fetch('/api/admin/quotes/chars/bulk', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text: bulkText }),
+          });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok || data?.ok === false) throw new Error(data?.message || '投入失敗');
+
+          setMsg(`一括投入OK：解析=${data.totalParsed} / 反映=${data.applied} / エラー=${data.errors}`);
+        } catch (e) {
+          console.error(e);
+          setMsg(`一括投入に失敗しました：${e?.message || 'error'}`);
+        }
+      }}
+      className="px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-sm font-extrabold"
+    >
+      一括投入する
+    </button>
+
+    <button
+      type="button"
+      onClick={() => setBulkText('')}
+      className="px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-300 text-sm font-bold"
+    >
+      クリア
+    </button>
+  </div>
+</section>
+
       </div>
     </main>
   );
