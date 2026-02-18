@@ -10,6 +10,13 @@ function clampEpisode(v) {
   return String(Math.max(1, Math.min(999999, Math.floor(n))));
 }
 
+// ★追加：検索用（空は空で返す）
+function clampEpisodeOrEmpty(v) {
+  const s = String(v ?? '').trim();
+  if (!s) return ''; // ←空なら空
+  return clampEpisode(s);
+}
+
 /** キャラ候補（全キャラCSVから検索） */
 function CharSuggest({ value, onPick }) {
   const [rows, setRows] = useState([]);
@@ -25,9 +32,7 @@ function CharSuggest({ value, onPick }) {
     const t = setTimeout(async () => {
       setLoading(true);
       try {
-        const res = await fetch(
-          `/api/admin/quotes/chars?q=${encodeURIComponent(q)}&limit=50`
-        );
+        const res = await fetch(`/api/admin/quotes/chars?q=${encodeURIComponent(q)}&limit=50`);
         const data = await res.json().catch(() => ({}));
         if (!res.ok || data?.ok === false) throw new Error(data?.message || 'failed');
         setRows(data?.rows || []);
@@ -104,10 +109,10 @@ export default function AdminQuotesPage() {
   const [msg, setMsg] = useState('');
 
   const primarySpeaker = useMemo(() => String(speakers?.[0] || ''), [speakers]);
+
   const episodeCharOptions = useMemo(() => {
     const set = new Set();
     for (const r of episodeRows || []) {
-      // speaker_names が配列で返る時もあれば、null の時もある想定
       const arr = Array.isArray(r?.speaker_names) ? r.speaker_names : null;
       if (arr && arr.length) {
         for (const n of arr) {
@@ -158,6 +163,27 @@ export default function AdminQuotesPage() {
     return uniq.length ? uniq : [''];
   };
 
+  // ===== キャラ追加（代表キャラをキャラ表へ） =====
+  const addPrimaryToChars = async () => {
+    setMsg('');
+    const name = String(primarySpeaker || '').trim();
+    if (!name) return setMsg('代表キャラ名を入力してください。');
+
+    try {
+      const res = await fetch('/api/admin/quotes/chars', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data?.ok === false) throw new Error(data?.message || '追加失敗');
+      setMsg(data?.existed ? '既にキャラが存在しました。' : 'キャラを追加しました。');
+    } catch (e) {
+      console.error(e);
+      setMsg(`キャラ追加に失敗しました：${e?.message || 'error'}`);
+    }
+  };
+
   // ===== 追加（末尾） =====
   const handleAddQuote = async () => {
     setMsg('');
@@ -184,8 +210,9 @@ export default function AdminQuotesPage() {
       const data = await res.json().catch(() => ({}));
       if (!res.ok || data?.ok === false) throw new Error(data?.message || '追加失敗');
 
+      // ★重要：セリフだけ消す。キャラは残す
       setQuoteText('');
-      setSpeakers(['']);
+      // setSpeakers(['']); ← これをやると代表キャラが消えるので削除
       await loadEpisodeRows(ep);
       setMsg('追加しました。');
       setOpenEpisodeList(true);
@@ -328,7 +355,7 @@ export default function AdminQuotesPage() {
     setSearchLoading(true);
     try {
       const params = new URLSearchParams();
-      const ep = clampEpisode(searchEpisode);
+      const ep = clampEpisodeOrEmpty(searchEpisode);
       const ch = String(searchChar || '').trim();
       const qt = String(searchText || '').trim();
 
@@ -409,11 +436,7 @@ export default function AdminQuotesPage() {
 
         {/* 追加フォーム（折りたたみ） */}
         <section className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 md:p-5 space-y-3">
-          <SectionHeader
-            title="追加"
-            open={openAdd}
-            onToggle={() => setOpenAdd((v) => !v)}
-          />
+          <SectionHeader title="追加" open={openAdd} onToggle={() => setOpenAdd((v) => !v)} />
 
           {openAdd && (
             <>
@@ -434,9 +457,7 @@ export default function AdminQuotesPage() {
                   <div className="text-xs font-bold text-slate-700 flex items-center gap-2">
                     キャラ（複数人OK）
                     {episodeCharOptions.length > 0 && (
-                      <span className="text-[11px] text-slate-500">
-                        この話の登場キャラから選択も可能
-                      </span>
+                      <span className="text-[11px] text-slate-500">この話の登場キャラから選択も可能</span>
                     )}
                   </div>
 
@@ -504,29 +525,13 @@ export default function AdminQuotesPage() {
 
                     <button
                       type="button"
-                      onClick={() => {
-                        fetch('/api/admin/quotes/chars', {
-                          method: 'POST',
-                          headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({ name: String(primarySpeaker || '').trim() }),
-                        })
-                          .then((r) => r.json().catch(() => ({})).then((d) => ({ ok: r.ok, d })))
-                          .then(({ ok, d }) => {
-                            if (!ok || d?.ok === false) throw new Error(d?.message || '追加失敗');
-                            setMsg(d?.existed ? '既にキャラが存在しました。' : 'キャラを追加しました。');
-                          })
-                          .catch((e) => {
-                            console.error(e);
-                            setMsg(`キャラ追加に失敗しました：${e?.message || 'error'}`);
-                          });
-                      }}
+                      onClick={addPrimaryToChars}
                       className="px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-300 text-sm font-bold"
                     >
                       ＋代表キャラをキャラ表に追加
                     </button>
                   </div>
 
-                  {/* 代表キャラのサジェストだけ表示（使い勝手優先） */}
                   <CharSuggest
                     value={primarySpeaker}
                     onPick={(name) => {
@@ -702,7 +707,6 @@ export default function AdminQuotesPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {/* 先頭に挿入ボタン */}
                   <tr className="border-t border-slate-100">
                     <td colSpan={4} className="py-2">
                       <button
@@ -851,7 +855,7 @@ export default function AdminQuotesPage() {
               <div className="text-xs font-bold text-slate-700">話数（空なら全話）</div>
               <input
                 value={searchEpisode}
-                onChange={(e) => setSearchEpisode(clampEpisode(e.target.value))}
+                onChange={(e) => setSearchEpisode(e.target.value)}
                 inputMode="numeric"
                 className="w-full rounded-xl border border-slate-300 px-3 py-2 bg-white text-slate-900"
                 placeholder="例：1"

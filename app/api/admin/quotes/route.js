@@ -116,7 +116,6 @@ function buildSpeakerSearchWhere(schema, params, charLike) {
   }
 
   if (schema.speakerMode === 'text_array') {
-    // ANY で部分一致は無理なので、unnestでILike
     params.push(charLike);
     const idx = params.length;
     return `
@@ -129,7 +128,6 @@ function buildSpeakerSearchWhere(schema, params, charLike) {
   }
 
   if (schema.speakerMode === 'text') {
-    // "A / B / C" みたいにまとめてるケースの保険
     params.push(charLike);
     const idx = params.length;
     return `speaker_names ILIKE $${idx}`;
@@ -140,8 +138,6 @@ function buildSpeakerSearchWhere(schema, params, charLike) {
 
 function speakerSelectExpr(schema) {
   if (!schema?.hasSpeakerNames) return `NULL AS speaker_names`;
-
-  // そのまま返す（jsonbでもtext[]でもNextResponse側でJSON化される）
   return `speaker_names`;
 }
 
@@ -159,7 +155,6 @@ function speakerInsertValue(schema, speakers) {
     return { sql: '$SPEAKERS::text', params: [speakers.join(' / ')] };
   }
 
-  // unknown は無理せずNULL
   return { sql: 'NULL', params: [] };
 }
 
@@ -267,8 +262,7 @@ export async function POST(request) {
         : safeNum(characterIdRaw, null);
 
     // 互換：speaker_names が来たら先頭を character_name にする
-    const characterName =
-      speakersRaw.length > 0 ? speakersRaw[0] : characterNameRaw;
+    const characterName = speakersRaw.length > 0 ? speakersRaw[0] : characterNameRaw;
 
     let sortIndex = 0;
 
@@ -311,29 +305,60 @@ export async function POST(request) {
       sortIndex = Number(mx?.m ?? -1) + 1;
     }
 
-    // speaker_names の値（存在する時だけ入れる）
-    const spVal = speakerInsertValue(schema, speakersRaw.length ? speakersRaw : [characterName]);
-    // spVal.sql は $SPEAKERS プレースホルダを使うので、実際の $n に置換する
+    // ★ここが重要：列/値/params を動的に組み立てて $n をズラさない
+    const cols = ['episode', 'character_id', 'character_name'];
+    const vals = [];
+    const params = [];
 
-    const params = [episode, characterId, characterName, quoteText, sortIndex];
-    let speakerSql = 'NULL';
-    if (schema?.hasSpeakerNames && spVal.params.length) {
-      params.push(spVal.params[0]);
-      speakerSql = spVal.sql.replace('$SPEAKERS', `$${params.length}`);
+    params.push(episode);
+    vals.push(`$${params.length}`);
+
+    params.push(characterId);
+    vals.push(`$${params.length}`);
+
+    params.push(characterName);
+    vals.push(`$${params.length}`);
+
+    // speaker_names（存在する時だけ）
+    if (schema?.hasSpeakerNames) {
+      const speakersToStore =
+        speakersRaw.length > 0 ? speakersRaw : characterName ? [characterName] : [];
+
+      const spVal =
+        speakersToStore.length > 0
+          ? speakerInsertValue(schema, speakersToStore)
+          : { sql: 'NULL', params: [] };
+
+      cols.push('speaker_names');
+
+      if (spVal.params.length) {
+        params.push(spVal.params[0]);
+        const rhs = spVal.sql.replace('$SPEAKERS', `$${params.length}`);
+        vals.push(rhs);
+      } else {
+        vals.push('NULL');
+      }
     }
 
-    const row = await db.get(
-      `
+    cols.push('quote_text');
+    params.push(quoteText);
+    vals.push(`$${params.length}`);
+
+    cols.push('sort_index');
+    params.push(sortIndex);
+    vals.push(`$${params.length}`);
+
+    const insertSql = `
       INSERT INTO episode_quotes
-        (episode, character_id, character_name, speaker_names, quote_text, sort_index)
+        (${cols.join(', ')})
       VALUES
-        ($1, $2, $3, ${speakerSql}, $4, $5)
+        (${vals.join(', ')})
       RETURNING
         id, episode, character_id, character_name, ${speakerSelectExpr(schema)},
         quote_text, sort_index, created_at
-      `,
-      params
-    );
+    `;
+
+    const row = await db.get(insertSql, params);
 
     await renumberEpisode(episode);
 
@@ -409,7 +434,15 @@ export async function PUT(request) {
     }
 
     if (schema?.hasSpeakerNames && speakersIn !== undefined) {
-      const spVal = speakerInsertValue(schema, speakersIn.length ? speakersIn : [String(nextCharacterName || prev.character_name || '').trim()]);
+      const fallbackName = String(
+        nextCharacterName !== undefined ? nextCharacterName : prev.character_name || ''
+      ).trim();
+
+      const spVal = speakerInsertValue(
+        schema,
+        speakersIn.length ? speakersIn : fallbackName ? [fallbackName] : []
+      );
+
       if (spVal.params.length) {
         params.push(spVal.params[0]);
         const p = `$${params.length}`;
