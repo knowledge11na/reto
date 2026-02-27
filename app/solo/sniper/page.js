@@ -336,12 +336,16 @@ export default function SniperSoloPage() {
           )}
 
           <div className="mt-4 flex flex-wrap gap-3">
-            <Link
-              href="/solo/sniper"
-              className="px-4 py-2 rounded-full bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700"
-            >
-              もう一度プレイ
-            </Link>
+           <button
+  type="button"
+  onClick={() => {
+    // 同じページへの Link だとリセットされないことがあるので、強制リロード
+    window.location.href = `/solo/sniper?restart=${Date.now()}`;
+  }}
+  className="px-4 py-2 rounded-full bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700"
+>
+  もう一度プレイ
+</button>
             <Link
               href="/solo"
               className="px-4 py-2 rounded-full border border-slate-300 bg-slate-50 text-sm font-semibold text-slate-800 hover:bg-slate-100"

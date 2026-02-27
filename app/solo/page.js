@@ -367,6 +367,8 @@ const [beforeBest, setBeforeBest] = useState(0);
             </div>
           </div>
 
+
+
 {/* ★ 時系列（仕分けの下 / 薄い黄色） */}
 <div className="rounded-2xl border border-amber-300 bg-amber-50 px-3 py-3 shadow-sm">
   <Link
@@ -409,6 +411,8 @@ const [beforeBest, setBeforeBest] = useState(0);
               </Link>
             </div>
           </div>
+
+         
 
           {/* ナレッジタワー（未公開） */}
           {/*
