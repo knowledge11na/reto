@@ -298,7 +298,7 @@ export default function SubmitPage() {
 
   // 単一 / 複数選択用
   const [correctChoices, setCorrectChoices] = useState(['']);
-  const [wrongChoices, setWrongChoices] = useState(['']);
+  const [wrongChoices, setWrongChoices] = useState(['', '', '']);
 
   // 並び替え用（正解順）
   const [orderChoices, setOrderChoices] = useState(['']);
@@ -372,32 +372,84 @@ export default function SubmitPage() {
   // ──────────────────────────────
   // 投稿後リセット（引き継ぎ設定を反映）
   // ──────────────────────────────
+
   const resetForm = () => {
     setDuplicates([]);
     setConfirmMode(false);
 
-    const altLen = altTextAnswers.length || 1;
-    const correctLen = correctChoices.length || 1;
-    const wrongLen = wrongChoices.length || 1;
-    const orderLen = orderChoices.length || 1;
+    const nextType = carryConfig.keepQuestionType ? questionType : 'single';
 
     if (!carryConfig.keepQuestion) setQuestion('');
     if (!carryConfig.keepQuestionType) setQuestionType('single');
 
     if (carryConfig.keepAnswerContent) {
-      // 何もしない
+      // 内容も含めて全部維持（何もしない）
     } else if (carryConfig.keepAnswerBoxes) {
-      setTextAnswer('');
-      setAltTextAnswers(Array(altLen).fill(''));
-      setCorrectChoices(Array(correctLen).fill(''));
-      setWrongChoices(Array(wrongLen).fill(''));
-      setOrderChoices(Array(orderLen).fill(''));
+      // ★ 箱数を「次のタイプのデフォルト」に寄せて中身だけ空にする
+      if (nextType === 'single') {
+        setCorrectChoices(['']);
+        setWrongChoices(['', '', '']);
+        setTextAnswer('');
+        setAltTextAnswers(['']);
+        setOrderChoices(['']);
+      } else if (nextType === 'multi') {
+        setCorrectChoices(['', '']);
+        setWrongChoices(['', '']);
+        setTextAnswer('');
+        setAltTextAnswers(['']);
+        setOrderChoices(['']);
+      } else if (nextType === 'text') {
+        setTextAnswer('');
+        setAltTextAnswers(['']);
+        setCorrectChoices(['']);
+        setWrongChoices(['', '', '']);
+        setOrderChoices(['']);
+      } else if (nextType === 'order') {
+        setOrderChoices(['', '']);
+        setTextAnswer('');
+        setAltTextAnswers(['']);
+        setCorrectChoices(['']);
+        setWrongChoices(['', '', '']);
+      } else {
+        setTextAnswer('');
+        setAltTextAnswers(['']);
+        setCorrectChoices(['']);
+        setWrongChoices(['', '', '']);
+        setOrderChoices(['']);
+      }
     } else {
-      setTextAnswer('');
-      setAltTextAnswers(['']);
-      setCorrectChoices(['']);
-      setWrongChoices(['']);
-      setOrderChoices(['']);
+      // ★ 何も引き継がない通常リセットも、タイプ別デフォルトにする
+      if (nextType === 'single') {
+        setTextAnswer('');
+        setAltTextAnswers(['']);
+        setCorrectChoices(['']);
+        setWrongChoices(['', '', '']);
+        setOrderChoices(['']);
+      } else if (nextType === 'multi') {
+        setTextAnswer('');
+        setAltTextAnswers(['']);
+        setCorrectChoices(['', '']);
+        setWrongChoices(['', '']);
+        setOrderChoices(['']);
+      } else if (nextType === 'text') {
+        setTextAnswer('');
+        setAltTextAnswers(['']);
+        setCorrectChoices(['']);
+        setWrongChoices(['', '', '']);
+        setOrderChoices(['']);
+      } else if (nextType === 'order') {
+        setOrderChoices(['', '']);
+        setTextAnswer('');
+        setAltTextAnswers(['']);
+        setCorrectChoices(['']);
+        setWrongChoices(['', '', '']);
+      } else {
+        setTextAnswer('');
+        setAltTextAnswers(['']);
+        setCorrectChoices(['']);
+        setWrongChoices(['', '', '']);
+        setOrderChoices(['']);
+      }
     }
 
     if (!carryConfig.keepTags) setSelectedTags([]);
@@ -1043,10 +1095,40 @@ TSVもOK（Excelからそのまま貼れる）`}
               </div>
             </div>
 
-            <select
+                        <select
               className="w-full px-2 py-1 rounded bg-slate-900 border border-slate-600 text-[16px]"
               value={questionType}
-              onChange={(e) => setQuestionType(e.target.value)}
+              onChange={(e) => {
+                const t = e.target.value;
+                setQuestionType(t);
+
+                // ★ タイプ変更時に解答欄のデフォルト箱数をセット
+                if (t === 'single') {
+                  setCorrectChoices(['']);
+                  setWrongChoices(['', '', '']);
+                  setTextAnswer('');
+                  setAltTextAnswers(['']);
+                  setOrderChoices(['']);
+                } else if (t === 'multi') {
+                  setCorrectChoices(['', '']);
+                  setWrongChoices(['', '']);
+                  setTextAnswer('');
+                  setAltTextAnswers(['']);
+                  setOrderChoices(['']);
+                } else if (t === 'text') {
+                  setTextAnswer('');
+                  setAltTextAnswers(['']);
+                  setCorrectChoices(['']);
+                  setWrongChoices(['', '', '']); // 保険（表示されない）
+                  setOrderChoices(['']);
+                } else if (t === 'order') {
+                  setOrderChoices(['', '']); // 並び替えは最低2箱
+                  setTextAnswer('');
+                  setAltTextAnswers(['']);
+                  setCorrectChoices(['']);
+                  setWrongChoices(['', '', '']); // 保険（表示されない）
+                }
+              }}
             >
               <option value="single">単一選択</option>
               <option value="multi">複数選択</option>
