@@ -10,6 +10,7 @@ export default function SoloMenuPage() {
   const [dungeonBest, setDungeonBest] = useState(null);
   const [bombBest, setBombBest] = useState(0);
 const [beforeBest, setBeforeBest] = useState(0);
+const [hukurouFlapBest, setHukurouFlapBest] = useState(0);
 
 
   // ★ 仕分け（出身）
@@ -411,8 +412,6 @@ const [beforeBest, setBeforeBest] = useState(0);
               </Link>
             </div>
           </div>
-
-         
 
           {/* ナレッジタワー（未公開） */}
           {/*
