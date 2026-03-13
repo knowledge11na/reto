@@ -85,6 +85,8 @@ const [hukurouFlapBest, setHukurouFlapBest] = useState(0);
       if (!Number.isNaN(bp) && bp > 0) setBeforeBest(bp);
 
 
+
+
       // ★ 風船割り（5モード）
       const keys = ['food', 'height', 'age', 'bounty', 'other'];
       const next = {};
