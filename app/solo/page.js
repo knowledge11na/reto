@@ -415,8 +415,7 @@ const [hukurouFlapBest, setHukurouFlapBest] = useState(0);
             </div>
           </div>
 
-          {/* ナレッジタワー（未公開） */}
-          {/*
+          {/* ナレッジタワー*/}
           <Link
   href="/solo/knowledge-tower"
   className="block rounded-2xl border border-violet-500 bg-violet-50 px-4 py-5 shadow-sm hover:bg-violet-100 transition"
@@ -429,8 +428,7 @@ const [hukurouFlapBest, setHukurouFlapBest] = useState(0);
     <br />
     各フロア30問正解 → ボス戦で塔のてっぺんを目指そう。
   </p>
-</Link>
-          */}
+</Link>         
         </div>
 
         <div className="mt-6 text-center">
