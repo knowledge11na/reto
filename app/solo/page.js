@@ -415,6 +415,30 @@ const [hukurouFlapBest, setHukurouFlapBest] = useState(0);
             </div>
           </div>
 
+          {/* ビブルサーチ */}
+          <div className="rounded-2xl border border-pink-500 bg-pink-50 px-3 py-3 shadow-sm">
+            <Link
+              href="/solo/vivre-search"
+              className="block hover:bg-pink-100 rounded-2xl -mx-3 -my-3 px-3 py-3 transition"
+            >
+              <p className="text-sm font-bold text-pink-900">
+                ビブルサーチ
+              </p>
+              <p className="text-[11px] text-pink-950 leading-tight mt-1">
+                キャラ情報を手掛かりに、隠されたONE PIECEキャラを特定しよう。
+              </p>
+            </Link>
+
+            <div className="mt-2 flex items-center justify-end text-[11px] text-pink-900">
+              <Link
+                href="/solo/vivre-search/rules"
+                className="underline text-pink-700 hover:text-pink-500"
+              >
+                ルールを見る
+              </Link>
+            </div>
+          </div>
+
           {/* ナレッジタワー*/}
           <Link
   href="/solo/knowledge-tower"
