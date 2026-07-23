@@ -481,9 +481,58 @@ function numberText(value, result) {
     return(
         <div className="max-w-6xl mx-auto p-6">
 
-            <h1 className="text-4xl font-bold text-center mb-8">
-                ビブルサーチ
-            </h1>
+<div className="relative mb-8">
+
+    <h1 className="
+        text-3xl
+        sm:text-4xl
+        font-bold
+        text-center
+    ">
+        ビブルサーチ
+    </h1>
+
+
+    <button
+        onClick={giveUp}
+        className="
+        absolute
+        left-0
+        top-1/2
+        -translate-y-1/2
+        bg-red-700
+        text-white
+        px-3
+        py-1.5
+        rounded-lg
+        text-xs
+        font-bold
+        "
+    >
+        ギブアップ
+    </button>
+
+
+    <button
+        onClick={resetGame}
+        className="
+        absolute
+        right-0
+        top-1/2
+        -translate-y-1/2
+        bg-gray-500
+        text-white
+        px-3
+        py-1.5
+        rounded-lg
+        text-xs
+        font-bold
+        "
+    >
+        リセット
+    </button>
+
+</div>
 
             {!started ? (
 
@@ -492,7 +541,7 @@ function numberText(value, result) {
                     <button
                         onClick={startGame}
                         disabled={loading}
-                        className="bg-red-600 hover:bg-red-700 text-white text-xl px-10 py-4 rounded-xl"
+                        className="bg-red-600 hover:bg-red-700 text-white text-lg px-8 py-3 rounded-xl"
                     >
                         {loading ? "読み込み中..." : "START"}
                     </button>
@@ -510,6 +559,7 @@ function numberText(value, result) {
     rounded-xl
     "
 >
+
     履歴を見る
 </a>
 )}
@@ -519,42 +569,50 @@ function numberText(value, result) {
 
                 <>
 
-                    <div className="flex gap-3 mb-4">
+                   <div className="
+flex
+gap-2
+mb-4
+">
 
-                        <input
-                            value={guess}
-                            onChange={onChange}
-                            onKeyDown={(e)=>{
-                                if(e.key==="Enter"){
-                                    submit();
-                                }
-                            }}
-                            placeholder="キャラ名を入力"
-                            className="flex-1 border rounded-lg px-4 py-3 text-lg"
-                        />
+<input
+    value={guess}
+    onChange={onChange}
+    onKeyDown={(e)=>{
+        if(e.key==="Enter"){
+            submit();
+        }
+    }}
+    placeholder="キャラ名を入力"
+    className="
+    flex-1
+    border
+    rounded-lg
+    px-3
+    py-2
+    text-sm
+    "
+/>
 
-                        <button
-                            onClick={submit}
-                            className="bg-blue-600 hover:bg-blue-700 text-white px-6 rounded-lg"
-                        >
-                            回答
-                        </button>
 
-                        <button
-                            onClick={giveUp}
-                            className="bg-red-700 hover:bg-red-800 text-white px-6 rounded-lg"
-                        >
-                            ギブアップ
-                        </button>
+<button
+    onClick={submit}
+    className="
+    bg-blue-600
+    hover:bg-blue-700
+    text-white
+    px-4
+    py-2
+    rounded-lg
+    text-sm
+    font-bold
+    whitespace-nowrap
+    "
+>
+    回答
+</button>
 
-                        <button
-                            onClick={resetGame}
-                            className="bg-gray-500 hover:bg-gray-600 text-white px-6 rounded-lg"
-                        >
-                            リセット
-                        </button>
-
-                    </div>
+</div>
 
                     {suggestions.length>0 &&(
 
@@ -607,7 +665,7 @@ text-green-600
 
 )}
 
-                        <table className="w-full border-collapse text-center">
+                        <table className="w-full border-collapse text-center text-xs sm:text-sm">
 
                             <thead>
 
@@ -658,7 +716,7 @@ text-green-600
                                 {history.map((row,index)=>(
                                     <tr key={index}>
 
-                                     <td className={`border p-2 ${cellClass(row.result.number)}`}>
+                                    <td className={`border p-1 sm:p-2 ${cellClass(row.result.number)}`}>
     {numberText(
         row.profile.number,
         row.result.number
@@ -778,7 +836,7 @@ text-green-600
 </td>
 
 
-<td className={`border p-2 ${cellClass(row.result.number)}`}>
+<td className={`border p-1 sm:p-2 ${cellClass(row.result.number)}`}>
 
 {numberText(
 row.profile.number,
