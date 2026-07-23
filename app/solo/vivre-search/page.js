@@ -22,6 +22,7 @@ const [mounted, setMounted] = useState(false);
     const [suggestions, setSuggestions] = useState([]);
 
     const [loading, setLoading] = useState(true);
+const [mode, setMode] = useState("normal");
 
 useEffect(() => {
 
@@ -94,18 +95,14 @@ function saveHistory(finalHistory){
 
     const newData = [
 
-        {
-            id: Date.now(),
-
-            answer: answer.name,
-
-            turns: finalHistory.length - 1,
-
-            date: new Date().toLocaleString(),
-
-            history:[...finalHistory]
-
-        },
+{
+    id: Date.now(),
+    answer: answer.name,
+    mode: mode,      // ←追加
+    turns: finalHistory.length - 1,
+    date: new Date().toLocaleString(),
+    history:[...finalHistory]
+},
 
         ...gameHistory
 
@@ -544,13 +541,29 @@ return(
 
                 <div className="text-center mt-20">
 
-                    <button
-                        onClick={startGame}
-                        disabled={loading}
-                        className="bg-red-600 hover:bg-red-700 text-white text-lg px-8 py-3 rounded-xl"
-                    >
-                        {loading ? "読み込み中..." : "START"}
-                    </button>
+<div className="flex justify-center gap-4">
+
+<button
+    onClick={()=>{
+        setMode("normal");
+        startGame();
+    }}
+    className="bg-red-600 hover:bg-red-700 text-white text-lg px-8 py-3 rounded-xl"
+>
+    ノーマル
+</button>
+
+<button
+    onClick={()=>{
+        setMode("hard");
+        startGame();
+    }}
+    className="bg-purple-600 hover:bg-purple-700 text-white text-lg px-8 py-3 rounded-xl"
+>
+    ハード
+</button>
+
+</div>
 
 {mounted && (
 <a
@@ -673,117 +686,118 @@ text-green-600
 
                         <table className="w-full border-collapse text-center text-xs sm:text-sm">
 
-                            <thead>
+<thead>
+<tr className="bg-gray-200">
 
-                                <tr className="bg-gray-200">
+{mode === "hard" ? (
+<>
+<th className="border p-1 sm:p-2">名前</th>
+<th className="border p-1 sm:p-2">年齢</th>
+<th className="border p-1 sm:p-2">身長</th>
+<th className="border p-1 sm:p-2">血液型</th>
+</>
+) : (
+<>
+<th className="border p-1 sm:p-2">ナンバー</th>
+<th className="border p-1 sm:p-2">名前</th>
+<th className="border p-1 sm:p-2">初登場話</th>
+<th className="border p-1 sm:p-2">年齢</th>
+<th className="border p-1 sm:p-2">身長</th>
+<th className="border p-1 sm:p-2">血液型</th>
+<th className="border p-1 sm:p-2">出身</th>
+<th className="border p-1 sm:p-2">性別</th>
+<th className="border p-1 sm:p-2">家族</th>
+</>
+)}
 
-                                   <th className="border p-2 text-black font-bold">
-    ナンバー
-</th>
-
-<th className="border p-2 text-black font-bold">
-    名前
-</th>
-
-                                    <th className="border p-2 text-black font-bold">
-                                        初登場話
-                                    </th>
-
-                                   <th className="border p-2 text-black font-bold">
-                                        年齢
-                                    </th>
-
-                                    <th className="border p-2 text-black font-bold">
-                                        身長
-                                    </th>
-
-                                    <th className="border p-2 text-black font-bold">
-                                        血液型
-                                    </th>
-
-                                    <th className="border p-2 text-black font-bold">
-                                        出身
-                                    </th>
-
-                                    <th className="border p-2 text-black font-bold">
-                                        性別
-                                    </th>
-
-                                    <th className="border p-2 text-black font-bold">
-                                        家族
-                                    </th>
-
-                                </tr>
-
-                            </thead>
-
+</tr>
+</thead>
                             <tbody>
 
                                 {history.map((row,index)=>(
-                                    <tr key={index}>
+                                   <tr key={index}>
 
-                                    <td className={`border p-1 sm:p-2 ${cellClass(row.result.number)}`}>
-    {numberText(
-        row.profile.number,
-        row.result.number
-    )}
+{mode==="normal" ? (
+
+<>
+<td className={`border p-1 sm:p-2 ${cellClass(row.result.number)}`}>
+    {numberText(row.profile.number,row.result.number)}
 </td>
 
 <td
-    className={`border p-2 font-semibold ${
-        row.profile.name === answer.name
-            ? "bg-green-500 text-white"
-            : "bg-gray-200 text-black"
-    }`}
+className={`border p-2 font-semibold ${
+row.profile.name===answer.name
+? "bg-green-500 text-white"
+: "bg-gray-200 text-black"
+}`}
 >
-    {row.profile.name}
+{row.profile.name}
 </td>
 
-                                        <td className={`border p-2 ${cellClass(row.result.chapter)}`}>
-                                            {numberText(
-                                                row.profile.chapter,
-                                                row.result.chapter
-                                            )}
-                                        </td>
+<td className={`border p-2 ${cellClass(row.result.chapter)}`}>
+{numberText(row.profile.chapter,row.result.chapter)}
+</td>
 
-                                        <td className={`border p-2 ${cellClass(row.result.age)}`}>
-                                            {numberText(
-                                                row.profile.age,
-                                                row.result.age
-                                            )}
-                                        </td>
+<td className={`border p-2 ${cellClass(row.result.age)}`}>
+{numberText(row.profile.age,row.result.age)}
+</td>
 
-                                        <td className={`border p-2 ${cellClass(row.result.height)}`}>
-                                            {numberText(
-                                                row.profile.height,
-                                                row.result.height
-                                            )}
-                                        </td>
+<td className={`border p-2 ${cellClass(row.result.height)}`}>
+{numberText(row.profile.height,row.result.height)}
+</td>
 
-                                        <td className={`border p-2 ${cellClass(row.result.blood)}`}>
-                                            {row.profile.blood}
-                                        </td>
+<td className={`border p-2 ${cellClass(row.result.blood)}`}>
+{row.profile.blood}
+</td>
 
-                                        <td className={`border p-2 ${cellClass(row.result.born)}`}>
-                                            {bornText(row.profile)}
-                                        </td>
+<td className={`border p-2 ${cellClass(row.result.born)}`}>
+{bornText(row.profile)}
+</td>
 
-                                        <td className={`border p-2 ${cellClass(row.result.gender)}`}>
-                                            {row.profile.gender}
-                                        </td>
+<td className={`border p-2 ${cellClass(row.result.gender)}`}>
+{row.profile.gender}
+</td>
 
-                                        <td className={`border p-2 ${cellClass(row.result.family)}`}>
-                                            <div className="flex flex-col leading-5">
-                                                {row.profile.family.length===0
-                                                    ? "なし"
-                                                    : row.profile.family.map((f,i)=>(
-                                                        <span key={i}>{f}</span>
-                                                    ))
-                                                }
-                                            </div>
-                                        </td>
+<td className={`border p-2 ${cellClass(row.result.family)}`}>
+<div className="flex flex-col leading-5">
+{row.profile.family.length===0
+? "なし"
+: row.profile.family.map((f,i)=>(
+<span key={i}>{f}</span>
+))}
+</div>
+</td>
+</>
 
-                                    </tr>
+) : (
+
+<>
+<td
+className={`border p-2 font-semibold ${
+row.profile.name===answer.name
+? "bg-green-500 text-white"
+: "bg-gray-200 text-black"
+}`}
+>
+{row.profile.name}
+</td>
+
+<td className={`border p-2 ${cellClass(row.result.age)}`}>
+{numberText(row.profile.age,row.result.age)}
+</td>
+
+<td className={`border p-2 ${cellClass(row.result.height)}`}>
+{numberText(row.profile.height,row.result.height)}
+</td>
+
+<td className={`border p-2 ${cellClass(row.result.blood)}`}>
+{row.profile.blood}
+</td>
+</>
+
+)}
+
+</tr>
 
                                 ))}
 
@@ -835,45 +849,37 @@ text-green-600
 
 <tr key={i}>
 
-<td className="border p-2">
-
+{mode === "hard" ? (
+<>
+<td
+className={`border p-1 sm:p-2 font-semibold ${
+row.profile.name===selectedGame.answer
+? "bg-green-500 text-white"
+: "bg-gray-200 text-black"
+}`}
+>
 {row.profile.name}
-
 </td>
 
+<td className={`border p-1 sm:p-2 ${cellClass(row.result.age)}`}>
+{numberText(row.profile.age,row.result.age)}
+</td>
 
-<td className={`border p-1 sm:p-2 ${cellClass(row.result.number)}`}>
+<td className={`border p-1 sm:p-2 ${cellClass(row.result.height)}`}>
+{numberText(row.profile.height,row.result.height)}
+</td>
 
-{numberText(
-row.profile.number,
-row.result.number
+<td className={`border p-1 sm:p-2 ${cellClass(row.result.blood)}`}>
+{row.profile.blood}
+</td>
+</>
+) : (
+<>
+{/* 今ある9列をそのままここに貼る */}
+</>
 )}
-
-</td>
-
-
-<td className={`border p-2 ${cellClass(row.result.chapter)}`}>
-
-{numberText(
-row.profile.chapter,
-row.result.chapter
-)}
-
-</td>
-
-
-<td className={`border p-2 ${cellClass(row.result.age)}`}>
-
-{numberText(
-row.profile.age,
-row.result.age
-)}
-
-</td>
-
 
 </tr>
-
 ))}
 
 </tbody>

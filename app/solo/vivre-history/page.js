@@ -125,6 +125,17 @@ hover:bg-gray-100
 
 <p>
 {game.turns}回で正解
+
+{game.mode==="hard" ? (
+<span className="ml-2 bg-purple-600 text-white text-xs px-2 py-1 rounded">
+HARD
+</span>
+) : (
+<span className="ml-2 bg-red-600 text-white text-xs px-2 py-1 rounded">
+NORMAL
+</span>
+)}
+
 </p>
 
 
@@ -186,6 +197,15 @@ mt-6
 
 <tr className="bg-gray-200">
 
+{selectedGame.mode === "hard" ? (
+<>
+<th className="border p-1 sm:p-2 text-black font-bold">名前</th>
+<th className="border p-1 sm:p-2 text-black font-bold">年齢</th>
+<th className="border p-1 sm:p-2 text-black font-bold">身長</th>
+<th className="border p-1 sm:p-2 text-black font-bold">血液型</th>
+</>
+) : (
+<>
 <th className="border p-1 sm:p-2 text-black font-bold">ナンバー</th>
 <th className="border p-1 sm:p-2 text-black font-bold">名前</th>
 <th className="border p-1 sm:p-2 text-black font-bold">初登場話</th>
@@ -195,6 +215,8 @@ mt-6
 <th className="border p-1 sm:p-2 text-black font-bold">出身</th>
 <th className="border p-1 sm:p-2 text-black font-bold">性別</th>
 <th className="border p-1 sm:p-2 text-black font-bold">家族</th>
+</>
+)}
 
 </tr>
 
@@ -206,128 +228,96 @@ mt-6
 
 {selectedGame.history.map((row,i)=>(
 
-
 <tr key={i}>
 
+{selectedGame.mode === "hard" ? (
 
-<td className={`border p-1 sm:p-2 ${cellClass(row.result.number)}`}>
-
-{numberText(
-row.profile.number,
-row.result.number
-)}
-
-</td>
-
-
+<>
 
 <td
-className={`
-border
-p-1
-sm:p-2
-font-semibold
-${
+className={`border p-1 sm:p-2 font-semibold ${
 row.profile.name===selectedGame.answer
-?
-"bg-green-500 text-white"
-:
-"bg-gray-200 text-black"
-}
-`}
+? "bg-green-500 text-white"
+: "bg-gray-200 text-black"
+}`}
 >
-
 {row.profile.name}
-
 </td>
-
-
-
-<td className={`border p-1 sm:p-2 ${cellClass(row.result.chapter)}`}>
-
-{numberText(
-row.profile.chapter,
-row.result.chapter
-)}
-
-</td>
-
-
 
 <td className={`border p-1 sm:p-2 ${cellClass(row.result.age)}`}>
-
-{numberText(
-row.profile.age,
-row.result.age
-)}
-
+{numberText(row.profile.age,row.result.age)}
 </td>
-
-
 
 <td className={`border p-1 sm:p-2 ${cellClass(row.result.height)}`}>
-
-{numberText(
-row.profile.height,
-row.result.height
-)}
-
+{numberText(row.profile.height,row.result.height)}
 </td>
-
-
 
 <td className={`border p-1 sm:p-2 ${cellClass(row.result.blood)}`}>
-
 {row.profile.blood}
-
 </td>
 
+</>
 
+) : (
+
+<>
+
+<td className={`border p-1 sm:p-2 ${cellClass(row.result.number)}`}>
+{numberText(row.profile.number,row.result.number)}
+</td>
+
+<td
+className={`border p-1 sm:p-2 font-semibold ${
+row.profile.name===selectedGame.answer
+? "bg-green-500 text-white"
+: "bg-gray-200 text-black"
+}`}
+>
+{row.profile.name}
+</td>
+
+<td className={`border p-1 sm:p-2 ${cellClass(row.result.chapter)}`}>
+{numberText(row.profile.chapter,row.result.chapter)}
+</td>
+
+<td className={`border p-1 sm:p-2 ${cellClass(row.result.age)}`}>
+{numberText(row.profile.age,row.result.age)}
+</td>
+
+<td className={`border p-1 sm:p-2 ${cellClass(row.result.height)}`}>
+{numberText(row.profile.height,row.result.height)}
+</td>
+
+<td className={`border p-1 sm:p-2 ${cellClass(row.result.blood)}`}>
+{row.profile.blood}
+</td>
 
 <td className={`border p-1 sm:p-2 ${cellClass(row.result.born)}`}>
-
 {row.profile.bornSea}
-
-{row.profile.bornPlace &&
-` / ${row.profile.bornPlace}`}
-
+{row.profile.bornPlace && ` / ${row.profile.bornPlace}`}
 </td>
-
-
 
 <td className={`border p-1 sm:p-2 ${cellClass(row.result.gender)}`}>
-
 {row.profile.gender}
-
 </td>
-
-
 
 <td className={`border p-1 sm:p-2 ${cellClass(row.result.family)}`}>
-
 {
 row.profile.family.length===0
-?
-"なし"
-:
-row.profile.family.map((f,j)=>(
-
-<div key={j}>
-{f}
-</div>
-
+? "なし"
+: row.profile.family.map((f,j)=>(
+<div key={j}>{f}</div>
 ))
 }
-
 </td>
 
+</>
 
+)}
 
 </tr>
 
-
 ))}
-
 
 </tbody>
 
