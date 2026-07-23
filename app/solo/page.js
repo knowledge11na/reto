@@ -425,7 +425,7 @@ const [hukurouFlapBest, setHukurouFlapBest] = useState(0);
                 ビブルサーチ
               </p>
               <p className="text-[11px] text-pink-950 leading-tight mt-1">
-                キャラ情報を手掛かりに、隠されたONE PIECEキャラを特定しよう。
+                キャラ情報を手掛かりに、キャラを推測しよう。
               </p>
             </Link>
 

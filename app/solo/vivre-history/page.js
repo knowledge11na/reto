@@ -49,6 +49,12 @@ function cellClass(type){
 
 }
 
+function formatTime(sec){
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    return `${m}分${String(s).padStart(2,"0")}秒`;
+}
+
 function numberText(value,result){
 
     const text =
@@ -125,6 +131,7 @@ hover:bg-gray-100
 
 <p>
 {game.turns}回で正解
+　⏱ {formatTime(game.time)}
 
 {game.mode==="hard" ? (
 <span className="ml-2 bg-purple-600 text-white text-xs px-2 py-1 rounded">
@@ -135,7 +142,6 @@ HARD
 NORMAL
 </span>
 )}
-
 </p>
 
 
@@ -173,7 +179,9 @@ text-black
 
 
 <p>
-{selectedGame.turns}回で正解
+{game.turns}回で正解
+　⏱ {formatTime(game.time)}
+{game.mode === "hard" && "（ハードモード）"}
 </p>
 
 

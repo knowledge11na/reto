@@ -23,6 +23,7 @@ const [mounted, setMounted] = useState(false);
 
     const [loading, setLoading] = useState(true);
 const [mode, setMode] = useState("normal");
+const [startTime, setStartTime] = useState(null);
 
 useEffect(() => {
 
@@ -73,6 +74,8 @@ setTurns(0);
 
         setStarted(true);
 
+setStartTime(Date.now());
+
         setFinished(false);
 
         setGuess("");
@@ -98,8 +101,9 @@ function saveHistory(finalHistory){
 {
     id: Date.now(),
     answer: answer.name,
-    mode: mode,      // ←追加
+    mode: mode,
     turns: finalHistory.length - 1,
+    time: Math.floor((Date.now() - startTime) / 1000),
     date: new Date().toLocaleString(),
     history:[...finalHistory]
 },
@@ -137,8 +141,6 @@ function saveHistory(finalHistory){
     }
 
 function giveUp(){
-
-    saveHistory(history);
 
     alert("答えは\n\n"+answer.name);
 
@@ -439,6 +441,12 @@ case "white":
 
     }
 
+function formatTime(sec){
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    return `${m}分${String(s).padStart(2,"0")}秒`;
+}
+
     function bornText(profile){
 
         if(
@@ -676,10 +684,9 @@ text-green-600
 
 🎉 正解！
 
-<br/>
-
 {history.length - 1}回で正解！
 
+⏱ {formatTime(Math.floor((Date.now() - startTime) / 1000))}
 </div>
 
 )}
