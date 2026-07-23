@@ -152,12 +152,11 @@ text-black
 
 <div className="mt-10">
 
-<h2 className="text-3xl font-bold mb-4">
+<h2 className="text-2xl sm:text-3xl font-bold mb-4">
 🎉 プレイ結果
 </h2>
 
-
-<p className="text-2xl font-bold text-green-600">
+<p className="text-lg sm:text-2xl font-bold text-green-600">
 答え：{selectedGame.answer}
 </p>
 
@@ -173,10 +172,12 @@ text-black
 
 
 
-<table className="
+<table
+className="
 w-full
 border-collapse
 text-center
+text-xs sm:text-sm
 mt-6
 ">
 
@@ -185,15 +186,15 @@ mt-6
 
 <tr className="bg-gray-200">
 
-<th className="border p-2">ナンバー</th>
-<th className="border p-2">名前</th>
-<th className="border p-2">初登場話</th>
-<th className="border p-2">年齢</th>
-<th className="border p-2">身長</th>
-<th className="border p-2">血液型</th>
-<th className="border p-2">出身</th>
-<th className="border p-2">性別</th>
-<th className="border p-2">家族</th>
+<th className="border p-1 sm:p-2 text-black font-bold">ナンバー</th>
+<th className="border p-1 sm:p-2 text-black font-bold">名前</th>
+<th className="border p-1 sm:p-2 text-black font-bold">初登場話</th>
+<th className="border p-1 sm:p-2 text-black font-bold">年齢</th>
+<th className="border p-1 sm:p-2 text-black font-bold">身長</th>
+<th className="border p-1 sm:p-2 text-black font-bold">血液型</th>
+<th className="border p-1 sm:p-2 text-black font-bold">出身</th>
+<th className="border p-1 sm:p-2 text-black font-bold">性別</th>
+<th className="border p-1 sm:p-2 text-black font-bold">家族</th>
 
 </tr>
 
@@ -209,7 +210,7 @@ mt-6
 <tr key={i}>
 
 
-<td className={`border p-2 ${cellClass(row.result.number)}`}>
+<td className={`border p-1 sm:p-2 ${cellClass(row.result.number)}`}>
 
 {numberText(
 row.profile.number,
@@ -223,8 +224,9 @@ row.result.number
 <td
 className={`
 border
-p-2
-font-bold
+p-1
+sm:p-2
+font-semibold
 ${
 row.profile.name===selectedGame.answer
 ?
@@ -241,7 +243,7 @@ row.profile.name===selectedGame.answer
 
 
 
-<td className={`border p-2 ${cellClass(row.result.chapter)}`}>
+<td className={`border p-1 sm:p-2 ${cellClass(row.result.chapter)}`}>
 
 {numberText(
 row.profile.chapter,
@@ -252,7 +254,7 @@ row.result.chapter
 
 
 
-<td className={`border p-2 ${cellClass(row.result.age)}`}>
+<td className={`border p-1 sm:p-2 ${cellClass(row.result.age)}`}>
 
 {numberText(
 row.profile.age,
@@ -263,7 +265,7 @@ row.result.age
 
 
 
-<td className={`border p-2 ${cellClass(row.result.height)}`}>
+<td className={`border p-1 sm:p-2 ${cellClass(row.result.height)}`}>
 
 {numberText(
 row.profile.height,
@@ -274,7 +276,7 @@ row.result.height
 
 
 
-<td className={`border p-2 ${cellClass(row.result.blood)}`}>
+<td className={`border p-1 sm:p-2 ${cellClass(row.result.blood)}`}>
 
 {row.profile.blood}
 
@@ -282,7 +284,7 @@ row.result.height
 
 
 
-<td className={`border p-2 ${cellClass(row.result.born)}`}>
+<td className={`border p-1 sm:p-2 ${cellClass(row.result.born)}`}>
 
 {row.profile.bornSea}
 
@@ -293,7 +295,7 @@ row.result.height
 
 
 
-<td className={`border p-2 ${cellClass(row.result.gender)}`}>
+<td className={`border p-1 sm:p-2 ${cellClass(row.result.gender)}`}>
 
 {row.profile.gender}
 
@@ -301,7 +303,7 @@ row.result.height
 
 
 
-<td className={`border p-2 ${cellClass(row.result.family)}`}>
+<td className={`border p-1 sm:p-2 ${cellClass(row.result.family)}`}>
 
 {
 row.profile.family.length===0

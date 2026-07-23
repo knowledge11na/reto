@@ -478,7 +478,13 @@ function numberText(value, result) {
 
 
 
-    return(
+return(
+    <div
+        className="min-h-screen bg-cover bg-center bg-fixed"
+        style={{
+            backgroundImage: "url('/map-bg.jpg')"
+        }}
+    >
         <div className="max-w-6xl mx-auto p-6">
 
 <div className="relative mb-8">
@@ -897,6 +903,7 @@ rounded
 )}
 
         </div>
+    </div>
 
     );
 
