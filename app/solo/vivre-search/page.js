@@ -24,7 +24,35 @@ const [mounted, setMounted] = useState(false);
     const [loading, setLoading] = useState(true);
 const [mode, setMode] = useState("normal");
 const [startTime, setStartTime] = useState(null);
+const [timeLeft,setTimeLeft] = useState(60);
 
+
+useEffect(()=>{
+
+    if(
+        !started ||
+        finished ||
+        (
+            mode!=="battle-normal" &&
+            mode!=="battle-hard"
+        )
+    ) return;
+
+    if(timeLeft===0){
+
+        autoGuess();
+
+        return;
+
+    }
+
+    const timer = setTimeout(()=>{
+        setTimeLeft(prev=>prev-1);
+    },1000);
+
+    return ()=>clearTimeout(timer);
+
+},[timeLeft,started,finished]);
 useEffect(() => {
 
     setMounted(true);
@@ -73,6 +101,8 @@ setTurns(0);
         setAnswer(target);
 
         setStarted(true);
+
+setTimeLeft(60);
 
 setStartTime(Date.now());
 
@@ -225,13 +255,25 @@ setTurns(prev => prev + 1);
 
 if(result.correct){
 
+if(
+    mode==="normal" ||
+    mode==="hard"
+){
     saveHistory(newHistory);
+}
 
     setFinished(true);
 
 }
 
-    }
+if(
+mode==="battle-normal" ||
+mode==="battle-hard"
+){
+    setTimeLeft(60);
+}
+
+}
 
     function judgeText(guess,answer){
 
@@ -280,6 +322,36 @@ return guess===answer
         return "down";
 
     }
+
+function autoGuess(){
+
+    const list = profiles.filter(p=>
+
+        p.name!==answer.name &&
+
+        !history.some(h=>h.profile.name===p.name)
+
+    );
+
+    if(list.length===0) return;
+
+    const random =
+        list[Math.floor(Math.random()*list.length)];
+
+    const result =
+        createResult(random,answer);
+
+    const newHistory=[
+        ...history,
+        result
+    ];
+
+    setHistory(newHistory);
+
+    setTimeLeft(60);
+
+}
+
 
 function judgeFamily(guess, answer){
 
@@ -549,30 +621,97 @@ return(
 
                 <div className="text-center mt-20">
 
-<div className="flex justify-center gap-4">
+<div className="flex flex-col gap-4 items-center">
 
-<button
-    onClick={()=>{
-        setMode("normal");
-        startGame();
-    }}
-    className="bg-red-600 hover:bg-red-700 text-white text-lg px-8 py-3 rounded-xl"
->
-    ノーマル
-</button>
+    <div className="flex gap-4">
 
-<button
-    onClick={()=>{
-        setMode("hard");
-        startGame();
-    }}
-    className="bg-purple-600 hover:bg-purple-700 text-white text-lg px-8 py-3 rounded-xl"
->
-    ハード
-</button>
+        <button
+            onClick={()=>{
+                setMode("normal");
+                startGame();
+            }}
+            className="
+                w-48
+                bg-red-600
+                hover:bg-red-700
+                text-white
+                text-lg
+                font-bold
+                py-3
+                rounded-xl
+                transition
+            "
+        >
+            ノーマル
+        </button>
+
+        <button
+            onClick={()=>{
+                setMode("hard");
+                startGame();
+            }}
+            className="
+                w-48
+                bg-purple-600
+                hover:bg-purple-700
+                text-white
+                text-lg
+                font-bold
+                py-3
+                rounded-xl
+                transition
+            "
+        >
+            ハード
+        </button>
+
+    </div>
+
+    <div className="flex gap-4">
+
+        <button
+            onClick={()=>{
+                setMode("battle-normal");
+                startGame();
+            }}
+            className="
+                w-48
+                bg-green-600
+                hover:bg-green-700
+                text-white
+                text-lg
+                font-bold
+                py-3
+                rounded-xl
+                transition
+            "
+        >
+            対戦ノーマル
+        </button>
+
+        <button
+            onClick={()=>{
+                setMode("battle-hard");
+                startGame();
+            }}
+            className="
+                w-48
+                bg-orange-600
+                hover:bg-orange-700
+                text-white
+                text-lg
+                font-bold
+                py-3
+                rounded-xl
+                transition
+            "
+        >
+            対戦ハード
+        </button>
+
+    </div>
 
 </div>
-
 {mounted && (
 <a
     href="/solo/vivre-history"
@@ -592,9 +731,14 @@ return(
 )}
                 </div>
 
-            ) : (
+) : (
 
-                <>
+<>
+    {(mode==="battle-normal" || mode==="battle-hard") && (
+        <div className="text-center text-2xl font-bold text-red-600 mb-4">
+            ⏰ 残り {timeLeft} 秒
+        </div>
+    )}
 
                    <div className="
 flex
@@ -696,7 +840,7 @@ text-green-600
 <thead>
 <tr className="bg-gray-200">
 
-{mode === "hard" ? (
+{mode==="hard" || mode==="battle-hard" ? (
 <>
 <th className="border p-1 sm:p-2">名前</th>
 <th className="border p-1 sm:p-2">年齢</th>
@@ -724,8 +868,7 @@ text-green-600
                                 {history.map((row,index)=>(
                                    <tr key={index}>
 
-{mode==="normal" ? (
-
+{mode==="normal" || mode==="battle-normal" ? (
 <>
 <td className={`border p-1 sm:p-2 ${cellClass(row.result.number)}`}>
     {numberText(row.profile.number,row.result.number)}
@@ -856,7 +999,7 @@ row.profile.name===answer.name
 
 <tr key={i}>
 
-{mode === "hard" ? (
+{mode==="hard" || mode==="battle-hard" ? (
 <>
 <td
 className={`border p-1 sm:p-2 font-semibold ${
