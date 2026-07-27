@@ -57,45 +57,6 @@ useEffect(() => {
 
     const res = await fetch("/api/profile");
 
-    const data = await res.json();
-
-    if (data.ok) {
-
-      const list = data.items.filter(profile => {
-
-        if (
-          profile.number < setting.start ||
-          profile.number > setting.end
-        ) {
-          return false;
-        }
-
-        if (setting.type === "age") {
-          return profile.age !== "不明" && profile.age !== "";
-        }
-
-        if (setting.type === "height") {
-          return profile.height !== "不明" && profile.height !== "";
-        }
-
-        if (setting.type === "blood") {
-          return profile.blood !== "不明" && profile.blood !== "";
-        }
-
-        return true;
-      });
-
-      createQuestion(list);
-
-      setProfiles(list);
-    }
-
-    setLoading(false);
-  }
-
-  load();
-
-}, []);
 
       const data =
         await res.json();
