@@ -64,9 +64,19 @@ setEnd(maxNumber);
       return;
     }
 
-    router.push(
-      `/study/vivrecard/play?start=${start}&end=${end}&mode=${mode}&age=${age ? 1 : 0}&height=${height ? 1 : 0}&blood=${blood ? 1 : 0}`
-    );
+localStorage.setItem(
+  "vivreStudySetting",
+  JSON.stringify({
+    start,
+    end,
+    mode,
+    age,
+    height,
+    blood,
+  })
+);
+
+router.push("/study/vivrecard/play");
   }
 
   const count = profiles.filter(
@@ -277,6 +287,9 @@ setEnd(maxNumber);
 
 <div className="mt-4">
 
+
+
+
 <button
   onClick={() => {
     localStorage.setItem(
@@ -292,8 +305,19 @@ setEnd(maxNumber);
   }}
   className="block w-full rounded-2xl bg-purple-500 py-4 text-white font-bold text-lg text-center hover:bg-purple-600 transition"
 >
-  🔥 年齢 全員回答チャレンジ
+   年齢 全員回答チャレンジ
 </button>
+
+<div className="mt-3 mb-4 space-y-3">
+
+  <Link
+    href="/study/vivrecard/stats"
+    className="block w-full rounded-2xl bg-sky-500 py-3 text-white text-center font-bold"
+  >
+     学習データ
+  </Link>
+
+</div>
 
 </div>
 

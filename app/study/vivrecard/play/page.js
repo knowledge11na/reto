@@ -108,7 +108,7 @@ if (setting.mode === "profile") {
 
 // キャラ→プロフィールの場合も
 // 答えられない項目は出さない
-if (mode === "character") {
+if (setting.mode === "character") {
 
   if (setting.age && profile.age === "不明") {
     return false;
