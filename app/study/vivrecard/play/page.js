@@ -4,7 +4,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 
 import {
   saveAnswer,
@@ -13,25 +13,13 @@ import {
 export default function VivreCardPlayPage() {
 
   const router = useRouter();
-  const searchParams = useSearchParams();
-
-  const start =
-    Number(searchParams.get("start")) || 1;
-
-  const end =
-    Number(searchParams.get("end")) || 100;
-
-  const mode =
-    searchParams.get("mode") || "character";
-
-  const useAge =
-    searchParams.get("age") === "1";
-
-  const useHeight =
-    searchParams.get("height") === "1";
-
-  const useBlood =
-    searchParams.get("blood") === "1";
+  
+const [start, setStart] = useState(1);
+const [end, setEnd] = useState(100);
+const [mode, setMode] = useState("character");
+const [useAge, setUseAge] = useState(true);
+const [useHeight, setUseHeight] = useState(true);
+const [useBlood, setUseBlood] = useState(true);
 
   const [profiles, setProfiles] =
     useState([]);
@@ -62,6 +50,22 @@ export default function VivreCardPlayPage() {
 
   useEffect(() => {
 
+const setting = JSON.parse(
+  localStorage.getItem("vivreStudySetting")
+);
+
+if (!setting) {
+  setLoading(false);
+  return;
+}
+
+setStart(setting.start);
+setEnd(setting.end);
+setMode(setting.mode);
+setUseAge(setting.age);
+setUseHeight(setting.height);
+setUseBlood(setting.blood);
+
     async function load() {
 
       const res =
@@ -75,50 +79,50 @@ export default function VivreCardPlayPage() {
         const list =
   data.items.filter(profile => {
 
-    if (
-      profile.number < start ||
-      profile.number > end
-    ) {
-      return false;
-    }
+if (
+  profile.number < setting.start ||
+  profile.number > setting.end
+) {
+  return false;
+}
 
 
     // プロフィール→キャラの場合
     // 選択した項目に不明があるキャラは除外
-    if (mode === "profile") {
+if (setting.mode === "profile") {
 
-      if (useAge && profile.age === "不明") {
-        return false;
-      }
+  if (setting.age && profile.age === "不明") {
+    return false;
+  }
 
-      if (useHeight && profile.height === "不明") {
-        return false;
-      }
+  if (setting.height && profile.height === "不明") {
+    return false;
+  }
 
-      if (useBlood && profile.blood === "不明") {
-        return false;
-      }
+  if (setting.blood && profile.blood === "不明") {
+    return false;
+  }
 
-    }
+}
 
 
-    // キャラ→プロフィールの場合も
-    // 答えられない項目は出さない
-    if (mode === "character") {
+// キャラ→プロフィールの場合も
+// 答えられない項目は出さない
+if (mode === "character") {
 
-      if (useAge && profile.age === "不明") {
-        return false;
-      }
+  if (setting.age && profile.age === "不明") {
+    return false;
+  }
 
-      if (useHeight && profile.height === "不明") {
-        return false;
-      }
+  if (setting.height && profile.height === "不明") {
+    return false;
+  }
 
-      if (useBlood && profile.blood === "不明") {
-        return false;
-      }
+  if (setting.blood && profile.blood === "不明") {
+    return false;
+  }
 
-    }
+}
 
 
     return true;
@@ -166,7 +170,7 @@ export default function VivreCardPlayPage() {
       profiles,
     ]);
 
-  function checkAnswer() {
+function checkAnswer() {
 
     if (mode === "character") {
 
