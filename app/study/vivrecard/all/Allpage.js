@@ -7,21 +7,15 @@ export const dynamic = "force-dynamic";
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
 
 export default function VivreCardAllPage() {
 
-  const searchParams = useSearchParams();
+const [start, setStart] = useState(1);
 
-  const start =
-    Number(searchParams.get("start")) || 1;
+const [end, setEnd] = useState(100);
 
-  const end =
-    Number(searchParams.get("end")) || 100;
+const [type, setType] = useState("age");
 
-  const type =
-    searchParams.get("type") || "age";
-    // age height blood
 
   const [profiles,setProfiles] =
     useState([]);
@@ -44,12 +38,64 @@ export default function VivreCardAllPage() {
   const [giveUp,setGiveUp] =
     useState(false);
 
-  useEffect(()=>{
+useEffect(() => {
 
-    async function load(){
+  const setting = JSON.parse(
+    localStorage.getItem("vivreAllSetting")
+  );
 
-      const res =
-        await fetch("/api/profile");
+  if (!setting) {
+    setLoading(false);
+    return;
+  }
+
+  setStart(setting.start);
+  setEnd(setting.end);
+  setType(setting.type);
+
+  async function load() {
+
+    const res = await fetch("/api/profile");
+
+    const data = await res.json();
+
+    if (data.ok) {
+
+      const list = data.items.filter(profile => {
+
+        if (
+          profile.number < setting.start ||
+          profile.number > setting.end
+        ) {
+          return false;
+        }
+
+        if (setting.type === "age") {
+          return profile.age !== "不明" && profile.age !== "";
+        }
+
+        if (setting.type === "height") {
+          return profile.height !== "不明" && profile.height !== "";
+        }
+
+        if (setting.type === "blood") {
+          return profile.blood !== "不明" && profile.blood !== "";
+        }
+
+        return true;
+      });
+
+      createQuestion(list);
+
+      setProfiles(list);
+    }
+
+    setLoading(false);
+  }
+
+  load();
+
+}, []);
 
       const data =
         await res.json();

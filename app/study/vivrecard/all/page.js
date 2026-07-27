@@ -3,11 +3,11 @@
 "use client";
 
 import { Suspense } from "react";
-import AllPage from "./AllPage";
+import AllPage from "./Allpage";
 
 export default function Page() {
   return (
-    <Suspense fallback={<div className="p-8">読み込み中...</div>}>
+    <Suspense fallback={<div>読み込み中...</div>}>
       <AllPage />
     </Suspense>
   );

@@ -277,12 +277,23 @@ setEnd(maxNumber);
 
 <div className="mt-4">
 
-  <Link
-    href={`/study/vivrecard/all?start=${start}&end=${end}&type=age`}
-    className="block w-full rounded-2xl bg-purple-500 py-4 text-white font-bold text-lg text-center hover:bg-purple-600 transition"
-  >
-    🔥 全員回答チャレンジ
-  </Link>
+<button
+  onClick={() => {
+    localStorage.setItem(
+      "vivreAllSetting",
+      JSON.stringify({
+        start,
+        end,
+        type: "age",
+      })
+    );
+
+    router.push("/study/vivrecard/all");
+  }}
+  className="block w-full rounded-2xl bg-purple-500 py-4 text-white font-bold text-lg text-center hover:bg-purple-600 transition"
+>
+  🔥 年齢 全員回答チャレンジ
+</button>
 
 </div>
 
