@@ -56,6 +56,22 @@ export default function StudyMenuPage() {
             </Link>
           </div>
 
+{/* ビブルカード情報 */}
+<div className="rounded-2xl border border-rose-500 bg-rose-50 px-3 py-3 shadow-sm">
+  <Link
+    href="/study/vivrecard"
+    className="block hover:bg-rose-100 rounded-2xl -mx-3 -my-3 px-3 py-3 transition"
+  >
+    <p className="text-sm font-bold text-rose-900">
+      ビブルカード情報
+    </p>
+
+    <p className="text-[11px] text-rose-950 leading-tight mt-1">
+      年齢・身長・血液型などを学習
+    </p>
+  </Link>
+</div>
+
           {/* 表紙 */}
           <div className="rounded-2xl border border-amber-500 bg-amber-50 px-3 py-3 shadow-sm">
             <Link

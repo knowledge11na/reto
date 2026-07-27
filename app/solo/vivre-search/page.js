@@ -841,6 +841,14 @@ text-green-600
 <tr className="bg-gray-200">
 
 {mode==="hard" || mode==="battle-hard" ? (
+
+
+
+
+
+
+
+
 <>
 <th className="border p-1 sm:p-2">名前</th>
 <th className="border p-1 sm:p-2">年齢</th>
