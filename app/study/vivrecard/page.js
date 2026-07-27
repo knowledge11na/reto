@@ -338,7 +338,7 @@ router.push("/study/vivrecard/play");
   }}
   className="block w-full rounded-2xl bg-purple-500 py-4 text-white font-bold text-lg text-center hover:bg-purple-600 transition"
 >
-   年齢 全員回答チャレンジ
+   年齢 全員回答チャレンジ　
 </button>
 
 <div className="mt-3 mb-4 space-y-3">
@@ -350,6 +350,13 @@ router.push("/study/vivrecard/play");
      学習データ
   </Link>
 
+<Link
+  href="/study/vivrecard/sort"
+  className="block w-full rounded-2xl bg-emerald-500 py-3 text-white text-center font-bold hover:bg-emerald-600 transition"
+>
+  仕分けゲーム
+</Link>
+　
 </div>
 
 </div>
