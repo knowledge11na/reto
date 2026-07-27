@@ -19,6 +19,7 @@ const [end, setEnd] = useState(9999);
 
   // 出題方向
   const [mode, setMode] = useState("character");
+const [random, setRandom] = useState(true);
 
   // 項目
   const [age, setAge] = useState(true);
@@ -73,6 +74,7 @@ localStorage.setItem(
     age,
     height,
     blood,
+    random,
   })
 );
 
@@ -227,6 +229,37 @@ router.push("/study/vivrecard/play");
               </label>
 
             </div>
+
+<div className="rounded-2xl bg-white p-5 shadow mb-4">
+
+  <h2 className="font-bold mb-3">
+    出題順
+  </h2>
+
+  <label className="block mb-2">
+    <input
+      type="radio"
+      checked={random}
+      onChange={() => setRandom(true)}
+    />
+    <span className="ml-2">
+      ランダム
+    </span>
+  </label>
+
+
+  <label>
+    <input
+      type="radio"
+      checked={!random}
+      onChange={() => setRandom(false)}
+    />
+    <span className="ml-2">
+      No.順
+    </span>
+  </label>
+
+</div>
 
             <div className="rounded-2xl bg-white p-5 shadow mb-6">
 

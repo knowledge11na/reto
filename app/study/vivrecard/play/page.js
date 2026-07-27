@@ -20,6 +20,7 @@ const [mode, setMode] = useState("character");
 const [useAge, setUseAge] = useState(true);
 const [useHeight, setUseHeight] = useState(true);
 const [useBlood, setUseBlood] = useState(true);
+const [settingLoaded, setSettingLoaded] = useState(false);
 
   const [profiles, setProfiles] =
     useState([]);
@@ -65,6 +66,7 @@ setMode(setting.mode);
 setUseAge(setting.age);
 setUseHeight(setting.height);
 setUseBlood(setting.blood);
+setSettingLoaded(true);
 
     async function load() {
 
@@ -129,7 +131,11 @@ if (setting.mode === "character") {
 
   });
 
-        list.sort(() => Math.random() - 0.5);
+        if (setting.random) {
+  list.sort(() => Math.random() - 0.5);
+} else {
+  list.sort((a, b) => a.number - b.number);
+}
 
         setProfiles(list);
 
@@ -271,6 +277,9 @@ function checkAnswer() {
     setCurrentIndex(i => i + 1);
 
   }
+if (!settingLoaded) {
+  return null;
+}
 
   if (loading) {
 

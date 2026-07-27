@@ -68,8 +68,8 @@ const list =
   data.items.filter(profile=>{
 
     if(
-      profile.number < start ||
-      profile.number > end
+profile.number < setting.start ||
+profile.number > setting.end
     ){
       return false;
     }
