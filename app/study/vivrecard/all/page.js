@@ -1,5 +1,7 @@
 // file: app/study/vivrecard/all/page.js
 
+export const dynamic = "force-dynamic";
+
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
