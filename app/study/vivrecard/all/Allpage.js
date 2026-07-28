@@ -5,7 +5,7 @@
 
 export const dynamic = "force-dynamic";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 
 export default function VivreCardAllPage() {
@@ -15,6 +15,8 @@ const [start, setStart] = useState(1);
 const [end, setEnd] = useState(100);
 
 const [type, setType] = useState("age");
+
+const inputRef = useRef(null);
 
 
   const [profiles,setProfiles] =
@@ -34,6 +36,8 @@ const [type, setType] = useState("age");
 
   const [wrongMessage,setWrongMessage] =
     useState("");
+
+const [showSuggestions, setShowSuggestions] = useState(false);
 
   const [giveUp,setGiveUp] =
     useState(false);
@@ -373,17 +377,21 @@ profile.number > setting.end
 
             <div className="relative">
 
-              <input
-
-                value={input}
+<input
+  ref={inputRef}
+  autoComplete="new-password"
+  spellCheck={false}
+  value={input}
 
                 onChange={(e)=>{
 
-                  setInput(e.target.value);
+  setInput(e.target.value);
 
-                  setWrongMessage("");
+  setWrongMessage("");
 
-                }}
+  setShowSuggestions(true);
+
+}}
 
                 placeholder="キャラ名を入力"
 
@@ -392,7 +400,7 @@ profile.number > setting.end
               />
 
 
-              {suggestions.length>0 && (
+              {showSuggestions && suggestions.length>0 && (
 
                 <div className="absolute left-0 right-0 top-full mt-1 bg-white border rounded-xl shadow-lg z-20">
 
@@ -404,11 +412,11 @@ profile.number > setting.end
 
                       type="button"
 
-                      onClick={()=>{
-
-                        setInput(profile.name);
-
-                      }}
+onClick={()=>{
+  setInput(profile.name);
+  setShowSuggestions(false);
+  inputRef.current?.blur();
+}}
 
                       className="block w-full text-left px-4 py-2 hover:bg-rose-100"
 
@@ -446,24 +454,47 @@ profile.number > setting.end
 
               onClick={()=>{
 
-                const answer =
+                const target = profiles.find(
+  profile => profile.name === input.trim()
+);
 
-                  question.answers.find(profile =>
+const answer = question.answers.find(
+  profile => profile.name === input.trim()
+);
 
-                    profile.name === input.trim()
+if(!answer){
 
-                  );
+  if(target){
 
+    let value = "";
 
-                if(!answer){
+    if(type==="age"){
+      value = `${target.age}歳`;
+    }
 
-                  setWrongMessage(
-                    "❌ 該当するキャラではありません"
-                  );
+    if(type==="height"){
+      value = `${target.height}cm`;
+    }
 
-                  return;
+    if(type==="blood"){
+      value = `${target.blood}型`;
+    }
 
-                }
+    setWrongMessage(
+      `❌ ${target.name}は${value}です`
+    );
+
+  }else{
+
+    setWrongMessage(
+      "❌ そのキャラは存在しません"
+    );
+
+  }
+
+  return;
+
+}
 
 
                 const already =
@@ -495,6 +526,7 @@ profile.number > setting.end
                 ]);
 
                 setInput("");
+setShowSuggestions(false);
 
                 setWrongMessage("");
 
