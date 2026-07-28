@@ -12,6 +12,7 @@ export default function VivreCardStudyPage() {
 
   const [profiles, setProfiles] = useState([]);
   const [loading, setLoading] = useState(true);
+const [allType, setAllType] = useState("age");
 
   // 範囲
 const [start, setStart] = useState(1);
@@ -321,7 +322,31 @@ router.push("/study/vivrecard/play");
 <div className="mt-4">
 
 
+<div className="rounded-2xl bg-white p-5 shadow mb-4">
 
+  <h2 className="font-bold mb-3">
+    全員回答チャレンジ
+  </h2>
+
+  <label className="block mb-2">
+    <input
+      type="radio"
+      checked={allType === "age"}
+      onChange={() => setAllType("age")}
+    />
+    <span className="ml-2">年齢</span>
+  </label>
+
+  <label>
+    <input
+      type="radio"
+      checked={allType === "height"}
+      onChange={() => setAllType("height")}
+    />
+    <span className="ml-2">身長</span>
+  </label>
+
+</div>
 
 <button
   onClick={() => {
@@ -330,7 +355,7 @@ router.push("/study/vivrecard/play");
       JSON.stringify({
         start,
         end,
-        type: "age",
+        type: allType,
       })
     );
 
@@ -338,7 +363,7 @@ router.push("/study/vivrecard/play");
   }}
   className="block w-full rounded-2xl bg-purple-500 py-4 text-white font-bold text-lg text-center hover:bg-purple-600 transition"
 >
-   年齢 全員回答チャレンジ　
+   全員回答チャレンジ　
 </button>
 
 <div className="mt-3 mb-4 space-y-3">
