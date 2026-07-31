@@ -34,6 +34,12 @@ const inputRef = useRef(null);
   const [answered,setAnswered] =
     useState([]);
 
+const [questionList,setQuestionList] =
+  useState([]);
+
+const [questionIndex,setQuestionIndex] =
+  useState(0);
+
   const [wrongMessage,setWrongMessage] =
     useState("");
 
@@ -66,6 +72,10 @@ useEffect(() => {
         await res.json();
 
       if(data.ok){
+
+const save = JSON.parse(
+  localStorage.getItem("vivreAllProgress")
+);
 
 const list =
 
@@ -113,64 +123,126 @@ profile.number > setting.end
 
   });
 
-        createQuestion(list);
+setProfiles(list);
 
-        setProfiles(list);
+if(
+  save &&
+  save.questionList &&
+  save.questionList.length>0
+){
 
-      }
+  setQuestionList(save.questionList);
+
+  setQuestionIndex(save.questionIndex);
+
+  setAnswered(save.answered);
+
+  setGiveUp(save.giveUp);
+
+  setQuestion(
+    save.questionList[
+      save.questionIndex
+    ]
+  );
+
+}else{
+
+  createQuestion(list);
+
+}
 
       setLoading(false);
 
     }
 
+}
+
     load();
 
   },[]);
 
-  function createQuestion(list){
 
-    const map = {};
+function createQuestion(list){
 
-    list.forEach(profile=>{
+  const map={};
 
-      let key="";
+  list.forEach(profile=>{
 
-      if(type==="age")
-        key=String(profile.age);
+    let key="";
 
-      if(type==="height")
-        key=String(profile.height);
+    if(type==="age")
+      key=String(profile.age);
 
-      if(type==="blood")
-        key=String(profile.blood);
+    if(type==="height")
+      key=String(profile.height);
 
-      if(!map[key])
-        map[key]=[];
+    if(type==="blood")
+      key=String(profile.blood);
 
-      map[key].push(profile);
+    if(!map[key]){
+      map[key]=[];
+    }
 
-    });
+    map[key].push(profile);
 
-    const keys =
-      Object.keys(map);
+  });
 
-    const randomKey =
+  const questions=Object.keys(map).map(key=>({
 
-      keys[
-        Math.floor(
-          Math.random()*keys.length
-        )
-      ];
+    value:key,
 
-    setQuestion({
+    answers:map[key]
 
-      value:randomKey,
+  }));
 
-      answers:map[randomKey],
 
-    });
+  // シャッフル
+  questions.sort(()=>Math.random()-0.5);
 
-  }
+  setQuestionList(questions);
+
+  setQuestionIndex(0);
+
+  setQuestion(questions[0]);
+
+saveProgress(
+
+  questions,
+
+  0,
+
+  [],
+
+  false
+
+);
+
+}
+
+function saveProgress(
+  questions,
+  index,
+  answeredList,
+  giveUpState
+){
+
+  localStorage.setItem(
+    "vivreAllProgress",
+    JSON.stringify({
+
+      questionList:questions,
+
+      questionIndex:index,
+
+      answered:answeredList,
+
+      giveUp:giveUpState
+
+    })
+  );
+
+}
+
 
   const suggestions=
     useMemo(()=>{
@@ -192,6 +264,31 @@ profile.number > setting.end
       input,
       profiles
     ]);
+
+const remain = question
+  ? question.answers.length - answered.length
+  : 0;
+
+
+useEffect(()=>{
+
+  if(
+    remain===0 &&
+    questionIndex===questionList.length-1 &&
+    questionList.length>0
+  ){
+
+    localStorage.removeItem(
+      "vivreAllProgress"
+    );
+
+  }
+
+},[
+  remain,
+  questionIndex,
+  questionList
+]);
 
   if(loading){
 
@@ -221,11 +318,6 @@ profile.number > setting.end
 
   }
 
-  const remain =
-
-    question.answers.length-
-
-    answered.length;
 
   return(
 
@@ -250,10 +342,60 @@ profile.number > setting.end
 
           </Link>
 
+<button
+  onClick={()=>{
+
+    saveProgress(
+      questionList,
+      questionIndex,
+      answered,
+      giveUp
+    );
+
+    window.location.href="/study/vivrecard";
+
+  }}
+  className="underline"
+>
+  中断する
+</button>
+
         </header>
 
 
         <div className="bg-white rounded-3xl shadow-lg p-6">
+
+<div className="mb-6">
+
+<div className="flex justify-between text-sm">
+
+<span>進捗</span>
+
+<span>
+
+{questionIndex+1} / {questionList.length}問
+
+</span>
+
+</div>
+
+<div className="w-full h-3 bg-gray-200 rounded-full mt-2">
+
+<div
+
+className="bg-sky-500 h-3 rounded-full"
+
+style={{
+
+width:`${((questionIndex+1)/questionList.length)*100}%`
+
+}}
+
+></div>
+
+</div>
+
+</div>
 
           <div className="text-center mb-6">
 
@@ -352,11 +494,10 @@ profile.number > setting.end
 
             <div className="flex flex-wrap gap-2">
 
-              {answered.map(profile=>(
+{answered.map((profile,index)=>(
 
-                <span
-
-                  key={profile.number}
+<span
+  key={`${profile.number}-${profile.name}-${index}`}
 
                   className="bg-white rounded-full px-3 py-1 text-sm shadow"
 
@@ -404,11 +545,10 @@ profile.number > setting.end
 
                 <div className="absolute left-0 right-0 top-full mt-1 bg-white border rounded-xl shadow-lg z-20">
 
-                  {suggestions.map(profile=>(
+ {suggestions.map((profile,index)=>(
 
-                    <button
-
-                      key={profile.number}
+<button
+  key={`${profile.number}-${profile.name}-${index}`}
 
                       type="button"
 
@@ -517,13 +657,27 @@ if(!answer){
                 }
 
 
-                setAnswered([
+const newAnswered = [
 
-                  ...answered,
+  ...answered,
 
-                  answer
+  answer
 
-                ]);
+];
+
+setAnswered(newAnswered);
+
+saveProgress(
+
+  questionList,
+
+  questionIndex,
+
+  newAnswered,
+
+  giveUp
+
+);
 
                 setInput("");
 setShowSuggestions(false);
@@ -543,7 +697,7 @@ setShowSuggestions(false);
           )}
 
 
-          {remain === 0 && (
+          {remain===0 && questionIndex<questionList.length-1 && (
 
             <div className="mt-6 text-center">
 
@@ -573,13 +727,31 @@ setShowSuggestions(false);
 
                 onClick={()=>{
 
-                  setAnswered([]);
+setAnswered([]);
 
-                  setInput("");
+setInput("");
 
-                  setWrongMessage("");
+setWrongMessage("");
 
-                  createQuestion(profiles);
+setGiveUp(false);
+
+const next = questionIndex + 1;
+
+setQuestionIndex(next);
+
+setQuestion(questionList[next]);
+
+saveProgress(
+
+  questionList,
+
+  next,
+
+  [],
+
+  false
+
+);
 
                 }}
 
@@ -595,10 +767,46 @@ setShowSuggestions(false);
 
           )}
 
+{remain===0 && questionIndex===questionList.length-1 && (
+
+<div className="mt-6 text-center">
+
+<div className="text-3xl font-extrabold text-green-600">
+
+🎉 全問題クリア！
+
+</div>
+
+<p className="mt-4">
+
+全{questionList.length}問クリアしました！
+
+</p>
+
+</div>
+
+)}
+
 
           <button
 
-            onClick={()=>setGiveUp(true)}
+            onClick={()=>{
+
+  setGiveUp(true);
+
+  saveProgress(
+
+    questionList,
+
+    questionIndex,
+
+    answered,
+
+    true
+
+  );
+
+}}
 
             className="w-full mt-5 border border-gray-300 rounded-2xl py-3 font-bold"
 
@@ -622,11 +830,10 @@ setShowSuggestions(false);
 
               <div className="space-y-2">
 
-                {question.answers.map(profile=>(
+{question.answers.map((profile,index)=>(
 
-                  <div
-
-                    key={profile.number}
+<div
+  key={`${profile.number}-${profile.name}-${index}`}
 
                     className={`rounded-xl px-4 py-2 ${
                       
@@ -667,15 +874,31 @@ setShowSuggestions(false);
 
                 onClick={()=>{
 
-                  setAnswered([]);
+setAnswered([]);
 
-                  setGiveUp(false);
+setGiveUp(false);
 
-                  setInput("");
+setInput("");
 
-                  setWrongMessage("");
+setWrongMessage("");
 
-                  createQuestion(profiles);
+const next = questionIndex + 1;
+
+setQuestionIndex(next);
+
+setQuestion(questionList[next]);
+
+saveProgress(
+
+  questionList,
+
+  next,
+
+  [],
+
+  false
+
+);
 
                 }}
 

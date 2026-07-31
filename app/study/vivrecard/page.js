@@ -13,6 +13,7 @@ export default function VivreCardStudyPage() {
   const [profiles, setProfiles] = useState([]);
   const [loading, setLoading] = useState(true);
 const [allType, setAllType] = useState("age");
+const [hasAllSave, setHasAllSave] = useState(false);
 
   // 範囲
 const [start, setStart] = useState(1);
@@ -48,6 +49,10 @@ setEnd(maxNumber);
       } catch (e) {
         console.error(e);
       }
+
+const save = localStorage.getItem("vivreAllProgress");
+
+setHasAllSave(!!save);
 
       setLoading(false);
     }
@@ -350,6 +355,8 @@ router.push("/study/vivrecard/play");
 
 <button
   onClick={() => {
+
+localStorage.removeItem("vivreAllProgress");
     localStorage.setItem(
       "vivreAllSetting",
       JSON.stringify({
@@ -365,6 +372,21 @@ router.push("/study/vivrecard/play");
 >
    全員回答チャレンジ　
 </button>
+
+{hasAllSave && (
+
+<button
+  onClick={()=>{
+    router.push("/study/vivrecard/all");
+  }}
+  className="mt-3 block w-full rounded-2xl bg-amber-500 py-4 text-white font-bold text-lg text-center hover:bg-amber-600 transition"
+>
+
+  中断した続きを再開
+
+</button>
+
+)}
 
 <div className="mt-3 mb-4 space-y-3">
 
