@@ -609,19 +609,19 @@ if(!answer){
 
   if(target){
 
-    let value = "";
+let value = "";
 
-    if(selectedType==="age"){
-      value = `${target.age}歳`;
-    }
+if(type==="age"){
+  value = `${target.age}歳`;
+}
 
-    if(selectedType==="height"){
-      value = `${target.height}cm`;
-    }
+if(type==="height"){
+  value = `${target.height}cm`;
+}
 
-    if(selectedType==="blood"){
-      value = `${target.blood}型`;
-    }
+if(type==="blood"){
+  value = `${target.blood}型`;
+}
 
     setWrongMessage(
       `❌ ${target.name}は${value}です`
