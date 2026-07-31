@@ -63,6 +63,8 @@ useEffect(() => {
   setEnd(setting.end);
   setType(setting.type);
 
+const selectedType = setting.type;
+
   async function load() {
 
     const res = await fetch("/api/profile");
@@ -89,7 +91,7 @@ profile.number > setting.end
     }
 
 
-    if(type==="age"){
+    if(selectedType==="age"){
 
       return (
         profile.age !== "不明" &&
@@ -99,7 +101,7 @@ profile.number > setting.end
     }
 
 
-    if(type==="height"){
+    if(selectedType==="height"){
 
       return (
         profile.height !== "不明" &&
@@ -109,7 +111,7 @@ profile.number > setting.end
     }
 
 
-    if(type==="blood"){
+    if(selectedType==="blood"){
 
       return (
         profile.blood !== "不明" &&
@@ -127,6 +129,7 @@ setProfiles(list);
 
 if(
   save &&
+  save.type === setting.type &&
   save.questionList &&
   save.questionList.length>0
 ){
@@ -147,7 +150,7 @@ if(
 
 }else{
 
-  createQuestion(list);
+createQuestion(list, setting.type);
 
 }
 
@@ -162,7 +165,7 @@ if(
   },[]);
 
 
-function createQuestion(list){
+function createQuestion(list, selectedType){
 
   const map={};
 
@@ -170,15 +173,14 @@ function createQuestion(list){
 
     let key="";
 
-    if(type==="age")
+    if(selectedType==="age")
       key=String(profile.age);
 
-    if(type==="height")
-      key=String(profile.height);
+if(selectedType==="height")
+  key=String(profile.height);
 
-    if(type==="blood")
-      key=String(profile.blood);
-
+if(selectedType==="blood")
+  key=String(profile.blood);
     if(!map[key]){
       map[key]=[];
     }
@@ -186,6 +188,7 @@ function createQuestion(list){
     map[key].push(profile);
 
   });
+
 
   const questions=Object.keys(map).map(key=>({
 
@@ -608,15 +611,15 @@ if(!answer){
 
     let value = "";
 
-    if(type==="age"){
+    if(selectedType==="age"){
       value = `${target.age}歳`;
     }
 
-    if(type==="height"){
+    if(selectedType==="height"){
       value = `${target.height}cm`;
     }
 
-    if(type==="blood"){
+    if(selectedType==="blood"){
       value = `${target.blood}型`;
     }
 
