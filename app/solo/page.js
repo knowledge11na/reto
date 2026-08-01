@@ -20,6 +20,7 @@ const [hukurouFlapBest, setHukurouFlapBest] = useState(0);
   const [bloodtypeBest, setBloodtypeBest] = useState(0);
 
 const [heightSortBest, setHeightSortBest] = useState(0);
+const [ageSortBest, setAgeSortBest] = useState(0);
 
   // ★ 風船割り：各モード自己ベスト（ローカル保存）
   const [balloonBests, setBalloonBests] = useState({
@@ -89,6 +90,14 @@ const hs = rawHeightSort ? Number(rawHeightSort) : 0;
 if (!Number.isNaN(hs) && hs > 0)
   setHeightSortBest(hs);
 
+const rawAgeSort =
+  window.localStorage.getItem("age_sort_best_score");
+
+const as = rawAgeSort ? Number(rawAgeSort) : 0;
+
+if (!Number.isNaN(as) && as > 0)
+  setAgeSortBest(as);
+
       // ★ 時系列（before pacman）
       const rawBefore = window.localStorage.getItem('before_pac_best_score');
       const bp = rawBefore ? Number(rawBefore) : 0;
@@ -124,6 +133,7 @@ if (!Number.isNaN(hs) && hs > 0)
       bornBest > 0 ||
       bloodtypeBest > 0 ||
 heightSortBest > 0 ||
+ageSortBest > 0 ||
       Math.max(
         balloonBests.food || 0,
         balloonBests.height || 0,
@@ -151,6 +161,7 @@ heightSortBest > 0 ||
         bornBest,
 
 heightSortBest,
+ageSortBest,
 
         // ★ 血液型も送る（API側で未対応なら無視されるだけ）
         bloodtypeBest,
@@ -164,7 +175,7 @@ heightSortBest,
         },
       }),
     }).catch(() => {});
-  }, [me, meteorBest, sniperBest, dungeonBest, bombBest, bornBest, bloodtypeBest, heightSortBest,balloonBests]);
+  }, [me, meteorBest, sniperBest, dungeonBest, bombBest, bornBest, bloodtypeBest, heightSortBest,ageSortBest,balloonBests]);
 
   return (
     <main className="min-h-screen bg-sky-50 text-sky-900">
@@ -410,6 +421,39 @@ heightSortBest,
 
     <Link
       href="/solo/height-sort/rules"
+      className="underline text-orange-700 hover:text-orange-500"
+    >
+      ルールを見る
+    </Link>
+  </div>
+</div>
+
+{/* ★ 仕分けゲーム（年齢） */}
+<div className="rounded-2xl border border-orange-400 bg-orange-50 px-3 py-3 shadow-sm">
+  <Link
+    href="/solo/age-sort"
+    className="block hover:bg-orange-100 rounded-2xl -mx-3 -my-3 px-3 py-3 transition"
+  >
+    <p className="text-sm font-bold text-orange-900">
+      仕分けゲーム（年齢）
+    </p>
+
+    <p className="text-[11px] text-orange-950 leading-tight mt-1">
+      動き回るキャラを掴んで、正しい年齢の仕切りへ運び込む。
+    </p>
+  </Link>
+
+  <div className="mt-2 flex items-center justify-between text-[11px] text-orange-900">
+    <span>
+      自己ベスト：
+      <span className="font-semibold">
+        {ageSortBest}
+      </span>
+      人
+    </span>
+
+    <Link
+      href="/solo/age-sort/rules"
       className="underline text-orange-700 hover:text-orange-500"
     >
       ルールを見る

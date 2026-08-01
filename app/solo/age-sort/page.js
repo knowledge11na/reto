@@ -1,4 +1,4 @@
-// file: app/solo/height-sort/page.js
+// file: app/solo/age-sort/page.js
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -14,8 +14,6 @@ const BLINK_MS = 2000; // 2秒前から点滅
 // 仕切りに1体たまったら演出で消す
 const BIN_CAP = 1;
 const BIN_CLEAR_MS = 650;
-
-
 
 
 const DOOR_THRESHOLDS = [
@@ -129,8 +127,8 @@ function inCorridor(px, py, rects) {
   return pointInRect(px, py, rects.vertical) || pointInRect(px, py, rects.horizontal);
 }
 
-// 表示ラベル（身長）
-function zoneLabel(zone,heightTargets){
+// 表示ラベル（年齢）
+function zoneLabel(zone,ageTargets){
 
  const index={
   NORTH:0,
@@ -140,7 +138,7 @@ function zoneLabel(zone,heightTargets){
   GRAND:4
  };
 
- return heightTargets[index[zone]] ?? "";
+ return ageTargets[index[zone]] ?? "";
 
 }
 
@@ -157,18 +155,18 @@ function randRange(a, b) {
   return a + Math.random() * (b - a);
 }
 
-function createHeightTargets(list){
+function createageTargets(list){
 
-  const heights = [
-    ...new Set(
-      list
-        .map(c=>Number(c.height))
-        .filter(Boolean)
-    )
-  ].sort((a,b)=>a-b);
+const ages = [
+  ...new Set(
+    list
+      .map(c=>Number(c.age))
+      .filter(Boolean)
+  )
+].sort((a,b)=>a-b);
 
 
-  if(heights.length < 5) return heights;
+  if(ages.length < 5) return ages;
 
 
   const mode=Math.random()<0.5;
@@ -180,15 +178,15 @@ function createHeightTargets(list){
 
     const possible=[];
 
-    for(let i=0;i<heights.length-4;i++){
+for(let i=0;i<ages.length-4;i++){
 
-      const group=[
-        heights[i],
-        heights[i+1],
-        heights[i+2],
-        heights[i+3],
-        heights[i+4]
-      ];
+  const group=[
+    ages[i],
+    ages[i+1],
+    ages[i+2],
+    ages[i+3],
+    ages[i+4]
+  ];
 
       if(
         group[4]-group[0]===4
@@ -211,15 +209,15 @@ function createHeightTargets(list){
 // 下一桁一致 + 近い順
 
 const base =
- heights[
-   Math.floor(Math.random()*heights.length)
+ ages[
+   Math.floor(Math.random()*ages.length)
  ];
 
 const unit = base % 10;
 
 
 const same =
- heights
+ ages
  .filter(h => h % 10 === unit)
  .sort((a,b)=>Math.abs(a-base)-Math.abs(b-base));
 
@@ -233,8 +231,8 @@ if(same.length >= 5){
 }
 
 
-  return heights
-    .sort(()=>Math.random()-0.5)
+return ages
+  .sort(()=>Math.random()-0.5)
     .slice(0,5)
     .sort((a,b)=>a-b);
 
@@ -269,16 +267,20 @@ function doorCooldownMs(doorKey, doorsCount) {
   return base + jitter;
 }
 
-export default function HeightSoloPage() {
+export default function AgeSoloPage(){
 const spawnedNamesRef = useRef(new Set());
   const [status, setStatus] = useState('loading'); // loading | playing | finished
   const [message, setMessage] = useState('');
 
 const [list, setList] = useState([]);
-const [heightTargets, setHeightTargets] = useState([]);
+const [ageTargets, setageTargets] = useState([]);
 
 const currentTargetsRef = useRef([]);
-const heightTargetsRef = useRef([]);
+
+const changeAgeTargets = (next) => {
+  currentTargetsRef.current = next;
+  setageTargets(next);
+};
 
 const [score, setScore] = useState(0);
 
@@ -373,7 +375,7 @@ const [score, setScore] = useState(0);
   useEffect(() => {
     if (typeof window !== 'undefined') {
       try {
-        const raw = window.localStorage.getItem('height_sort_best_score');
+        const raw = window.localStorage.getItem('age_sort_best_score');
         const n = raw ? Number(raw) : 0;
         if (!Number.isNaN(n) && n > 0) setBestScore(n);
       } catch {}
@@ -381,24 +383,23 @@ const [score, setScore] = useState(0);
 
     const load = async () => {
       try {
-        const res = await fetch('/api/solo/height-sort', { cache: 'no-store' });
+        const res = await fetch('/api/solo/age-sort', { cache: 'no-store' });
         const data = await res.json();
         if (!data.ok) throw new Error(data.message || 'failed');
         const loaded = data.list || [];
 
 setList(loaded);
 
-const targets = createHeightTargets(loaded);
+const targets = createageTargets(loaded);
 
-setHeightTargets(targets);
-heightTargetsRef.current = targets;
+setageTargets(targets);
 currentTargetsRef.current = targets;
 
 setStatus('playing');
       } catch (e) {
         console.error(e);
         setStatus('finished');
-        setMessage('height データの取得に失敗しました');
+        setMessage('age データの取得に失敗しました');
       }
     };
 
@@ -414,37 +415,38 @@ setStatus('playing');
     setStatus('finished');
 
     if (char) {
-      setAnswerHistory((prev) => [
-        ...prev,
-        {
-          question_id: `height_${char.id}`,
-          text: `${char.name}`,
-          userAnswerText: `${userZone}`,
-          correctAnswerText: `${char.height}cm`,
-        },
-      ]);
+setAnswerHistory((prev) => [
+  ...prev,
+  {
+    question_id: `age_${char.id}`,
+    text: `${char.name}`,
+    userAnswerText: `${userZone}`,
+    correctAnswerText: `${char.age}歳`,
+  },
+]);
     }
 
     setMessage(reason ? `ゲームオーバー：${reason}` : 'ゲームオーバー');
 
     if (typeof window !== 'undefined') {
-try {
-  const raw = window.localStorage.getItem('height_sort_best_score');
-  const oldBest = raw ? Number(raw) : 0;
+      try {
+        const raw = window.localStorage.getItem('age_sort_best_score');
+        const oldBest = raw ? Number(raw) : 0;
 
-  if (finalScore > oldBest) {
-    window.localStorage.setItem(
-      'height_sort_best_score',
-      String(finalScore)
-    );
+if (Number.isNaN(oldBest) || finalScore > oldBest) {
+  window.localStorage.setItem(
+    'age_sort_best_score',
+    String(finalScore)
+  );
 
-    setBestScore(finalScore);
-    setIsNewRecord(finalScore > 0);
-  } else {
-    setBestScore(oldBest);
-    setIsNewRecord(false);
-  }
-} catch {}
+  setBestScore(finalScore);
+  setIsNewRecord(finalScore > 0);
+}
+ else {
+          setBestScore(Number.isNaN(oldBest) ? 0 : oldBest);
+          setIsNewRecord(false);
+        }
+      } catch {}
     }
 
     if (spawnTimerRef.current) {
@@ -519,7 +521,7 @@ try {
         const pos = spawnPosFromDoor(doorKey, layout);
 const candidates = list.filter(
   c =>
-    currentTargetsRef.current.includes(Number(c.height)) &&
+    currentTargetsRef.current.includes(Number(c.age)) &&
     !spawnedNamesRef.current.has(c.name)
 );
 
@@ -539,7 +541,7 @@ const size = 52;
 add.push({
           id: id2,
           name: base.name,
-height: base.height,
+age: Number(base.age),
           x: clamp(pos.x, size / 2 + 2, boardRect.w - size / 2 - 2),
           y: clamp(pos.y, size / 2 + 2, boardRect.h - size / 2 - 2),
           vx: vel.vx,
@@ -559,7 +561,7 @@ if (Math.random() < 0.55) {
 
 const candidates2 = list.filter(
  c =>
- currentTargetsRef.current.includes(Number(c.height))
+ currentTargetsRef.current.includes(Number(c.age))
  &&
  !spawnedNamesRef.current.has(c.name)
 );
@@ -578,7 +580,7 @@ spawnedNamesRef.current.add(base2.name);
           add.push({
             id: id3,
             name: base2.name,
-height: base2.height,
+age: Number(base2.age),
             zone: base2.zone,
             x: clamp(pos.x + randRange(-10, 10), size / 2 + 2, boardRect.w - size / 2 - 2),
             y: clamp(pos.y + randRange(-10, 10), size / 2 + 2, boardRect.h - size / 2 - 2),
@@ -614,7 +616,7 @@ height: base2.height,
         const pos = spawnPosFromDoor(doorKey, layout);
 const candidates = list.filter(
   c =>
-    currentTargetsRef.current.includes(Number(c.height)) &&
+    currentTargetsRef.current.includes(Number(c.age)) &&
     !spawnedNamesRef.current.has(c.name)
 );
 
@@ -632,7 +634,7 @@ spawnedNamesRef.current.add(base.name);        const vel = makeVelocityPxPerSec(
         add.push({
           id: id2,
           name: base.name,
-height: base.height,
+age: Number(base.age),
           x: clamp(pos.x, size / 2 + 2, boardRect.w - size / 2 - 2),
           y: clamp(pos.y, size / 2 + 2, boardRect.h - size / 2 - 2),
           vx: vel.vx,
@@ -668,8 +670,9 @@ const base2 =
 add.push({
   id: id3,
   name: base2.name,
+  age: Number(base2.age),
   zone: base2.zone,
-            x: clamp(pos.x + randRange(-10, 10), size / 2 + 2, boardRect.w - size / 2 - 2),
+  x: clamp(pos.x + randRange(-10, 10), size / 2 + 2, boardRect.w - size / 2 - 2),
             y: clamp(pos.y + randRange(-10, 10), size / 2 + 2, boardRect.h - size / 2 - 2),
             vx: vel2.vx,
             vy: vel2.vy,
@@ -874,20 +877,24 @@ add.push({
 
     if (!hit) return;
 
-    const userZone = zoneLabel(hit.key,heightTargets);
+    const userZone = zoneLabel(hit.key,ageTargets);
 
     setAnswerHistory((prev) => [
       ...prev,
       {
-        question_id: `height_${ch.id}`,
+        question_id: `age_${ch.id}`,
         text: `${ch.name}`,
         userAnswerText: `${userZone}`,
-        correctAnswerText: `${ch.height}cm`,
+        correctAnswerText: `${ch.age}歳`,
       },
     ]);
 
-const correctHeight =
-heightTargetsRef.current[
+const currentTargets = currentTargetsRef.current;
+
+const correctTargets = currentTargetsRef.current;
+
+const correctAge =
+correctTargets[
  hit.key === 'NORTH' ? 0 :
  hit.key === 'EAST' ? 1 :
  hit.key === 'WEST' ? 2 :
@@ -901,26 +908,22 @@ const current = charsRef.current;
 
 const stillExist = current.some(
  c =>
- currentTargetsRef.current.includes(Number(c.height))
- &&
- c.state !== 'exiting'
+ c.state !== 'exiting' &&
+ c.state !== 'sorted'
 );
 
 if(!stillExist){
 
   spawnedNamesRef.current.clear();
 
-const nextTargets = createHeightTargets(list);
+  const nextTargets = createageTargets(list);
 
-currentTargetsRef.current = nextTargets;
-heightTargetsRef.current = nextTargets;
-
-setHeightTargets(nextTargets);
+changeAgeTargets(nextTargets);
 }
 
-},300);
+},900);
 
-if(Number(ch.height)!==Number(correctHeight)) {
+if(Number(ch.age)!==Number(correctAge)) {
       gameOver({ reason: '間違えた仕切りに入れた', char: ch, userZone });
       return;
     }
@@ -1034,7 +1037,7 @@ if(Number(ch.height)!==Number(correctHeight)) {
 
   if (status === 'loading') {
     return (
-      <SoloLayout title="仕分けゲーム（身長）">
+      <SoloLayout title="仕分けゲーム（年齢）">
         <p className="text-sm text-slate-800 bg-white/90 rounded-xl px-4 py-3 inline-block">読み込み中...</p>
       </SoloLayout>
     );
@@ -1042,7 +1045,7 @@ if(Number(ch.height)!==Number(correctHeight)) {
 
   if (status === 'finished') {
     return (
-      <SoloLayout title="仕分けゲーム（身長）">
+      <SoloLayout title="仕分けゲーム（年齢）">
         <div className="mt-4 max-w-md mx-auto bg-white/95 rounded-2xl shadow-lg border border-slate-200 p-4 sm:p-6 space-y-3">
           <p className="text-lg font-semibold text-slate-900">結果</p>
           <p className="text-sm text-slate-900">
@@ -1063,7 +1066,7 @@ if(Number(ch.height)!==Number(correctHeight)) {
           <div className="mt-3 flex flex-wrap gap-3">
             <button
               onClick={() => {
-                window.location.href = `/solo/height-sort?ts=${Date.now()}`;
+                window.location.href = `/solo/age-sort?ts=${Date.now()}`;
               }}
               className="px-4 py-2 rounded-full bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700"
             >
@@ -1086,14 +1089,17 @@ if(Number(ch.height)!==Number(correctHeight)) {
         </div>
 
         <div className="mt-6 max-w-3xl mx-auto">
-          <QuestionReviewAndReport questions={answerHistory} sourceMode="solo-height" />
+          <QuestionReviewAndReport 
+ questions={answerHistory} 
+ sourceMode="solo-age" 
+/>
         </div>
       </SoloLayout>
     );
   }
 
   return (
-    <SoloLayout title="仕分けゲーム（身長）">
+    <SoloLayout title="仕分けゲーム（年齢）">
       <style jsx global>{`
         @keyframes bornBob {
           0% { transform: translateY(0px); }
@@ -1191,11 +1197,11 @@ if(Number(ch.height)!==Number(correctHeight)) {
             }}
           />
 
-          <ZoneBlock rect={layout.north} label={heightTargets[0]}/>
-<ZoneBlock rect={layout.east} label={heightTargets[1]}/>
-<ZoneBlock rect={layout.west} label={heightTargets[2]}/>
-<ZoneBlock rect={layout.south} label={heightTargets[3]}/>
-<ZoneBlock rect={layout.grand} label={heightTargets[4]}/>
+          <ZoneBlock rect={layout.north} label={ageTargets[0]}/>
+<ZoneBlock rect={layout.east} label={ageTargets[1]}/>
+<ZoneBlock rect={layout.west} label={ageTargets[2]}/>
+<ZoneBlock rect={layout.south} label={ageTargets[3]}/>
+<ZoneBlock rect={layout.grand} label={ageTargets[4]}/>
 
           {/* 通路 */}
           <div
@@ -1234,7 +1240,7 @@ if(Number(ch.height)!==Number(correctHeight)) {
             }}
           >
            <span className="text-[18px] font-black text-slate-900 leading-tight text-center">
-  {heightTargets[4]}
+  {ageTargets[4]}
 </span>
           </div>
 
@@ -1321,7 +1327,7 @@ if(Number(ch.height)!==Number(correctHeight)) {
                         ? 'bornBob 0.32s steps(2, end) infinite'
                         : 'none',
                   }}
-                  title={`${c.name} / ${c.height}cm`}
+                  title={`${c.name} / ${c.age}歳`}
                 >
                   {(isWalking || isExiting) && (
                     <>
