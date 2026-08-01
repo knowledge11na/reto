@@ -877,7 +877,7 @@ add.push({
 
     if (!hit) return;
 
-    const userZone = zoneLabel(hit.key,ageTargets);
+    const userZone = zoneLabel(hit.key, currentTargetsRef.current);
 
     setAnswerHistory((prev) => [
       ...prev,

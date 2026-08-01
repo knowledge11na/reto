@@ -874,7 +874,7 @@ add.push({
 
     if (!hit) return;
 
-    const userZone = zoneLabel(hit.key,heightTargets);
+    const userZone = zoneLabel(hit.key, heightTargetsRef.current);
 
     setAnswerHistory((prev) => [
       ...prev,
