@@ -1,4 +1,4 @@
-// file: app/solo/bloodtype/page.js
+// file: app/solo/height-sort/page.js
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -11,9 +11,12 @@ const GAME_H = 520;
 const LIFE_MS = 9000; // 1体9秒（通路にいる間だけ）
 const BLINK_MS = 2000; // 2秒前から点滅
 
-// 仕切りに10体たまったら演出で消す
-const BIN_CAP = 10;
+// 仕切りに1体たまったら演出で消す
+const BIN_CAP = 1;
 const BIN_CLEAR_MS = 650;
+
+
+
 
 const DOOR_THRESHOLDS = [
   { score: 0, doors: ['TOP'] },
@@ -126,19 +129,21 @@ function inCorridor(px, py, rects) {
   return pointInRect(px, py, rects.vertical) || pointInRect(px, py, rects.horizontal);
 }
 
-// 表示ラベル（血液型）
-function zoneLabel(zone) {
-  if (zone === 'EAST') return 'X';
-  if (zone === 'WEST') return 'F';
-  if (zone === 'NORTH') return 'S';
-  if (zone === 'SOUTH') return 'XF';
-  if (zone === 'GRAND') return 'S型RH-';
-  return '';
+// 表示ラベル（身長）
+function zoneLabel(zone,heightTargets){
+
+ const index={
+  NORTH:0,
+  EAST:1,
+  WEST:2,
+  SOUTH:3,
+  GRAND:4
+ };
+
+ return heightTargets[index[zone]] ?? "";
+
 }
 
-function bloodLabel(blood) {
-  return String(blood ?? '');
-}
 
 function pickDoorsByScore(score) {
   let best = DOOR_THRESHOLDS[0].doors;
@@ -152,6 +157,88 @@ function randRange(a, b) {
   return a + Math.random() * (b - a);
 }
 
+function createHeightTargets(list){
+
+  const heights = [
+    ...new Set(
+      list
+        .map(c=>Number(c.height))
+        .filter(Boolean)
+    )
+  ].sort((a,b)=>a-b);
+
+
+  if(heights.length < 5) return heights;
+
+
+  const mode=Math.random()<0.5;
+
+
+  if(mode){
+
+    // 連番5個探す
+
+    const possible=[];
+
+    for(let i=0;i<heights.length-4;i++){
+
+      const group=[
+        heights[i],
+        heights[i+1],
+        heights[i+2],
+        heights[i+3],
+        heights[i+4]
+      ];
+
+      if(
+        group[4]-group[0]===4
+      ){
+        possible.push(group);
+      }
+
+    }
+
+
+    if(possible.length){
+      return possible[
+        Math.floor(Math.random()*possible.length)
+      ];
+    }
+
+  }
+
+
+// 下一桁一致 + 近い順
+
+const base =
+ heights[
+   Math.floor(Math.random()*heights.length)
+ ];
+
+const unit = base % 10;
+
+
+const same =
+ heights
+ .filter(h => h % 10 === unit)
+ .sort((a,b)=>Math.abs(a-base)-Math.abs(b-base));
+
+
+if(same.length >= 5){
+
+ return same
+   .slice(0,5)
+   .sort((a,b)=>a-b);
+
+}
+
+
+  return heights
+    .sort(()=>Math.random()-0.5)
+    .slice(0,5)
+    .sort((a,b)=>a-b);
+
+}
 // 通路の速度( px/秒 )
 function makeVelocityPxPerSec() {
   const ang = randRange(0, Math.PI * 2);
@@ -182,12 +269,18 @@ function doorCooldownMs(doorKey, doorsCount) {
   return base + jitter;
 }
 
-export default function BloodtypeSoloPage() {
+export default function HeightSoloPage() {
+const spawnedNamesRef = useRef(new Set());
   const [status, setStatus] = useState('loading'); // loading | playing | finished
   const [message, setMessage] = useState('');
 
-  const [list, setList] = useState([]);
-  const [score, setScore] = useState(0);
+const [list, setList] = useState([]);
+const [heightTargets, setHeightTargets] = useState([]);
+
+const currentTargetsRef = useRef([]);
+
+const [score, setScore] = useState(0);
+
 
   const [bestScore, setBestScore] = useState(0);
   const [isNewRecord, setIsNewRecord] = useState(false);
@@ -279,7 +372,7 @@ export default function BloodtypeSoloPage() {
   useEffect(() => {
     if (typeof window !== 'undefined') {
       try {
-        const raw = window.localStorage.getItem('bloodtype_best_score');
+        const raw = window.localStorage.getItem('height_best_score');
         const n = raw ? Number(raw) : 0;
         if (!Number.isNaN(n) && n > 0) setBestScore(n);
       } catch {}
@@ -287,15 +380,23 @@ export default function BloodtypeSoloPage() {
 
     const load = async () => {
       try {
-        const res = await fetch('/api/solo/bloodtype', { cache: 'no-store' });
+        const res = await fetch('/api/solo/height-sort', { cache: 'no-store' });
         const data = await res.json();
         if (!data.ok) throw new Error(data.message || 'failed');
-        setList(data.list || []);
-        setStatus('playing');
+        const loaded = data.list || [];
+
+setList(loaded);
+
+const targets = createHeightTargets(loaded);
+
+setHeightTargets(targets);
+currentTargetsRef.current = targets;
+
+setStatus('playing');
       } catch (e) {
         console.error(e);
         setStatus('finished');
-        setMessage('bloodtype データの取得に失敗しました（bloodtype.xlsx）');
+        setMessage('height データの取得に失敗しました');
       }
     };
 
@@ -314,10 +415,10 @@ export default function BloodtypeSoloPage() {
       setAnswerHistory((prev) => [
         ...prev,
         {
-          question_id: `bloodtype_${char.id}`,
+          question_id: `height_${char.id}`,
           text: `${char.name}`,
           userAnswerText: `${userZone}`,
-          correctAnswerText: `${zoneLabel(char.zone)}（${bloodLabel(char.blood)}）`,
+          correctAnswerText: `${char.height}cm`,
         },
       ]);
     }
@@ -326,11 +427,11 @@ export default function BloodtypeSoloPage() {
 
     if (typeof window !== 'undefined') {
       try {
-        const raw = window.localStorage.getItem('bloodtype_best_score');
+        const raw = window.localStorage.getItem('height_best_score');
         const oldBest = raw ? Number(raw) : 0;
 
         if (Number.isNaN(oldBest) || finalScore > oldBest) {
-          window.localStorage.setItem('bloodtype_best_score', String(finalScore));
+          const raw = window.localStorage.getItem('height_best_score');
           setBestScore(finalScore);
           setIsNewRecord(finalScore > 0);
         } else {
@@ -410,16 +511,29 @@ export default function BloodtypeSoloPage() {
       if (isEmpty) {
         const doorKey = doors[Math.floor(Math.random() * doors.length)];
         const pos = spawnPosFromDoor(doorKey, layout);
-        const base = list[Math.floor(Math.random() * list.length)];
+const candidates = list.filter(
+  c =>
+    currentTargetsRef.current.includes(Number(c.height)) &&
+    !spawnedNamesRef.current.has(c.name)
+);
+
+if (candidates.length === 0) return;
+
+
+const base =
+  candidates[
+    Math.floor(Math.random() * candidates.length)
+  ];
+
+spawnedNamesRef.current.add(base.name);
         const vel = makeVelocityPxPerSec();
         const id2 = `${Date.now()}_${Math.random().toString(16).slice(2)}`;
-        const size = 52;
+const size = 52;
 
-        add.push({
+add.push({
           id: id2,
           name: base.name,
-          blood: base.blood,
-          zone: base.zone,
+height: base.height,
           x: clamp(pos.x, size / 2 + 2, boardRect.w - size / 2 - 2),
           y: clamp(pos.y, size / 2 + 2, boardRect.h - size / 2 - 2),
           vx: vel.vx,
@@ -435,14 +549,30 @@ export default function BloodtypeSoloPage() {
           exitingAt: 0,
         });
 
-        if (Math.random() < 0.55) {
-          const base2 = list[Math.floor(Math.random() * list.length)];
+if (Math.random() < 0.55) {
+
+const candidates2 = list.filter(
+ c =>
+ currentTargetsRef.current.includes(Number(c.height))
+ &&
+ !spawnedNamesRef.current.has(c.name)
+);
+
+if (candidates2.length === 0) return;
+
+
+const base2 =
+  candidates2[
+    Math.floor(Math.random()*candidates2.length)
+  ];
+
+spawnedNamesRef.current.add(base2.name);
           const vel2 = makeVelocityPxPerSec();
           const id3 = `${Date.now()}_${Math.random().toString(16).slice(2)}_a`;
           add.push({
             id: id3,
             name: base2.name,
-            blood: base2.blood,
+height: base2.height,
             zone: base2.zone,
             x: clamp(pos.x + randRange(-10, 10), size / 2 + 2, boardRect.w - size / 2 - 2),
             y: clamp(pos.y + randRange(-10, 10), size / 2 + 2, boardRect.h - size / 2 - 2),
@@ -476,16 +606,27 @@ export default function BloodtypeSoloPage() {
         lastDoorSpawnRef.current[doorKey] = t;
 
         const pos = spawnPosFromDoor(doorKey, layout);
-        const base = list[Math.floor(Math.random() * list.length)];
-        const vel = makeVelocityPxPerSec();
+const candidates = list.filter(
+  c =>
+    currentTargetsRef.current.includes(Number(c.height)) &&
+    !spawnedNamesRef.current.has(c.name)
+);
+
+if (candidates.length === 0) return;
+
+const base =
+  candidates[
+    Math.floor(Math.random() * candidates.length)
+  ];
+
+spawnedNamesRef.current.add(base.name);        const vel = makeVelocityPxPerSec();
         const id2 = `${Date.now()}_${Math.random().toString(16).slice(2)}`;
         const size = 52;
 
         add.push({
           id: id2,
           name: base.name,
-          blood: base.blood,
-          zone: base.zone,
+height: base.height,
           x: clamp(pos.x, size / 2 + 2, boardRect.w - size / 2 - 2),
           y: clamp(pos.y, size / 2 + 2, boardRect.h - size / 2 - 2),
           vx: vel.vx,
@@ -505,14 +646,23 @@ export default function BloodtypeSoloPage() {
 
         // 同扉2体目（同キャラ回避）
         if (doorsCount >= 3 && remainingCap > 0 && Math.random() < 0.12) {
-          const base2 = list[Math.floor(Math.random() * list.length)];
+const candidates2 = candidates.filter(
+  c => c.name !== base.name
+);
+
+if(candidates2.length === 0) return;
+
+
+const base2 =
+  candidates2[
+    Math.floor(Math.random()*candidates2.length)
+  ];
           const id3 = `${Date.now()}_${Math.random().toString(16).slice(2)}_b`;
           const vel2 = makeVelocityPxPerSec();
-          add.push({
-            id: id3,
-            name: base2.name,
-            blood: base2.blood,
-            zone: base2.zone,
+add.push({
+  id: id3,
+  name: base2.name,
+  zone: base2.zone,
             x: clamp(pos.x + randRange(-10, 10), size / 2 + 2, boardRect.w - size / 2 - 2),
             y: clamp(pos.y + randRange(-10, 10), size / 2 + 2, boardRect.h - size / 2 - 2),
             vx: vel2.vx,
@@ -718,19 +868,52 @@ export default function BloodtypeSoloPage() {
 
     if (!hit) return;
 
-    const userZone = zoneLabel(hit.key);
+    const userZone = zoneLabel(hit.key,heightTargets);
 
     setAnswerHistory((prev) => [
       ...prev,
       {
-        question_id: `bloodtype_${ch.id}`,
+        question_id: `height_${ch.id}`,
         text: `${ch.name}`,
         userAnswerText: `${userZone}`,
-        correctAnswerText: `${zoneLabel(ch.zone)}（${bloodLabel(ch.blood)}）`,
+        correctAnswerText: `${ch.height}cm`,
       },
     ]);
 
-    if (hit.key !== ch.zone) {
+    const correctHeight =
+heightTargets[
+ hit.key === 'NORTH' ? 0 :
+ hit.key === 'EAST' ? 1 :
+ hit.key === 'WEST' ? 2 :
+ hit.key === 'SOUTH' ? 3 :
+ 4
+];
+
+setTimeout(()=>{
+
+const current = charsRef.current;
+
+const stillExist = current.some(
+ c =>
+ currentTargetsRef.current.includes(Number(c.height))
+ &&
+ c.state !== 'exiting'
+);
+
+if(!stillExist){
+
+  spawnedNamesRef.current.clear();
+
+  const nextTargets = createHeightTargets(list);
+
+  currentTargetsRef.current = nextTargets;
+
+  setHeightTargets(nextTargets);
+}
+
+},300);
+
+if(Number(ch.height)!==Number(correctHeight)) {
       gameOver({ reason: '間違えた仕切りに入れた', char: ch, userZone });
       return;
     }
@@ -844,7 +1027,7 @@ export default function BloodtypeSoloPage() {
 
   if (status === 'loading') {
     return (
-      <SoloLayout title="仕分けゲーム（血液型）">
+      <SoloLayout title="仕分けゲーム（身長）">
         <p className="text-sm text-slate-800 bg-white/90 rounded-xl px-4 py-3 inline-block">読み込み中...</p>
       </SoloLayout>
     );
@@ -852,7 +1035,7 @@ export default function BloodtypeSoloPage() {
 
   if (status === 'finished') {
     return (
-      <SoloLayout title="仕分けゲーム（血液型）">
+      <SoloLayout title="仕分けゲーム（身長）">
         <div className="mt-4 max-w-md mx-auto bg-white/95 rounded-2xl shadow-lg border border-slate-200 p-4 sm:p-6 space-y-3">
           <p className="text-lg font-semibold text-slate-900">結果</p>
           <p className="text-sm text-slate-900">
@@ -873,7 +1056,7 @@ export default function BloodtypeSoloPage() {
           <div className="mt-3 flex flex-wrap gap-3">
             <button
               onClick={() => {
-                window.location.href = `/solo/bloodtype?ts=${Date.now()}`;
+                window.location.href = `/solo/height-sort?ts=${Date.now()}`;
               }}
               className="px-4 py-2 rounded-full bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700"
             >
@@ -896,14 +1079,14 @@ export default function BloodtypeSoloPage() {
         </div>
 
         <div className="mt-6 max-w-3xl mx-auto">
-          <QuestionReviewAndReport questions={answerHistory} sourceMode="solo-bloodtype" />
+          <QuestionReviewAndReport questions={answerHistory} sourceMode="solo-height" />
         </div>
       </SoloLayout>
     );
   }
 
   return (
-    <SoloLayout title="仕分けゲーム（血液型）">
+    <SoloLayout title="仕分けゲーム（身長）">
       <style jsx global>{`
         @keyframes bornBob {
           0% { transform: translateY(0px); }
@@ -1001,11 +1184,11 @@ export default function BloodtypeSoloPage() {
             }}
           />
 
-          {/* 血液型ラベル */}
-          <ZoneBlock rect={layout.north} label="S" />
-          <ZoneBlock rect={layout.east} label="X" />
-          <ZoneBlock rect={layout.west} label="F" />
-          <ZoneBlock rect={layout.south} label="XF" />
+          <ZoneBlock rect={layout.north} label={heightTargets[0]}/>
+<ZoneBlock rect={layout.east} label={heightTargets[1]}/>
+<ZoneBlock rect={layout.west} label={heightTargets[2]}/>
+<ZoneBlock rect={layout.south} label={heightTargets[3]}/>
+<ZoneBlock rect={layout.grand} label={heightTargets[4]}/>
 
           {/* 通路 */}
           <div
@@ -1043,7 +1226,9 @@ export default function BloodtypeSoloPage() {
               boxShadow: 'inset 0 0 0 2px rgba(0,0,0,0.15), 0 10px 20px rgba(0,0,0,0.15)',
             }}
           >
-            <span className="text-[18px] font-black text-slate-900 leading-tight text-center">S型RH-</span>
+           <span className="text-[18px] font-black text-slate-900 leading-tight text-center">
+  {heightTargets[4]}
+</span>
           </div>
 
           {doors.includes('TOP') && <Door rect={layout.doors.TOP} />}
@@ -1129,7 +1314,7 @@ export default function BloodtypeSoloPage() {
                         ? 'bornBob 0.32s steps(2, end) infinite'
                         : 'none',
                   }}
-                  title={`${c.name} / ${c.blood}`}
+                  title={`${c.name} / ${c.height}cm`}
                 >
                   {(isWalking || isExiting) && (
                     <>
@@ -1241,7 +1426,7 @@ function ZoneBlock({ rect, label }) {
         }}
       >
         <span className="text-2xl font-black text-slate-900">{label}</span>
-      </div>f
+      </div>
     </div>
   );
 }
