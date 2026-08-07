@@ -838,14 +838,9 @@ text-green-600
                         <table className="w-full border-collapse text-center text-xs sm:text-sm">
 
 <thead>
-<tr className="bg-gray-200">
+<tr className="bg-gray-200 text-black">
 
 {mode==="hard" || mode==="battle-hard" ? (
-
-
-
-
-
 
 
 
