@@ -1,4 +1,4 @@
-
+// file: app/solo/vivre-search/page.js
 "use client";
 
 import { useEffect, useState } from "react";

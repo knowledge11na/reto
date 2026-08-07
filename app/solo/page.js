@@ -529,6 +529,32 @@ ageSortBest,
             </div>
           </div>
 
+
+          {/* 技サーチ */}
+          <div className="rounded-2xl border border-pink-500 bg-pink-50 px-3 py-3 shadow-sm">
+
+            <Link
+              href="/solo/swaza-search"
+              className="block hover:bg-red-100 rounded-2xl -mx-3 -my-3 px-3 py-3 transition"
+            >
+              <p className="text-sm font-bold text-red-900">
+                技サーチ
+              </p>
+              <p className="text-[11px] text-red-950 leading-tight mt-1">
+                技の使用者・対象・話数・場所などを手掛かりに、技を推測しよう。
+              </p>
+            </Link>
+
+            <div className="mt-2 flex items-center justify-end text-[11px] text-red-900">
+              <Link
+                href="/solo/swaza-search/rules"
+                className="underline text-red-700 hover:text-red-500"
+              >
+                ルールを見る
+              </Link>
+            </div>
+          </div>
+
           {/* ナレッジタワー*/}
           <Link
   href="/solo/knowledge-tower"
