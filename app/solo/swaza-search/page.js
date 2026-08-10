@@ -16,12 +16,15 @@ export default function SwazaSearchPage() {
 
   const [guess, setGuess] = useState("");
   const [suggestions, setSuggestions] = useState([]);
-const [selectedMove, setSelectedMove] = useState(null);
+  const [selectedMove, setSelectedMove] = useState(null);
 
   const [history, setHistory] = useState([]);
-const [gameId,setGameId] = useState(null);
+  const [gameId, setGameId] = useState(null);
 
   const [loading, setLoading] = useState(true);
+
+  const [mode, setMode] = useState("normal");
+  const [timeLeft, setTimeLeft] = useState(60);
 
   // =========================================================
   // データ読み込み
@@ -30,6 +33,36 @@ const [gameId,setGameId] = useState(null);
   useEffect(() => {
     loadMoves();
   }, []);
+
+  // =========================================================
+  // 対戦モードの60秒タイマー
+  // =========================================================
+
+  useEffect(() => {
+    if (
+      !started ||
+      finished ||
+      mode !== "battle"
+    ) {
+      return;
+    }
+
+    if (timeLeft === 0) {
+      autoGuess();
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      setTimeLeft(prev => prev - 1);
+    }, 1000);
+
+    return () => clearTimeout(timer);
+  }, [
+    timeLeft,
+    started,
+    finished,
+    mode
+  ]);
 
   async function loadMoves() {
     try {
@@ -64,7 +97,7 @@ const [gameId,setGameId] = useState(null);
   // ゲーム開始
   // =========================================================
 
-  function startGame() {
+  function startGame(gameMode = mode) {
     if (moves.length === 0) return;
 
     /*
@@ -83,35 +116,38 @@ const [gameId,setGameId] = useState(null);
 
     setStarted(true);
     setFinished(false);
+    setMode(gameMode);
+    setTimeLeft(60);
 
-setGuess("");
-setSuggestions([]);
+    setGuess("");
+    setSuggestions([]);
+    setSelectedMove(null);
 
-const firstList =
-  moves.filter(
-    m => m.technique !== target.technique
-  );
+    const firstList =
+      moves.filter(
+        m => m.technique !== target.technique
+      );
 
-const first =
-  firstList[
-    Math.floor(
-      Math.random()*firstList.length
-    )
-  ];
+    const first =
+      firstList[
+        Math.floor(
+          Math.random() * firstList.length
+        )
+      ];
 
-const firstResult =
-  createResult(
-    first,
-    target
-  );
+    const firstResult =
+      createResult(
+        first,
+        target
+      );
 
-const id = Date.now();
+    const id = Date.now();
 
-setGameId(id);
+    setGameId(id);
 
-setHistory([
-  firstResult
-]);
+    setHistory([
+      firstResult
+    ]);
   }
 
   // =========================================================
@@ -121,12 +157,13 @@ setHistory([
   function resetGame() {
     setStarted(false);
     setFinished(false);
+    setTimeLeft(60);
 
     setAnswer(null);
 
- setGuess("");
-setSuggestions([]);
-setSelectedMove(null);
+    setGuess("");
+    setSuggestions([]);
+    setSelectedMove(null);
 
     setHistory([]);
   }
@@ -160,31 +197,27 @@ setSelectedMove(null);
     );
   }
 
-function normalizeText(str){
+  function normalizeText(str) {
+    if (!str) return "";
 
-  if(!str) return "";
-
-  return hiraToKata(
-    String(str)
-      .replace(
-        /[\s　「」『』（）()【】［］\[\]・,，、。！？!?.：:;；"'’”\-ー〜～]/g,
-        ""
-      )
-  );
-
-}
-
-function normalizeJudgeText(str){
-
-  if(!str) return "";
-
-  return String(str)
-    .replace(
-      /[\s　「」『』（）()【】［］\[\]・,，、。！？!?.：:;；"'’”\-ー〜～]/g,
-      ""
+    return hiraToKata(
+      String(str)
+        .replace(
+          /[\s　「」『』（）()【】［］\[\]・,，、。！？!?.：:;；"'’”\〜～]/g,
+          ""
+        )
     );
+  }
 
-}
+  function normalizeJudgeText(str) {
+    if (!str) return "";
+
+    return String(str)
+      .replace(
+        /[\s　「」『』（）()【】［］\[\]・,，、。！？!?.：:;；"'’”\〜～]/g,
+        ""
+      );
+  }
 
   // =========================================================
   // 技名入力
@@ -200,45 +233,43 @@ function normalizeJudgeText(str){
       return;
     }
 
-const keyword =
-  normalizeText(value);
+    const keyword =
+      normalizeText(value);
 
-/*
- * 記号・スペース無視検索
- */
-const list = moves
-  .filter((move)=>{
+    /*
+     * 記号・スペース無視検索
+     */
+    const list = moves
+      .filter((move) => {
 
-    const target =
-      normalizeText(move.displayName);
+        const target =
+          normalizeText(move.displayName);
 
-    return target.includes(keyword);
+        return target.includes(keyword);
 
-  })
-  .filter((move)=>
-    !history.some(
-      (h)=>
-        h.move?.id === move.id
-    )
-  )
-  .slice(0,1000);
+      })
+      .filter((move) =>
+        !history.some(
+          (h) =>
+            h.move?.id === move.id
+        )
+      )
+      .slice(0, 1000);
 
-setSuggestions(list);
+    setSuggestions(list);
   }
 
   // =========================================================
   // 候補選択
   // =========================================================
 
-function choose(move){
+  function choose(move) {
+    setSelectedMove(move);
 
-  setSelectedMove(move);
+    setGuess(move.displayName);
 
-  setGuess(move.displayName);
-
-  setSuggestions([]);
-
-}
+    setSuggestions([]);
+  }
 
   // =========================================================
   // 複数人を分解
@@ -353,60 +384,82 @@ function choose(move){
     return "down";
   }
 
+// =========================================================
+// No.判定
+// =========================================================
+
+function judgeRowNo(guess, answer) {
+  const g = Number(guess);
+  const a = Number(answer);
+
+  if (
+    Number.isNaN(g) ||
+    Number.isNaN(a)
+  ) {
+    return guess === answer
+      ? "green"
+      : "gray";
+  }
+
+  if (g === a) {
+    return "green";
+  }
+
+  if (g < a) {
+    return "up";
+  }
+
+  return "down";
+}
+
   // =========================================================
   // 技名
   // =========================================================
 
-function judgeTechnique(
-  guess,
-  answer
-){
+  function judgeTechnique(
+    guess,
+    answer
+  ) {
+    const g =
+      normalizeJudgeText(guess);
 
-  const g =
-    normalizeJudgeText(guess);
+    const a =
+      normalizeJudgeText(answer);
 
-  const a =
-    normalizeJudgeText(answer);
+    if (
+      normalizeText(g) ===
+      normalizeText(a)
+    ) {
+      return "green";
+    }
 
+    const gKanji =
+      g.match(/[\u4e00-\u9faf]/g) || [];
 
-if(
-  normalizeText(g) ===
-  normalizeText(a)
-){
-  return "green";
-}
+    const aKanji =
+      a.match(/[\u4e00-\u9faf]/g) || [];
 
+    // 漢字1文字一致
+    if (
+      gKanji.some(
+        c => aKanji.includes(c)
+      )
+    ) {
+      return "lime";
+    }
 
-  const gKanji =
-    g.match(/[\u4e00-\u9faf]/g) || [];
+    // 記号除去後の文字一致
+    if (
+      [...g].some(
+        c => a.includes(c)
+      )
+    ) {
+      return "yellow";
+    }
 
-  const aKanji =
-    a.match(/[\u4e00-\u9faf]/g) || [];
-
-
-  // 漢字1文字一致
-  if(
-    gKanji.some(
-      c => aKanji.includes(c)
-    )
-  ){
-    return "lime";
+    return "gray";
   }
 
-
-  // 記号除去後の文字一致
-  if(
-    [...g].some(
-      c => a.includes(c)
-    )
-  ){
-    return "yellow";
-  }
-
-
-  return "gray";
-
-}
   // =========================================================
   // 使った場所
   //
@@ -416,67 +469,58 @@ if(
   // それ以外 → 黒
   // =========================================================
 
-function judgeLocation(
-  guess,
-  answer
-){
+  function judgeLocation(
+    guess,
+    answer
+  ) {
+    const g =
+      normalizeJudgeText(guess);
 
-  const g =
-    normalizeJudgeText(guess);
+    const a =
+      normalizeJudgeText(answer);
 
-  const a =
-    normalizeJudgeText(answer);
+    if (g === a) {
+      return "green";
+    }
 
+    if (!g || !a) {
+      return "gray";
+    }
 
-  if(g === a){
-    return "green";
-  }
+    // 数字一致
+    const gNum =
+      g.match(/\d+/g) || [];
 
+    const aNum =
+      a.match(/\d+/g) || [];
 
-  if(!g || !a){
-    return "gray";
-  }
-
-
-  // 数字一致
-  const gNum =
-    g.match(/\d+/g) || [];
-
-  const aNum =
-    a.match(/\d+/g) || [];
-
-
-  if(
-    gNum.some(
-      n => aNum.includes(n)
-    )
-  ){
-    return "yellow";
-  }
-
-
-  // 3文字以上連続一致
-  for(
-    let i=0;
-    i<=g.length-3;
-    i++
-  ){
-
-    const part =
-      g.substring(i,i+3);
-
-    if(
-      a.includes(part)
-    ){
+    if (
+      gNum.some(
+        n => aNum.includes(n)
+      )
+    ) {
       return "yellow";
     }
 
+    // 3文字以上連続一致
+    for (
+      let i = 0;
+      i <= g.length - 3;
+      i++
+    ) {
+      const part =
+        g.substring(i, i + 3);
+
+      if (
+        a.includes(part)
+      ) {
+        return "yellow";
+      }
+    }
+
+    return "gray";
   }
 
-
-  return "gray";
-
-}
   // =========================================================
   // 技名に対応するExcel行を取得
   //
@@ -552,15 +596,20 @@ function judgeLocation(
   // 結果作成
   // =========================================================
 
-function createResult(
+  function createResult(
     guessedMove,
     target
   ) {
-const guessedRows = [
-  guessedMove
-];
+    const guessedRows = [
+      guessedMove
+    ];
 
 const result = {
+  rowNo: judgeRowNo(
+    guessedMove.rowNo,
+    target.rowNo
+  ),
+
   user: judgeBest(
     guessedRows,
     (row, targetValue) =>
@@ -607,52 +656,54 @@ const result = {
   ),
 };
 
-return {
-  guess: guessedMove.technique,
-  move: guessedMove,
-  result,
+    return {
+      guess: guessedMove.technique,
+      move: guessedMove,
+      result,
 
-  correct:
-    result.user === "green" &&
-    result.target === "green" &&
-    result.chapter === "green" &&
-    result.technique === "green" &&
-    result.location === "green",
-};
+      correct:
+        result.user === "green" &&
+        result.target === "green" &&
+        result.chapter === "green" &&
+        result.technique === "green" &&
+        result.location === "green",
+    };
   }
+
   // =========================================================
-  // 回答
+  // 対戦モード：時間切れの自動回答
   // =========================================================
-  function submit() {
-    if (!started || finished) {
+
+  function autoGuess() {
+    if (!answer || finished) {
       return;
     }
 
-const guessedMove =
-  selectedMove ||
-  moves.find(
-    (move) =>
-      move.displayName === guess
-  );
+    const list = moves.filter(
+      move =>
+        move.technique !== answer.technique &&
+        !history.some(
+          h => h.move?.id === move.id
+        )
+    );
 
-    if (!guessedMove) {
+    if (list.length === 0) {
+      setTimeLeft(60);
       return;
     }
 
-    // 同じ技を再回答しない
-if (
-  history.some(
-    (h) =>
-      h.move?.id === guessedMove.id
-  )
-) {
-  return;
-}
-const result =
-  createResult(
-    guessedMove,
-    answer
-  );
+    const random =
+      list[
+        Math.floor(
+          Math.random() * list.length
+        )
+      ];
+
+    const result =
+      createResult(
+        random,
+        answer
+      );
 
     const newHistory = [
       ...history,
@@ -661,49 +712,107 @@ const result =
 
     setHistory(newHistory);
 
- setGuess("");
-setSuggestions([]);
-setSelectedMove(null);
+    setGuess("");
+    setSuggestions([]);
+    setSelectedMove(null);
 
-if (result.correct) {
+    setTimeLeft(60);
+  }
 
-  setFinished(true);
+  // =========================================================
+  // 回答
+  // =========================================================
 
+  function submit() {
+    if (!started || finished) {
+      return;
+    }
 
-const save = {
-  id: gameId,
-  answer: answer.technique,
-  turns: history.length + 1,
-  date: new Date().toLocaleString(),
+    const guessedMove =
+      selectedMove ||
+      moves.find(
+        (move) =>
+          move.displayName === guess
+      );
 
-  history:[
-    ...history,
-    result
-  ],
+    if (!guessedMove) {
+      return;
+    }
 
-  route:[
-    ...history,
-    result
-  ].map(row => row.move.technique)
-};
+    // 同じ技を再回答しない
+    if (
+      history.some(
+        (h) =>
+          h.move?.id === guessedMove.id
+      )
+    ) {
+      return;
+    }
 
-  const old =
-    JSON.parse(
-      localStorage.getItem(
-        "swazaHistory"
-      ) || "[]"
-    );
+    const result =
+      createResult(
+        guessedMove,
+        answer
+      );
 
+    const newHistory = [
+      ...history,
+      result,
+    ];
 
-  localStorage.setItem(
-    "swazaHistory",
-    JSON.stringify([
-      save,
-      ...old
-    ])
-  );
+    setHistory(newHistory);
 
-}
+    setGuess("");
+    setSuggestions([]);
+    setSelectedMove(null);
+
+    // 対戦モードでは回答するたびに60秒へ戻す
+    if (mode === "battle") {
+      setTimeLeft(60);
+    }
+
+    if (result.correct) {
+
+      setFinished(true);
+
+      // 対戦モードは履歴に保存しない
+      if (mode !== "battle") {
+
+        const save = {
+          id: gameId,
+          answer: answer.technique,
+          turns: history.length + 1,
+          date: new Date().toLocaleString(),
+
+          history: [
+            ...history,
+            result
+          ],
+
+          route: [
+            ...history,
+            result
+          ].map(
+            row => row.move.technique
+          )
+        };
+
+        const old =
+          JSON.parse(
+            localStorage.getItem(
+              "swazaHistory"
+            ) || "[]"
+          );
+
+        localStorage.setItem(
+          "swazaHistory",
+          JSON.stringify([
+            save,
+            ...old
+          ])
+        );
+      }
+    }
   }
 
   // =========================================================
@@ -712,6 +821,7 @@ const save = {
 
   function cellClass(type) {
     switch (type) {
+
       case "green":
         return `
           bg-green-500
@@ -741,23 +851,23 @@ const save = {
         `;
 
       case "lime":
-  return `
-    bg-lime-400
-    text-black
-    font-bold
-  `;
+        return `
+          bg-lime-400
+          text-black
+          font-bold
+        `;
 
-case "gray":
-  return `
-    bg-gray-300
-    text-black
-  `;
+      case "gray":
+        return `
+          bg-gray-300
+          text-black
+        `;
 
-default:
-  return `
-    bg-gray-300
-    text-black
-  `;
+      default:
+        return `
+          bg-gray-300
+          text-black
+        `;
     }
   }
 
@@ -783,6 +893,22 @@ default:
 
     return value;
   }
+
+// =========================================================
+// No.表示
+// =========================================================
+
+function rowNoText(value, result) {
+  if (result === "up") {
+    return `${value} ↑`;
+  }
+
+  if (result === "down") {
+    return `${value} ↓`;
+  }
+
+  return value;
+}
 
   // =========================================================
   // Loading
@@ -834,38 +960,37 @@ default:
           mb-8
         ">
 
-<div className="relative">
+          <div className="relative">
 
-<h1 className="
-  text-3xl
-  sm:text-4xl
-  font-bold
-  text-center
-">
-  技サーチ
-</h1>
+            <h1 className="
+              text-3xl
+              sm:text-4xl
+              font-bold
+              text-center
+            ">
+              技サーチ
+            </h1>
 
+            <Link
+              href="/solo/swaza-history"
+              className="
+                absolute
+                right-0
+                top-1/2
+                -translate-y-1/2
+                bg-blue-600
+                text-white
+                px-3
+                py-1.5
+                rounded-lg
+                text-xs
+                font-bold
+              "
+            >
+              履歴
+            </Link>
 
-<Link
-  href="/solo/swaza-history"
-  className="
-    absolute
-    right-0
-    top-1/2
-    -translate-y-1/2
-    bg-blue-600
-    text-white
-    px-3
-    py-1.5
-    rounded-lg
-    text-xs
-    font-bold
-  "
->
-  履歴
-</Link>
-
-</div>
+          </div>
 
           {started && (
             <>
@@ -922,27 +1047,81 @@ default:
             mt-20
           ">
 
-            <button
-              onClick={startGame}
-              className="
-                w-64
-                bg-red-600
-                hover:bg-red-700
-                text-white
-                text-xl
-                font-bold
-                py-4
-                rounded-xl
-              "
-            >
-              ゲームスタート
-            </button>
+            <div className="
+              flex
+              flex-col
+              gap-4
+              items-center
+            ">
+
+              <div className="
+                flex
+                gap-4
+              ">
+
+                <button
+                  onClick={() => {
+                    setMode("normal");
+                    startGame("normal");
+                  }}
+                  className="
+                    w-48
+                    bg-red-600
+                    hover:bg-red-700
+                    text-white
+                    text-lg
+                    font-bold
+                    py-3
+                    rounded-xl
+                  "
+                >
+                  ノーマル
+                </button>
+
+                <button
+                  onClick={() => {
+                    setMode("battle");
+                    startGame("battle");
+                  }}
+                  className="
+                    w-48
+                    bg-green-600
+                    hover:bg-green-700
+                    text-white
+                    text-lg
+                    font-bold
+                    py-3
+                    rounded-xl
+                  "
+                >
+                  対戦
+                </button>
+
+              </div>
+
+            </div>
 
           </div>
 
         ) : (
 
           <>
+
+            {/* ===================== */}
+            {/* 対戦タイマー */}
+            {/* ===================== */}
+
+            {mode === "battle" && (
+              <div className="
+                text-center
+                text-2xl
+                font-bold
+                text-red-600
+                mb-4
+              ">
+                ⏰ 残り {timeLeft} 秒
+              </div>
+            )}
 
             {/* ===================== */}
             {/* 正解 */}
@@ -1033,24 +1212,24 @@ default:
             {suggestions.length > 0 && (
 
               <div className="
-  border
-  rounded-lg
-  shadow
-  mb-4
-  bg-white
-  text-black
-  max-h-80
-  overflow-y-auto
-">
+                border
+                rounded-lg
+                shadow
+                mb-4
+                bg-white
+                text-black
+                max-h-80
+                overflow-y-auto
+              ">
 
                 {suggestions.map(
-  (move) => (
+                  (move) => (
 
                     <div
                       key={move.id}
                       onClick={() =>
-  choose(move)
-}
+                        choose(move)
+                      }
                       className="
                         px-4
                         py-2
@@ -1091,6 +1270,12 @@ default:
                     bg-gray-200
                     text-black
                   ">
+  <th className="
+    border
+    p-2
+  ">
+    No.
+  </th>
 
                     <th className="
                       border
@@ -1136,79 +1321,89 @@ default:
                   {history.map(
                     (row, index) => (
 
-                     <tr key={index}>
+                      <tr key={index}>
 
-  {/* 誰が */}
-  <td className={`
-    border
-    p-2
-    ${cellClass(
-      row.result.user
-    )}
-  `}>
-    {
-      row.move?.user
-    }
-  </td>
+  {/* No. */}
+<td className={`
+  border
+  p-2
+  ${cellClass(
+    row.result.rowNo
+  )}
+`}>
+  {rowNoText(
+    row.move?.rowNo,
+    row.result.rowNo
+  )}
+</td>
 
+                        {/* 誰が */}
+                        <td className={`
+                          border
+                          p-2
+                          ${cellClass(
+                            row.result.user
+                          )}
+                        `}>
+                          {
+                            row.move?.user
+                          }
+                        </td>
 
-  {/* 誰に */}
-  <td className={`
-    border
-    p-2
-    ${cellClass(
-      row.result.target
-    )}
-  `}>
-    {
-      row.move?.target
-    }
-  </td>
+                        {/* 誰に */}
+                        <td className={`
+                          border
+                          p-2
+                          ${cellClass(
+                            row.result.target
+                          )}
+                        `}>
+                          {
+                            row.move?.target
+                          }
+                        </td>
 
+                        {/* 話数 */}
+                        <td className={`
+                          border
+                          p-2
+                          ${cellClass(
+                            row.result.chapter
+                          )}
+                        `}>
+                          {chapterText(
+                            row.move?.chapter ?? "不明",
+                            row.result.chapter
+                          )}
+                        </td>
 
-  {/* 話数 */}
-  <td className={`
-    border
-    p-2
-    ${cellClass(
-      row.result.chapter
-    )}
-  `}>
-    {chapterText(
-      row.move?.chapter ?? "不明",
-      row.result.chapter
-    )}
-  </td>
+                        {/* 技名 */}
+                        <td className={`
+                          border
+                          p-2
+                          ${cellClass(
+                            row.result.technique
+                          )}
+                        `}>
+                          {
+                            row.guess
+                          }
+                        </td>
 
+                        {/* 使った場所 */}
+                        <td className={`
+                          border
+                          p-2
+                          ${cellClass(
+                            row.result.location
+                          )}
+                        `}>
+                          {
+                            row.move?.location
+                          }
+                        </td>
 
-  {/* 技名 */}
-  <td className={`
-    border
-    p-2
-    ${cellClass(
-      row.result.technique
-    )}
-  `}>
-    {
-      row.guess
-    }
-  </td>
-
-
-  {/* 使った場所 */}
-  <td className={`
-    border
-    p-2
-    ${cellClass(
-      row.result.location
-    )}
-  `}>
-    {
-      row.move?.location
-    }
-  </td>
-
-</tr>
+                      </tr>
 
                     )
                   )}

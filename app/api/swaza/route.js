@@ -52,8 +52,9 @@ export async function GET() {
         continue;
       }
 
-      rawItems.push({
-        id: i,
+rawItems.push({
+  id: i + 1,
+  rowNo: i + 1,
 
         // A列
         user:
