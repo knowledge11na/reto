@@ -49,6 +49,8 @@ const [settingLoaded, setSettingLoaded] = useState(false);
   const [nameInput, setNameInput] =
     useState("");
 
+const [nameSelected, setNameSelected] = useState(false);
+
   useEffect(() => {
 
 const setting = JSON.parse(
@@ -265,6 +267,7 @@ function checkAnswer() {
     setHeightInput("");
     setBloodInput("");
     setNameInput("");
+setNameSelected(false);
 
     if (currentIndex >= profiles.length - 1) {
 
@@ -494,23 +497,26 @@ if (!settingLoaded) {
                 <input
                   value={nameInput}
                   disabled={answered}
-                  onChange={(e)=>setNameInput(e.target.value)}
+                  onChange={(e)=>{
+  setNameInput(e.target.value);
+  setNameSelected(false);
+}}
                   placeholder="キャラ名"
                   className="w-full border rounded-xl p-3"
                 />
 
-                {!answered && suggestions.length > 0 && (
+                {!answered && !nameSelected && suggestions.length > 0 && (
 
                   <div className="absolute left-0 right-0 mt-1 bg-white border rounded-xl shadow-lg max-h-64 overflow-y-auto z-20">
 
-                    {suggestions.map(profile => (
-
-                      <button
-                        key={profile.number}
+                   {suggestions.map((profile, index) => (
+  <button
+    key={`${profile.number}-${index}`}
                         type="button"
                         onClick={()=>{
-                          setNameInput(profile.name);
-                        }}
+  setNameInput(profile.name);
+  setNameSelected(true);
+}}
                         className="block w-full text-left px-4 py-2 hover:bg-rose-100"
                       >
                         {profile.name}
