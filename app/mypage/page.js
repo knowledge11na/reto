@@ -1,8 +1,9 @@
 // file: app/mypage/page.js
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { getTitleFromRating } from '@/lib/title';
 
 export default function MyPage() {
@@ -10,15 +11,47 @@ export default function MyPage() {
   const [season, setSeason] = useState('');
   const [loading, setLoading] = useState(true);
 
-  // Twitter
-  const [twitterUrl, setTwitterUrl] = useState('');
+const router = useRouter();
 
-  // 表示名まわり
-  const [displayName, setDisplayName] = useState('');
-  const [nameInput, setNameInput] = useState('');
-  const [nameChangeUsed, setNameChangeUsed] = useState(0);
-  const [savingName, setSavingName] = useState(false);
-  const [nameMessage, setNameMessage] = useState('');
+const secretTapRef = useRef({
+  count: 0,
+  lastTap: 0,
+});
+
+// 裏コマンド
+const handleSecretTap = (e) => {
+  e.preventDefault();
+
+  const now = Date.now();
+  const data = secretTapRef.current;
+
+  // 2秒以上空いたらリセット
+  if (now - data.lastTap > 2000) {
+    data.count = 0;
+  }
+
+  data.count += 1;
+  data.lastTap = now;
+
+  console.log('裏コマンドタップ:', data.count);
+
+  if (data.count >= 3) {
+    data.count = 0;
+    router.push('/tenipuri');
+  }
+};
+
+// Twitter
+const [twitterUrl, setTwitterUrl] = useState('');
+
+// 表示名まわり
+const [displayName, setDisplayName] = useState('');
+const [nameInput, setNameInput] = useState('');
+const [nameChangeUsed, setNameChangeUsed] = useState(0);
+const [savingName, setSavingName] = useState(false);
+const [nameMessage, setNameMessage] = useState('');
+
+// ログアウト中フラグ
 
   // ログアウト中フラグ
   const [loggingOut, setLoggingOut] = useState(false);
@@ -419,20 +452,46 @@ export default function MyPage() {
           </p>
         </section>
 
-        {/* キャラ図鑑 */}
-        <section className="bg-sky-100 border-2 border-sky-500 rounded-3xl p-4 shadow-sm">
-          <h2 className="text-lg font-extrabold mb-2">キャラ図鑑</h2>
-          <p className="text-sm mb-3">
-            所持キャラ数：
-            {ownedUnique != null ? `${ownedUnique} 体` : '取得中 / 未実装'}
-          </p>
-          <Link
-            href="/characters"
-            className="block w-full text-center py-2 rounded-full bg-white border border-sky-500 text-sky-700 font-bold"
-          >
-            キャラ図鑑ページへ ＞
-          </Link>
-        </section>
+     {/* キャラ図鑑 */}
+<section className="bg-sky-100 border-2 border-sky-500 rounded-3xl p-4 shadow-sm">
+  <h2 className="text-lg font-extrabold mb-2">キャラ図鑑</h2>
+
+  {/* 所持キャラ数＋裏コマンドエリア */}
+  <div className="relative mb-3 h-12">
+
+    <p className="text-sm select-none leading-10">
+      所持キャラ数：
+      {ownedUnique != null
+        ? `${ownedUnique} 体`
+        : '取得中 / 未実装'}
+    </p>
+
+    {/* 完全透明の裏コマンドボタン */}
+    <button
+      type="button"
+      onClick={handleSecretTap}
+      className="
+        absolute
+        top-0
+        right-0
+        w-3/5
+        h-12
+        opacity-0
+        z-20
+        cursor-default
+        touch-manipulation
+      "
+      aria-label=""
+    />
+  </div>
+
+  <Link
+    href="/characters"
+    className="block w-full text-center py-2 rounded-full bg-white border border-sky-500 text-sky-700 font-bold"
+  >
+    キャラ図鑑ページへ ＞
+  </Link>
+</section>
 
         {/* 投稿した問題 */}
         <section className="bg-sky-100 border-2 border-sky-500 rounded-3xl p-4 shadow-sm">
