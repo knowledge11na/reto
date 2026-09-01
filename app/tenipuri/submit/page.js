@@ -6,7 +6,7 @@ import { useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 
 export default function TenipuriSubmitPage() {
-  const [mode, setMode] = useState(null); // search | manual
+  const [mode, setMode] = useState(null);
 
   const [wazaList, setWazaList] = useState([]);
   const [loadingWaza, setLoadingWaza] = useState(false);
@@ -23,9 +23,8 @@ export default function TenipuriSubmitPage() {
   const [hand, setHand] = useState('');
   const [result, setResult] = useState('');
 
-  // hitter = 誰が打ったか
-  // target = 誰に打ったか
   const [answerType, setAnswerType] = useState('hitter');
+
 
   // =========================================================
   // 打球画像
@@ -33,6 +32,7 @@ export default function TenipuriSubmitPage() {
 
   const [imageFile, setImageFile] = useState(null);
   const [imagePreview, setImagePreview] = useState('');
+  const [isImageDragging, setIsImageDragging] = useState(false);
 
   // =========================================================
   // 解説画像
@@ -43,6 +43,9 @@ export default function TenipuriSubmitPage() {
 
   const [explanationImagePreview, setExplanationImagePreview] =
     useState('');
+
+  const [isExplanationImageDragging, setIsExplanationImageDragging] =
+    useState(false);
 
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
@@ -139,32 +142,38 @@ export default function TenipuriSubmitPage() {
   };
 
   // =========================================================
-  // 打球画像選択
+  // 画像チェック
   // =========================================================
 
-  const handleImageChange = (e) => {
-    const file = e.target.files?.[0];
-
-    if (!file) {
-      return;
-    }
+  const validateImageFile = (file, label) => {
+    if (!file) return false;
 
     if (!file.type.startsWith('image/')) {
       setError(
-        '打球画像には画像ファイルを選択してください。'
+        `${label}には画像ファイルを選択してください。`
       );
-      return;
+      return false;
     }
 
-    // 10MBまで
     if (file.size > 10 * 1024 * 1024) {
       setError(
-        '打球画像のサイズは10MB以下にしてください。'
+        `${label}のサイズは10MB以下にしてください。`
       );
+      return false;
+    }
+
+    return true;
+  };
+
+  // =========================================================
+  // 打球画像ファイル処理
+  // =========================================================
+
+  const handleImageFile = (file) => {
+    if (!validateImageFile(file, '打球画像')) {
       return;
     }
 
-    // 古いプレビューURLを破棄
     if (imagePreview) {
       URL.revokeObjectURL(imagePreview);
     }
@@ -174,36 +183,76 @@ export default function TenipuriSubmitPage() {
 
     setImageFile(file);
     setImagePreview(previewUrl);
+    setIsImageDragging(false);
     setError('');
   };
 
   // =========================================================
-  // 解説画像選択
+  // 打球画像選択
   // =========================================================
 
-  const handleExplanationImageChange = (e) => {
+  const handleImageChange = (e) => {
     const file = e.target.files?.[0];
 
-    if (!file) {
+    if (!file) return;
+
+    handleImageFile(file);
+
+    e.target.value = '';
+  };
+
+  // =========================================================
+  // 打球画像ドラッグ
+  // =========================================================
+
+  const handleImageDragOver = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    if (e.dataTransfer) {
+      e.dataTransfer.dropEffect = 'copy';
+    }
+
+    setIsImageDragging(true);
+  };
+
+  const handleImageDragLeave = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    if (
+      e.currentTarget &&
+      e.relatedTarget &&
+      e.currentTarget.contains(e.relatedTarget)
+    ) {
       return;
     }
 
-    if (!file.type.startsWith('image/')) {
-      setError(
-        '解説画像には画像ファイルを選択してください。'
-      );
+    setIsImageDragging(false);
+  };
+
+  const handleImageDrop = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    setIsImageDragging(false);
+
+    const file = e.dataTransfer?.files?.[0];
+
+    if (!file) return;
+
+    handleImageFile(file);
+  };
+
+  // =========================================================
+  // 解説画像ファイル処理
+  // =========================================================
+
+  const handleExplanationImageFile = (file) => {
+    if (!validateImageFile(file, '解説画像')) {
       return;
     }
 
-    // 10MBまで
-    if (file.size > 10 * 1024 * 1024) {
-      setError(
-        '解説画像のサイズは10MB以下にしてください。'
-      );
-      return;
-    }
-
-    // 古いプレビューURLを破棄
     if (explanationImagePreview) {
       URL.revokeObjectURL(
         explanationImagePreview
@@ -215,7 +264,65 @@ export default function TenipuriSubmitPage() {
 
     setExplanationImageFile(file);
     setExplanationImagePreview(previewUrl);
+    setIsExplanationImageDragging(false);
     setError('');
+  };
+
+  // =========================================================
+  // 解説画像選択
+  // =========================================================
+
+  const handleExplanationImageChange = (e) => {
+    const file = e.target.files?.[0];
+
+    if (!file) return;
+
+    handleExplanationImageFile(file);
+
+    e.target.value = '';
+  };
+
+  // =========================================================
+  // 解説画像ドラッグ
+  // =========================================================
+
+  const handleExplanationImageDragOver = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    if (e.dataTransfer) {
+      e.dataTransfer.dropEffect = 'copy';
+    }
+
+    setIsExplanationImageDragging(true);
+  };
+
+  const handleExplanationImageDragLeave = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    if (
+      e.currentTarget &&
+      e.relatedTarget &&
+      e.currentTarget.contains(e.relatedTarget)
+    ) {
+      return;
+    }
+
+    setIsExplanationImageDragging(false);
+  };
+
+  const handleExplanationImageDrop = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    setIsExplanationImageDragging(false);
+
+    const file = e.dataTransfer?.files?.[0];
+
+    if (!file) return;
+
+    handleExplanationImageFile(file);
   };
 
   // =========================================================
@@ -271,7 +378,6 @@ export default function TenipuriSubmitPage() {
 
     setAnswerType('hitter');
 
-    // 打球画像
     if (imagePreview) {
       URL.revokeObjectURL(imagePreview);
     }
@@ -279,7 +385,6 @@ export default function TenipuriSubmitPage() {
     setImageFile(null);
     setImagePreview('');
 
-    // 解説画像
     if (explanationImagePreview) {
       URL.revokeObjectURL(
         explanationImagePreview
@@ -288,6 +393,9 @@ export default function TenipuriSubmitPage() {
 
     setExplanationImageFile(null);
     setExplanationImagePreview('');
+
+    setIsImageDragging(false);
+    setIsExplanationImageDragging(false);
 
     setMessage('');
     setError('');
@@ -309,16 +417,32 @@ export default function TenipuriSubmitPage() {
     setError('');
     setMessage('');
 
-    if (!hitter.trim()) {
+    if (
+      answerType === 'hitter' &&
+      !hitter.trim()
+    ) {
       setError(
-        '「誰が打ったか」を入力してください。'
+        '答えを「誰が打ったか」にする場合は、「誰が」を入力してください。'
       );
       return;
     }
 
-    if (!target.trim()) {
+    if (
+      answerType === 'target' &&
+      !target.trim()
+    ) {
       setError(
-        '「誰に打ったか」を入力してください。'
+        '答えを「誰に打ったか」にする場合は、「誰に」を入力してください。'
+      );
+      return;
+    }
+
+    if (
+      answerType === 'technique' &&
+      !technique.trim()
+    ) {
+      setError(
+        '答えを「技名」にする場合は、「技名」を入力してください。'
       );
       return;
     }
@@ -330,31 +454,12 @@ export default function TenipuriSubmitPage() {
       return;
     }
 
-    if (!answerType) {
-      setError(
-        '答えさせる内容を選択してください。'
-      );
-      return;
-    }
-
     setSaving(true);
 
     try {
       const formData = new FormData();
 
-      // =====================================================
-      // 打球画像
-      // =====================================================
-
-      formData.append(
-        'image',
-        imageFile
-      );
-
-      // =====================================================
-      // 解説画像
-      // ※ 選択されている場合だけ送信
-      // =====================================================
+      formData.append('image', imageFile);
 
       if (explanationImageFile) {
         formData.append(
@@ -362,10 +467,6 @@ export default function TenipuriSubmitPage() {
           explanationImageFile
         );
       }
-
-      // =====================================================
-      // 問題情報
-      // =====================================================
 
       formData.append(
         'hitter',
@@ -428,7 +529,6 @@ export default function TenipuriSubmitPage() {
         '打球問題を登録しました！'
       );
 
-      // 投稿前のモードを維持
       const currentMode = mode;
 
       resetForm();
@@ -456,6 +556,7 @@ export default function TenipuriSubmitPage() {
         <div className="max-w-xl mx-auto px-4 py-6">
 
           <header className="mb-6 flex items-center justify-between">
+
             <h1 className="text-xl sm:text-2xl font-extrabold">
               打球問題を投稿
             </h1>
@@ -466,6 +567,7 @@ export default function TenipuriSubmitPage() {
             >
               テニプリへ戻る
             </Link>
+
           </header>
 
           {message && (
@@ -559,10 +661,6 @@ export default function TenipuriSubmitPage() {
 
         </header>
 
-        {/* =====================================================
-            エラー
-        ====================================================== */}
-
         {error && (
           <div className="mb-4 rounded-xl border border-red-300 bg-red-50 px-4 py-3 text-sm font-bold text-red-700">
             {error}
@@ -632,11 +730,13 @@ export default function TenipuriSubmitPage() {
                     </div>
 
                     <div className="mt-1 text-[11px] text-slate-600">
+
                       {waza.episode &&
                         `${waza.episode}話`}
 
                       {waza.technique &&
                         `　${waza.technique}`}
+
                     </div>
 
                     {waza.location && (
@@ -670,10 +770,6 @@ export default function TenipuriSubmitPage() {
 
           </section>
         )}
-
-        {/* =====================================================
-            選択したExcelデータ
-        ====================================================== */}
 
         {(mode === 'manual' ||
           selectedWaza) && (
@@ -767,75 +863,29 @@ export default function TenipuriSubmitPage() {
 
               <div className="space-y-2">
 
-                <label
-                  className={`flex items-center gap-3 rounded-xl border-2 px-4 py-3 cursor-pointer ${
-                    answerType === 'hitter'
-                      ? 'border-amber-500 bg-white'
-                      : 'border-amber-200 bg-amber-50'
-                  }`}
-                >
+                <AnswerTypeOption
+                  value="hitter"
+                  checked={answerType === 'hitter'}
+                  onChange={setAnswerType}
+                  title="誰が打ったか"
+                  answer={hitter}
+                />
 
-                  <input
-                    type="radio"
-                    name="answerType"
-                    value="hitter"
-                    checked={
-                      answerType === 'hitter'
-                    }
-                    onChange={() =>
-                      setAnswerType('hitter')
-                    }
-                  />
+                <AnswerTypeOption
+                  value="target"
+                  checked={answerType === 'target'}
+                  onChange={setAnswerType}
+                  title="誰に打ったか"
+                  answer={target}
+                />
 
-                  <div>
-
-                    <p className="font-extrabold">
-                      誰が打ったか
-                    </p>
-
-                    <p className="text-xs text-slate-500">
-                      正解：
-                      {hitter || '未入力'}
-                    </p>
-
-                  </div>
-
-                </label>
-
-                <label
-                  className={`flex items-center gap-3 rounded-xl border-2 px-4 py-3 cursor-pointer ${
-                    answerType === 'target'
-                      ? 'border-amber-500 bg-white'
-                      : 'border-amber-200 bg-amber-50'
-                  }`}
-                >
-
-                  <input
-                    type="radio"
-                    name="answerType"
-                    value="target"
-                    checked={
-                      answerType === 'target'
-                    }
-                    onChange={() =>
-                      setAnswerType('target')
-                    }
-                  />
-
-                  <div>
-
-                    <p className="font-extrabold">
-                      誰に打ったか
-                    </p>
-
-                    <p className="text-xs text-slate-500">
-                      正解：
-                      {target || '未入力'}
-                    </p>
-
-                  </div>
-
-                </label>
+                <AnswerTypeOption
+                  value="technique"
+                  checked={answerType === 'technique'}
+                  onChange={setAnswerType}
+                  title="技名"
+                  answer={technique}
+                />
 
               </div>
             </section>
@@ -878,26 +928,40 @@ export default function TenipuriSubmitPage() {
 
                 </div>
 
-              ) : (
+              ) : null}
 
-                <div
-                  onClick={() =>
-                    fileInputRef.current?.click()
-                  }
-                  className="cursor-pointer rounded-xl border-2 border-dashed border-slate-300 bg-slate-50 px-4 py-12 text-center hover:bg-slate-100 transition"
-                >
+              <div
+                onClick={() =>
+                  fileInputRef.current?.click()
+                }
+                onDragEnter={handleImageDragOver}
+                onDragOver={handleImageDragOver}
+                onDragLeave={handleImageDragLeave}
+                onDrop={handleImageDrop}
+                className={`cursor-pointer rounded-xl border-2 border-dashed px-4 py-10 text-center transition ${
+                  isImageDragging
+                    ? 'border-sky-500 bg-sky-100 scale-[1.01]'
+                    : 'border-slate-300 bg-slate-50 hover:bg-slate-100'
+                }`}
+              >
 
-                  <p className="font-bold text-slate-700">
-                    画像を選択
-                  </p>
+                <p className="font-bold text-slate-700">
+                  {isImageDragging
+                    ? 'ここに画像をドロップ'
+                    : imagePreview
+                      ? '画像を変更する'
+                      : '画像を選択'}
+                </p>
 
-                  <p className="text-xs text-slate-500 mt-1">
-                    タップまたはクリックして画像を選択
-                  </p>
+                <p className="text-xs text-slate-500 mt-1">
+                  クリック・タップ、または画像をドラッグ＆ドロップ
+                </p>
 
-                </div>
+                <p className="text-[11px] text-slate-400 mt-2">
+                  10MB以下の画像
+                </p>
 
-              )}
+              </div>
 
               <input
                 ref={fileInputRef}
@@ -940,9 +1004,7 @@ export default function TenipuriSubmitPage() {
 
                   <button
                     type="button"
-                    onClick={
-                      removeExplanationImage
-                    }
+                    onClick={removeExplanationImage}
                     className="mt-2 text-xs font-bold text-red-600 underline"
                   >
                     解説画像を変更する
@@ -950,38 +1012,46 @@ export default function TenipuriSubmitPage() {
 
                 </div>
 
-              ) : (
+              ) : null}
 
-                <div
-                  onClick={() =>
-                    explanationFileInputRef.current?.click()
-                  }
-                  className="cursor-pointer rounded-xl border-2 border-dashed border-violet-300 bg-white px-4 py-12 text-center hover:bg-violet-100 transition"
-                >
+              <div
+                onClick={() =>
+                  explanationFileInputRef.current?.click()
+                }
+                onDragEnter={handleExplanationImageDragOver}
+                onDragOver={handleExplanationImageDragOver}
+                onDragLeave={handleExplanationImageDragLeave}
+                onDrop={handleExplanationImageDrop}
+                className={`cursor-pointer rounded-xl border-2 border-dashed px-4 py-10 text-center transition ${
+                  isExplanationImageDragging
+                    ? 'border-violet-500 bg-violet-100 scale-[1.01]'
+                    : 'border-violet-300 bg-white hover:bg-violet-100'
+                }`}
+              >
 
-                  <p className="font-bold text-violet-800">
-                    解説画像を選択
-                  </p>
+                <p className="font-bold text-violet-800">
+                  {isExplanationImageDragging
+                    ? 'ここに画像をドロップ'
+                    : explanationImagePreview
+                      ? '解説画像を変更する'
+                      : '解説画像を選択'}
+                </p>
 
-                  <p className="text-xs text-slate-500 mt-1">
-                    タップまたはクリックして画像を選択
-                  </p>
+                <p className="text-xs text-slate-500 mt-1">
+                  クリック・タップ、または画像をドラッグ＆ドロップ
+                </p>
 
-                  <p className="text-[11px] text-slate-400 mt-2">
-                    ※登録しなくても問題ありません
-                  </p>
+                <p className="text-[11px] text-slate-400 mt-2">
+                  ※登録しなくても問題ありません
+                </p>
 
-                </div>
-
-              )}
+              </div>
 
               <input
                 ref={explanationFileInputRef}
                 type="file"
                 accept="image/*"
-                onChange={
-                  handleExplanationImageChange
-                }
+                onChange={handleExplanationImageChange}
                 className="hidden"
               />
 
@@ -1003,7 +1073,6 @@ export default function TenipuriSubmitPage() {
                   <span className="font-bold">
                     誰が：
                   </span>
-
                   {hitter || '未入力'}
                 </p>
 
@@ -1011,7 +1080,6 @@ export default function TenipuriSubmitPage() {
                   <span className="font-bold">
                     誰に：
                   </span>
-
                   {target || '未入力'}
                 </p>
 
@@ -1020,7 +1088,6 @@ export default function TenipuriSubmitPage() {
                     <span className="font-bold">
                       話数：
                     </span>
-
                     {episode}
                   </p>
                 )}
@@ -1030,7 +1097,6 @@ export default function TenipuriSubmitPage() {
                     <span className="font-bold">
                       技名：
                     </span>
-
                     {technique}
                   </p>
                 )}
@@ -1040,8 +1106,25 @@ export default function TenipuriSubmitPage() {
                     <span className="font-bold">
                       場所：
                     </span>
-
                     {location}
+                  </p>
+                )}
+
+                {hand && (
+                  <p>
+                    <span className="font-bold">
+                      右・左：
+                    </span>
+                    {hand}
+                  </p>
+                )}
+
+                {result && (
+                  <p>
+                    <span className="font-bold">
+                      結果：
+                    </span>
+                    {result}
                   </p>
                 )}
 
@@ -1049,31 +1132,38 @@ export default function TenipuriSubmitPage() {
                   <span className="font-bold">
                     打球画像：
                   </span>
-
-                  {imageFile
-                    ? 'あり'
-                    : '未選択'}
+                  {imageFile ? 'あり' : '未選択'}
                 </p>
 
                 <p>
                   <span className="font-bold">
                     解説画像：
                   </span>
-
-                  {explanationImageFile
-                    ? 'あり'
-                    : 'なし'}
+                  {explanationImageFile ? 'あり' : 'なし'}
                 </p>
 
                 <p className="pt-2">
+                  <span className="font-bold">
+                    答えさせる内容：
+                  </span>
+
+                  <span className="font-extrabold text-amber-700">
+                    {getAnswerTypeLabel(answerType)}
+                  </span>
+                </p>
+
+                <p>
                   <span className="font-bold">
                     この問題の正解：
                   </span>
 
                   <span className="font-extrabold text-emerald-700">
-                    {answerType === 'hitter'
-                      ? hitter || '未入力'
-                      : target || '未入力'}
+                    {getAnswer(
+                      answerType,
+                      hitter,
+                      target,
+                      technique
+                    ) || '未入力'}
                   </span>
                 </p>
 
@@ -1125,6 +1215,90 @@ export default function TenipuriSubmitPage() {
 
 
 // =============================================================
+// 答え選択肢
+// =============================================================
+
+function AnswerTypeOption({
+  value,
+  checked,
+  onChange,
+  title,
+  answer,
+}) {
+  return (
+    <label
+      className={`flex items-center gap-3 rounded-xl border-2 px-4 py-3 cursor-pointer ${
+        checked
+          ? 'border-amber-500 bg-white'
+          : 'border-amber-200 bg-amber-50'
+      }`}
+    >
+
+      <input
+        type="radio"
+        name="answerType"
+        value={value}
+        checked={checked}
+        onChange={() => onChange(value)}
+      />
+
+      <div>
+
+        <p className="font-extrabold">
+          {title}
+        </p>
+
+        <p className="text-xs text-slate-500">
+          正解：{answer || '未入力'}
+        </p>
+
+      </div>
+
+    </label>
+  );
+}
+
+
+// =============================================================
+// 答えタイプ
+// =============================================================
+
+function getAnswerTypeLabel(answerType) {
+  if (answerType === 'target') {
+    return '誰に打ったか';
+  }
+
+  if (answerType === 'technique') {
+    return '技名';
+  }
+
+  return '誰が打ったか';
+}
+
+
+// =============================================================
+// 正解取得
+// =============================================================
+
+function getAnswer(
+  answerType,
+  hitter,
+  target,
+  technique
+) {
+  if (answerType === 'target') {
+    return target;
+  }
+
+  if (answerType === 'technique') {
+    return technique;
+  }
+
+  return hitter;
+}
+
+
+// =============================================================
 // 入力欄
 // =============================================================
 
@@ -1154,3 +1328,4 @@ function InputField({
     </label>
   );
 }
+

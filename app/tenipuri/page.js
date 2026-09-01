@@ -76,6 +76,20 @@ export default function TenipuriPage() {
           </div>
         </section>
 
+{/* 打球単語帳 */}
+<Link
+  href="/tenipuri/flashcard"
+  className="block rounded-2xl border-2 border-fuchsia-400 bg-fuchsia-50 px-4 py-4 shadow-sm hover:bg-fuchsia-100 transition"
+>
+  <p className="text-base font-extrabold text-fuchsia-900">
+    打球単語帳
+  </p>
+
+  <p className="text-[12px] text-fuchsia-950 leading-relaxed mt-1">
+    打球画像を見て答えを思い出す単語帳。左右スワイプで理解度を記録できます。
+  </p>
+</Link>
+
         {/* 戻る */}
         <div className="mt-8 text-center">
           <Link

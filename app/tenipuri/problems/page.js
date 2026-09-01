@@ -1,4 +1,5 @@
 // file: app/tenipuri/problems/page.js
+
 'use client';
 
 import { useEffect, useState } from 'react';
@@ -13,6 +14,10 @@ export default function TenipuriProblemsPage() {
 
   const [editing, setEditing] = useState(null);
   const [saving, setSaving] = useState(false);
+
+  const [isImageDragging, setIsImageDragging] = useState(false);
+  const [isExplanationImageDragging, setIsExplanationImageDragging] =
+    useState(false);
 
   // =========================================================
   // 問題取得
@@ -36,9 +41,9 @@ export default function TenipuriProblemsPage() {
       }
 
       setProblems(data.problems || []);
-
     } catch (e) {
       console.error(e);
+
       setError(
         e.message || '問題一覧を取得できませんでした。'
       );
@@ -58,7 +63,7 @@ export default function TenipuriProblemsPage() {
   const handleDelete = async (problem) => {
     const ok = window.confirm(
       `この問題を削除しますか？\n\n` +
-      `${problem.hitter} → ${problem.target}`
+        `${problem.hitter} → ${problem.target}`
     );
 
     if (!ok) return;
@@ -87,9 +92,9 @@ export default function TenipuriProblemsPage() {
       );
 
       setMessage('問題を削除しました。');
-
     } catch (e) {
       console.error(e);
+
       setError(
         e.message || '問題の削除に失敗しました。'
       );
@@ -104,16 +109,21 @@ export default function TenipuriProblemsPage() {
     setMessage('');
     setError('');
 
+    let answerType = 'hitter';
+
+    if (problem.answer_type === 'target') {
+      answerType = 'target';
+    } else if (problem.answer_type === 'technique') {
+      answerType = 'technique';
+    }
+
     setEditing({
       id: problem.id,
 
       hitter: problem.hitter || '',
       target: problem.target || '',
 
-      answerType:
-        problem.answer_type === 'target'
-          ? 'target'
-          : 'hitter',
+      answerType,
 
       episode: problem.episode || '',
       technique: problem.technique || '',
@@ -134,10 +144,231 @@ export default function TenipuriProblemsPage() {
         problem.explanation_image_url || '',
     });
 
+    setIsImageDragging(false);
+    setIsExplanationImageDragging(false);
+
     window.scrollTo({
       top: 0,
       behavior: 'smooth',
     });
+  };
+
+  // =========================================================
+  // 画像ファイル共通チェック
+  // =========================================================
+
+  const validateImageFile = (file, label) => {
+    if (!file) return false;
+
+    if (!file.type.startsWith('image/')) {
+      setError(
+        `${label}には画像ファイルを選択してください。`
+      );
+      return false;
+    }
+
+    if (file.size > 10 * 1024 * 1024) {
+      setError(
+        `${label}のサイズは10MB以下にしてください。`
+      );
+      return false;
+    }
+
+    return true;
+  };
+
+  // =========================================================
+  // 問題画像変更
+  // =========================================================
+
+  const handleImageChange = (e) => {
+    const file = e.target.files?.[0];
+
+    if (!file) return;
+
+    handleImageFile(file);
+
+    e.target.value = '';
+  };
+
+  // =========================================================
+  // 問題画像ファイル処理
+  // =========================================================
+
+  const handleImageFile = (file) => {
+    if (!validateImageFile(file, '打球画像')) {
+      return;
+    }
+
+    setEditing((prev) => {
+      if (!prev) return prev;
+
+      if (
+        prev.imagePreview &&
+        prev.imagePreview.startsWith('blob:')
+      ) {
+        URL.revokeObjectURL(prev.imagePreview);
+      }
+
+      return {
+        ...prev,
+        imageFile: file,
+        imagePreview: URL.createObjectURL(file),
+      };
+    });
+
+    setError('');
+    setIsImageDragging(false);
+  };
+
+  // =========================================================
+  // 問題画像ドラッグ開始
+  // =========================================================
+
+  const handleImageDragOver = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    if (e.dataTransfer) {
+      e.dataTransfer.dropEffect = 'copy';
+    }
+
+    setIsImageDragging(true);
+  };
+
+  // =========================================================
+  // 問題画像ドラッグ離脱
+  // =========================================================
+
+  const handleImageDragLeave = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    // 子要素へ移動しただけの場合は解除しない
+    if (
+      e.currentTarget &&
+      e.relatedTarget &&
+      e.currentTarget.contains(e.relatedTarget)
+    ) {
+      return;
+    }
+
+    setIsImageDragging(false);
+  };
+
+  // =========================================================
+  // 問題画像ドロップ
+  // =========================================================
+
+  const handleImageDrop = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    setIsImageDragging(false);
+
+    const file = e.dataTransfer?.files?.[0];
+
+    if (!file) return;
+
+    handleImageFile(file);
+  };
+
+  // =========================================================
+  // 解説画像変更
+  // =========================================================
+
+  const handleExplanationImageChange = (e) => {
+    const file = e.target.files?.[0];
+
+    if (!file) return;
+
+    handleExplanationImageFile(file);
+
+    e.target.value = '';
+  };
+
+  // =========================================================
+  // 解説画像ファイル処理
+  // =========================================================
+
+  const handleExplanationImageFile = (file) => {
+    if (!validateImageFile(file, '解説画像')) {
+      return;
+    }
+
+    setEditing((prev) => {
+      if (!prev) return prev;
+
+      if (
+        prev.explanationImagePreview &&
+        prev.explanationImagePreview.startsWith('blob:')
+      ) {
+        URL.revokeObjectURL(
+          prev.explanationImagePreview
+        );
+      }
+
+      return {
+        ...prev,
+        explanationImageFile: file,
+        explanationImagePreview:
+          URL.createObjectURL(file),
+      };
+    });
+
+    setError('');
+    setIsExplanationImageDragging(false);
+  };
+
+  // =========================================================
+  // 解説画像ドラッグ開始
+  // =========================================================
+
+  const handleExplanationImageDragOver = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    if (e.dataTransfer) {
+      e.dataTransfer.dropEffect = 'copy';
+    }
+
+    setIsExplanationImageDragging(true);
+  };
+
+  // =========================================================
+  // 解説画像ドラッグ離脱
+  // =========================================================
+
+  const handleExplanationImageDragLeave = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    if (
+      e.currentTarget &&
+      e.relatedTarget &&
+      e.currentTarget.contains(e.relatedTarget)
+    ) {
+      return;
+    }
+
+    setIsExplanationImageDragging(false);
+  };
+
+  // =========================================================
+  // 解説画像ドロップ
+  // =========================================================
+
+  const handleExplanationImageDrop = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    setIsExplanationImageDragging(false);
+
+    const file = e.dataTransfer?.files?.[0];
+
+    if (!file) return;
+
+    handleExplanationImageFile(file);
   };
 
   // =========================================================
@@ -151,12 +382,46 @@ export default function TenipuriProblemsPage() {
     setMessage('');
 
     if (!editing.hitter.trim()) {
-      setError('「誰が打ったか」を入力してください。');
+      setError(
+        '「誰が打ったか」を入力してください。'
+      );
       return;
     }
 
     if (!editing.target.trim()) {
-      setError('「誰に打ったか」を入力してください。');
+      setError(
+        '「誰に打ったか」を入力してください。'
+      );
+      return;
+    }
+
+    if (
+      editing.answerType === 'technique' &&
+      !editing.technique.trim()
+    ) {
+      setError(
+        '答えを「技名」にする場合は、「技名」を入力してください。'
+      );
+      return;
+    }
+
+    if (
+      editing.answerType === 'hitter' &&
+      !editing.hitter.trim()
+    ) {
+      setError(
+        '答えを「誰が打ったか」にする場合は、「誰が」を入力してください。'
+      );
+      return;
+    }
+
+    if (
+      editing.answerType === 'target' &&
+      !editing.target.trim()
+    ) {
+      setError(
+        '答えを「誰に打ったか」にする場合は、「誰に」を入力してください。'
+      );
       return;
     }
 
@@ -165,65 +430,19 @@ export default function TenipuriProblemsPage() {
     try {
       const formData = new FormData();
 
-      formData.append(
-        'id',
-        String(editing.id)
-      );
-
-      formData.append(
-        'hitter',
-        editing.hitter.trim()
-      );
-
-      formData.append(
-        'target',
-        editing.target.trim()
-      );
-
-      formData.append(
-        'answerType',
-        editing.answerType
-      );
-
-      formData.append(
-        'episode',
-        editing.episode.trim()
-      );
-
-      formData.append(
-        'technique',
-        editing.technique.trim()
-      );
-
-      formData.append(
-        'location',
-        editing.location.trim()
-      );
-
-      formData.append(
-        'hand',
-        editing.hand.trim()
-      );
-
-      formData.append(
-        'result',
-        editing.result.trim()
-      );
-
-      // -------------------------------------------------------
-      // 問題画像
-      // -------------------------------------------------------
+      formData.append('id', String(editing.id));
+      formData.append('hitter', editing.hitter.trim());
+      formData.append('target', editing.target.trim());
+      formData.append('answerType', editing.answerType);
+      formData.append('episode', editing.episode.trim());
+      formData.append('technique', editing.technique.trim());
+      formData.append('location', editing.location.trim());
+      formData.append('hand', editing.hand.trim());
+      formData.append('result', editing.result.trim());
 
       if (editing.imageFile) {
-        formData.append(
-          'image',
-          editing.imageFile
-        );
+        formData.append('image', editing.imageFile);
       }
-
-      // -------------------------------------------------------
-      // 解説画像
-      // -------------------------------------------------------
 
       if (editing.explanationImageFile) {
         formData.append(
@@ -256,6 +475,22 @@ export default function TenipuriProblemsPage() {
         )
       );
 
+      if (
+        editing.imagePreview &&
+        editing.imagePreview.startsWith('blob:')
+      ) {
+        URL.revokeObjectURL(editing.imagePreview);
+      }
+
+      if (
+        editing.explanationImagePreview &&
+        editing.explanationImagePreview.startsWith('blob:')
+      ) {
+        URL.revokeObjectURL(
+          editing.explanationImagePreview
+        );
+      }
+
       setEditing(null);
       setMessage('問題を更新しました。');
 
@@ -263,81 +498,15 @@ export default function TenipuriProblemsPage() {
         top: 0,
         behavior: 'smooth',
       });
-
     } catch (e) {
       console.error(e);
+
       setError(
         e.message || '問題の更新に失敗しました。'
       );
     } finally {
       setSaving(false);
     }
-  };
-
-  // =========================================================
-  // 問題画像変更
-  // =========================================================
-
-  const handleImageChange = (e) => {
-    const file = e.target.files?.[0];
-
-    if (!file) return;
-
-    if (!file.type.startsWith('image/')) {
-      setError('画像ファイルを選択してください。');
-      return;
-    }
-
-    if (file.size > 10 * 1024 * 1024) {
-      setError(
-        '画像サイズは10MB以下にしてください。'
-      );
-      return;
-    }
-
-    setEditing((prev) => ({
-      ...prev,
-
-      imageFile: file,
-
-      imagePreview:
-        URL.createObjectURL(file),
-    }));
-
-    setError('');
-  };
-
-  // =========================================================
-  // 解説画像変更
-  // =========================================================
-
-  const handleExplanationImageChange = (e) => {
-    const file = e.target.files?.[0];
-
-    if (!file) return;
-
-    if (!file.type.startsWith('image/')) {
-      setError('画像ファイルを選択してください。');
-      return;
-    }
-
-    if (file.size > 10 * 1024 * 1024) {
-      setError(
-        '画像サイズは10MB以下にしてください。'
-      );
-      return;
-    }
-
-    setEditing((prev) => ({
-      ...prev,
-
-      explanationImageFile: file,
-
-      explanationImagePreview:
-        URL.createObjectURL(file),
-    }));
-
-    setError('');
   };
 
   // =========================================================
@@ -374,9 +543,9 @@ export default function TenipuriProblemsPage() {
             </div>
           )}
 
-          {/* ================================================= */}
-          {/* 打球情報 */}
-          {/* ================================================= */}
+          {/* =================================================
+              打球情報
+          ================================================== */}
 
           <section className="mb-5 rounded-2xl border-2 border-slate-200 bg-white p-4 shadow-sm">
 
@@ -474,80 +643,73 @@ export default function TenipuriProblemsPage() {
             </div>
           </section>
 
-          {/* ================================================= */}
-          {/* 答え */}
-          {/* ================================================= */}
+          {/* =================================================
+              答え
+          ================================================== */}
 
           <section className="mb-5 rounded-2xl border-2 border-amber-300 bg-amber-50 p-4">
 
-            <h2 className="font-extrabold text-amber-900 mb-3">
-              この問題の答え
+            <h2 className="font-extrabold text-amber-900 mb-1">
+              この問題では何を答えさせますか？
             </h2>
+
+            <p className="text-xs text-amber-800 mb-4">
+              ゲーム中にプレイヤーが入力する正解を選択してください。
+            </p>
 
             <div className="space-y-2">
 
-              <label className="flex items-center gap-3 rounded-xl bg-white border-2 border-amber-200 px-4 py-3">
+              <AnswerTypeOption
+                value="hitter"
+                checked={
+                  editing.answerType === 'hitter'
+                }
+                onChange={(value) =>
+                  setEditing((prev) => ({
+                    ...prev,
+                    answerType: value,
+                  }))
+                }
+                title="誰が打ったか"
+                answer={editing.hitter}
+              />
 
-                <input
-                  type="radio"
-                  name="editAnswerType"
-                  checked={
-                    editing.answerType === 'hitter'
-                  }
-                  onChange={() =>
-                    setEditing((prev) => ({
-                      ...prev,
-                      answerType: 'hitter',
-                    }))
-                  }
-                />
+              <AnswerTypeOption
+                value="target"
+                checked={
+                  editing.answerType === 'target'
+                }
+                onChange={(value) =>
+                  setEditing((prev) => ({
+                    ...prev,
+                    answerType: value,
+                  }))
+                }
+                title="誰に打ったか"
+                answer={editing.target}
+              />
 
-                <div>
-                  <p className="font-extrabold">
-                    誰が打った？
-                  </p>
-
-                  <p className="text-xs text-slate-500">
-                    正解：{editing.hitter || '未入力'}
-                  </p>
-                </div>
-
-              </label>
-
-              <label className="flex items-center gap-3 rounded-xl bg-white border-2 border-amber-200 px-4 py-3">
-
-                <input
-                  type="radio"
-                  name="editAnswerType"
-                  checked={
-                    editing.answerType === 'target'
-                  }
-                  onChange={() =>
-                    setEditing((prev) => ({
-                      ...prev,
-                      answerType: 'target',
-                    }))
-                  }
-                />
-
-                <div>
-                  <p className="font-extrabold">
-                    誰に打った？
-                  </p>
-
-                  <p className="text-xs text-slate-500">
-                    正解：{editing.target || '未入力'}
-                  </p>
-                </div>
-
-              </label>
+              <AnswerTypeOption
+                value="technique"
+                checked={
+                  editing.answerType === 'technique'
+                }
+                onChange={(value) =>
+                  setEditing((prev) => ({
+                    ...prev,
+                    answerType: value,
+                  }))
+                }
+                title="技名"
+                answer={editing.technique}
+              />
 
             </div>
           </section>
 
-          {/* ================================================= */}
-          {/* 問題画像 */}
-          {/* ================================================= */}
+          {/* =================================================
+              問題画像
+          ================================================== */}
 
           <section className="mb-5 rounded-2xl border-2 border-sky-300 bg-white p-4">
 
@@ -567,30 +729,54 @@ export default function TenipuriProblemsPage() {
               </div>
             )}
 
-            <label className="block cursor-pointer rounded-xl border-2 border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-center hover:bg-slate-100">
+            <div
+              onClick={() => {
+                document
+                  .getElementById('edit-image-input')
+                  ?.click();
+              }}
+              onDragEnter={handleImageDragOver}
+              onDragOver={handleImageDragOver}
+              onDragLeave={handleImageDragLeave}
+              onDrop={handleImageDrop}
+              className={`block cursor-pointer rounded-xl border-2 border-dashed px-4 py-8 text-center transition ${
+                isImageDragging
+                  ? 'border-sky-500 bg-sky-100 scale-[1.01]'
+                  : 'border-slate-300 bg-slate-50 hover:bg-slate-100'
+              }`}
+            >
 
               <p className="font-bold text-slate-700">
-                画像を変更する
+                {isImageDragging
+                  ? 'ここに画像をドロップ'
+                  : editing.imagePreview
+                    ? '画像を変更する'
+                    : '画像を選択する'}
               </p>
 
               <p className="text-xs text-slate-500 mt-1">
-                新しい画像を選択
+                クリック・タップ、または画像をドラッグ＆ドロップ
+              </p>
+
+              <p className="text-[11px] text-slate-400 mt-2">
+                10MB以下の画像
               </p>
 
               <input
+                id="edit-image-input"
                 type="file"
                 accept="image/*"
                 onChange={handleImageChange}
                 className="hidden"
               />
 
-            </label>
+            </div>
 
           </section>
 
-          {/* ================================================= */}
-          {/* 解説画像 */}
-          {/* ================================================= */}
+          {/* =================================================
+              解説画像
+          ================================================== */}
 
           <section className="mb-5 rounded-2xl border-2 border-violet-300 bg-violet-50 p-4">
 
@@ -614,32 +800,56 @@ export default function TenipuriProblemsPage() {
               </div>
             )}
 
-            <label className="block cursor-pointer rounded-xl border-2 border-dashed border-violet-300 bg-white px-4 py-6 text-center hover:bg-violet-100">
+            <div
+              onClick={() => {
+                document
+                  .getElementById(
+                    'edit-explanation-image-input'
+                  )
+                  ?.click();
+              }}
+              onDragEnter={handleExplanationImageDragOver}
+              onDragOver={handleExplanationImageDragOver}
+              onDragLeave={handleExplanationImageDragLeave}
+              onDrop={handleExplanationImageDrop}
+              className={`block cursor-pointer rounded-xl border-2 border-dashed px-4 py-8 text-center transition ${
+                isExplanationImageDragging
+                  ? 'border-violet-500 bg-violet-100 scale-[1.01]'
+                  : 'border-violet-300 bg-white hover:bg-violet-100'
+              }`}
+            >
 
               <p className="font-bold text-violet-800">
-                {editing.explanationImagePreview
-                  ? '解説画像を変更する'
-                  : '解説画像を追加する'}
+                {isExplanationImageDragging
+                  ? 'ここに画像をドロップ'
+                  : editing.explanationImagePreview
+                    ? '解説画像を変更する'
+                    : '解説画像を追加する'}
               </p>
 
               <p className="text-xs text-slate-500 mt-1">
-                新しい解説画像を選択
+                クリック・タップ、または画像をドラッグ＆ドロップ
+              </p>
+
+              <p className="text-[11px] text-slate-400 mt-2">
+                ※登録しなくても問題ありません
               </p>
 
               <input
+                id="edit-explanation-image-input"
                 type="file"
                 accept="image/*"
                 onChange={handleExplanationImageChange}
                 className="hidden"
               />
 
-            </label>
+            </div>
 
           </section>
 
-          {/* ================================================= */}
-          {/* 保存 */}
-          {/* ================================================= */}
+          {/* =================================================
+              保存
+          ================================================== */}
 
           <div className="flex flex-col gap-3">
 
@@ -649,16 +859,36 @@ export default function TenipuriProblemsPage() {
               disabled={saving}
               className="w-full rounded-2xl bg-emerald-500 px-4 py-4 text-sm font-extrabold text-white hover:bg-emerald-400 disabled:opacity-50"
             >
-              {saving
-                ? '保存中...'
-                : '変更を保存する'}
+              {saving ? '保存中...' : '変更を保存する'}
             </button>
 
             <button
               type="button"
               onClick={() => {
+                if (
+                  editing.imagePreview &&
+                  editing.imagePreview.startsWith('blob:')
+                ) {
+                  URL.revokeObjectURL(
+                    editing.imagePreview
+                  );
+                }
+
+                if (
+                  editing.explanationImagePreview &&
+                  editing.explanationImagePreview.startsWith(
+                    'blob:'
+                  )
+                ) {
+                  URL.revokeObjectURL(
+                    editing.explanationImagePreview
+                  );
+                }
+
                 setEditing(null);
                 setError('');
+                setIsImageDragging(false);
+                setIsExplanationImageDragging(false);
               }}
               className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-xs font-bold"
             >
@@ -745,12 +975,8 @@ export default function TenipuriProblemsPage() {
                 <ProblemCard
                   key={problem.id}
                   problem={problem}
-                  onEdit={() =>
-                    startEdit(problem)
-                  }
-                  onDelete={() =>
-                    handleDelete(problem)
-                  }
+                  onEdit={() => startEdit(problem)}
+                  onDelete={() => handleDelete(problem)}
                 />
               ))}
 
@@ -775,21 +1001,16 @@ function ProblemCard({
   onDelete,
 }) {
   const answerLabel =
-    problem.answer_type === 'target'
-      ? '誰に打った？'
-      : '誰が打った？';
+    getAnswerTypeLabel(problem.answer_type);
 
   const answer =
-    problem.answer_type === 'target'
-      ? problem.target
-      : problem.hitter;
+    getProblemAnswer(problem);
 
   return (
     <article className="rounded-2xl border-2 border-slate-200 bg-white shadow-sm overflow-hidden">
 
       <div className="p-4">
 
-        {/* 上部 */}
         <div className="flex items-start justify-between gap-3 mb-3">
 
           <div>
@@ -814,10 +1035,6 @@ function ProblemCard({
 
         </div>
 
-        {/* ================================================= */}
-        {/* 問題画像 */}
-        {/* ================================================= */}
-
         {problem.image_url && (
           <div className="mb-4 rounded-xl overflow-hidden border border-slate-200 bg-slate-100">
 
@@ -829,10 +1046,6 @@ function ProblemCard({
 
           </div>
         )}
-
-        {/* ================================================= */}
-        {/* 解説画像 */}
-        {/* ================================================= */}
 
         {problem.explanation_image_url && (
           <div className="mt-4 mb-4">
@@ -853,10 +1066,6 @@ function ProblemCard({
 
           </div>
         )}
-
-        {/* ================================================= */}
-        {/* 詳細 */}
-        {/* ================================================= */}
 
         <div className="rounded-xl bg-slate-50 border border-slate-200 p-3">
 
@@ -907,10 +1116,6 @@ function ProblemCard({
 
         </div>
 
-        {/* ================================================= */}
-        {/* 操作 */}
-        {/* ================================================= */}
-
         <div className="mt-4 flex gap-2">
 
           <button
@@ -935,6 +1140,40 @@ function ProblemCard({
 
     </article>
   );
+}
+
+
+// =============================================================
+// 答えタイプ表示
+// =============================================================
+
+function getAnswerTypeLabel(answerType) {
+  if (answerType === 'target') {
+    return '誰に打った？';
+  }
+
+  if (answerType === 'technique') {
+    return '技名';
+  }
+
+  return '誰が打った？';
+}
+
+
+// =============================================================
+// 問題の正解取得
+// =============================================================
+
+function getProblemAnswer(problem) {
+  if (problem.answer_type === 'target') {
+    return problem.target || '';
+  }
+
+  if (problem.answer_type === 'technique') {
+    return problem.technique || '';
+  }
+
+  return problem.hitter || '';
 }
 
 
@@ -972,6 +1211,50 @@ function Info({
 
 
 // =============================================================
+// 答え選択肢
+// =============================================================
+
+function AnswerTypeOption({
+  value,
+  checked,
+  onChange,
+  title,
+  answer,
+}) {
+  return (
+    <label
+      className={`flex items-center gap-3 rounded-xl border-2 px-4 py-3 cursor-pointer ${
+        checked
+          ? 'border-amber-500 bg-white'
+          : 'border-amber-200 bg-amber-50'
+      }`}
+    >
+
+      <input
+        type="radio"
+        name="editAnswerType"
+        value={value}
+        checked={checked}
+        onChange={() => onChange(value)}
+      />
+
+      <div>
+
+        <p className="font-extrabold">
+          {title}
+        </p>
+
+        <p className="text-xs text-slate-500">
+          正解：{answer || '未入力'}
+        </p>
+
+      </div>
+
+    </label>
+  );
+}
+
+// =============================================================
 // 入力欄
 // =============================================================
 
@@ -999,4 +1282,3 @@ function InputField({
     </label>
   );
 }
-

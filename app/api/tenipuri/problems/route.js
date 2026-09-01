@@ -130,27 +130,37 @@ const explanationImage =
       );
     }
 
-    if (!hitter) {
-      return NextResponse.json(
-        {
-          ok: false,
-          error: '誰が打ったかを入力してください。',
-        },
-        { status: 400 }
-      );
-    }
+if (answerType === 'hitter' && !hitter) {
+  return NextResponse.json(
+    {
+      ok: false,
+      error: '答えを「誰が打ったか」にする場合は、「誰が」を入力してください。',
+    },
+    { status: 400 }
+  );
+}
 
-    if (!target) {
-      return NextResponse.json(
-        {
-          ok: false,
-          error: '誰に打ったかを入力してください。',
-        },
-        { status: 400 }
-      );
-    }
+if (answerType === 'target' && !target) {
+  return NextResponse.json(
+    {
+      ok: false,
+      error: '答えを「誰に打ったか」にする場合は、「誰に」を入力してください。',
+    },
+    { status: 400 }
+  );
+}
 
-    if (!['hitter', 'target'].includes(answerType)) {
+if (answerType === 'technique' && !technique) {
+  return NextResponse.json(
+    {
+      ok: false,
+      error: '答えを「技名」にする場合は、「技名」を入力してください。',
+    },
+    { status: 400 }
+  );
+}
+
+    if (!['hitter', 'target', 'technique'].includes(answerType)) {
       return NextResponse.json(
         {
           ok: false,
