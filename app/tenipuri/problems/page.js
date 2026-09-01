@@ -2,7 +2,7 @@
 
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 
 export default function TenipuriProblemsPage() {
@@ -18,6 +18,20 @@ export default function TenipuriProblemsPage() {
   const [isImageDragging, setIsImageDragging] = useState(false);
   const [isExplanationImageDragging, setIsExplanationImageDragging] =
     useState(false);
+
+  // =========================================================
+  // 検索・絞り込み
+  // =========================================================
+
+  const [filters, setFilters] = useState({
+    hitter: '',
+    target: '',
+    episode: '',
+    technique: '',
+    location: '',
+    hand: '',
+    result: '',
+  });
 
   // =========================================================
   // 問題取得
@@ -55,6 +69,85 @@ export default function TenipuriProblemsPage() {
   useEffect(() => {
     loadProblems();
   }, []);
+
+  // =========================================================
+  // 絞り込み選択肢
+  // =========================================================
+
+  const filterOptions = useMemo(() => {
+    const getUniqueValues = (key) => {
+      return [...new Set(
+        problems
+          .map((problem) => problem[key])
+          .filter((value) => value !== null && value !== undefined && String(value).trim() !== '')
+          .map((value) => String(value))
+      )];
+    };
+
+    const sortJapanese = (values) => {
+      return [...values].sort((a, b) =>
+        a.localeCompare(b, 'ja', {
+          numeric: true,
+          sensitivity: 'base',
+        })
+      );
+    };
+
+    return {
+      hitter: sortJapanese(getUniqueValues('hitter')),
+      target: sortJapanese(getUniqueValues('target')),
+      episode: sortJapanese(getUniqueValues('episode')),
+      technique: sortJapanese(getUniqueValues('technique')),
+      location: sortJapanese(getUniqueValues('location')),
+      hand: sortJapanese(getUniqueValues('hand')),
+      result: sortJapanese(getUniqueValues('result')),
+    };
+  }, [problems]);
+
+  // =========================================================
+  // 絞り込み実行
+  // =========================================================
+
+  const filteredProblems = useMemo(() => {
+    return problems.filter((problem) => {
+      return Object.entries(filters).every(([key, value]) => {
+        if (!value) return true;
+
+        return String(problem[key] ?? '') === value;
+      });
+    });
+  }, [problems, filters]);
+
+  // =========================================================
+  // 絞り込み変更
+  // =========================================================
+
+  const handleFilterChange = (key, value) => {
+    setFilters((prev) => ({
+      ...prev,
+      [key]: value,
+    }));
+  };
+
+  // =========================================================
+  // 絞り込みリセット
+  // =========================================================
+
+  const resetFilters = () => {
+    setFilters({
+      hitter: '',
+      target: '',
+      episode: '',
+      technique: '',
+      location: '',
+      hand: '',
+      result: '',
+    });
+  };
+
+  const hasActiveFilters = Object.values(filters).some(
+    (value) => value !== ''
+  );
 
   // =========================================================
   // 削除
@@ -303,9 +396,7 @@ export default function TenipuriProblemsPage() {
         prev.explanationImagePreview &&
         prev.explanationImagePreview.startsWith('blob:')
       ) {
-        URL.revokeObjectURL(
-          prev.explanationImagePreview
-        );
+        URL.revokeObjectURL(prev.explanationImagePreview);
       }
 
       return {
@@ -965,22 +1056,156 @@ export default function TenipuriProblemsPage() {
         ) : (
           <>
 
-            <div className="mb-3 text-xs font-bold text-slate-600">
-              {problems.length}問
-            </div>
+            {/* =================================================
+                検索・絞り込み
+            ================================================== */}
 
-            <div className="space-y-5">
+            <section className="mb-5 rounded-2xl border-2 border-sky-200 bg-white p-4 shadow-sm">
 
-              {problems.map((problem) => (
-                <ProblemCard
-                  key={problem.id}
-                  problem={problem}
-                  onEdit={() => startEdit(problem)}
-                  onDelete={() => handleDelete(problem)}
+              <div className="flex items-center justify-between gap-3 mb-4">
+
+                <div>
+                  <h2 className="font-extrabold text-sky-900">
+                    打球問題を絞り込み
+                  </h2>
+
+                  <p className="text-[11px] text-slate-500 mt-1">
+                    複数の条件を同時に指定できます。
+                  </p>
+                </div>
+
+                {hasActiveFilters && (
+                  <button
+                    type="button"
+                    onClick={resetFilters}
+                    className="shrink-0 rounded-full border border-slate-300 bg-slate-50 px-3 py-2 text-[11px] font-extrabold text-slate-600 hover:bg-slate-100"
+                  >
+                    条件をリセット
+                  </button>
+                )}
+
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+
+                <FilterSelect
+                  label="誰が"
+                  value={filters.hitter}
+                  options={filterOptions.hitter}
+                  placeholder="全員"
+                  onChange={(value) =>
+                    handleFilterChange('hitter', value)
+                  }
                 />
-              ))}
 
+                <FilterSelect
+                  label="誰に"
+                  value={filters.target}
+                  options={filterOptions.target}
+                  placeholder="全員"
+                  onChange={(value) =>
+                    handleFilterChange('target', value)
+                  }
+                />
+
+                <FilterSelect
+                  label="話数"
+                  value={filters.episode}
+                  options={filterOptions.episode}
+                  placeholder="全話"
+                  onChange={(value) =>
+                    handleFilterChange('episode', value)
+                  }
+                />
+
+                <FilterSelect
+                  label="技名"
+                  value={filters.technique}
+                  options={filterOptions.technique}
+                  placeholder="全技"
+                  onChange={(value) =>
+                    handleFilterChange('technique', value)
+                  }
+                />
+
+                <FilterSelect
+                  label="場所"
+                  value={filters.location}
+                  options={filterOptions.location}
+                  placeholder="全場所"
+                  onChange={(value) =>
+                    handleFilterChange('location', value)
+                  }
+                />
+
+                <FilterSelect
+                  label="右・左"
+                  value={filters.hand}
+                  options={filterOptions.hand}
+                  placeholder="全て"
+                  onChange={(value) =>
+                    handleFilterChange('hand', value)
+                  }
+                />
+
+                <FilterSelect
+                  label="結果"
+                  value={filters.result}
+                  options={filterOptions.result}
+                  placeholder="全結果"
+                  onChange={(value) =>
+                    handleFilterChange('result', value)
+                  }
+                />
+
+              </div>
+
+            </section>
+
+            {/* =================================================
+                件数
+            ================================================== */}
+
+            <div className="mb-3 text-xs font-bold text-slate-600">
+              {hasActiveFilters
+                ? `${filteredProblems.length}問 / ${problems.length}問`
+                : `${problems.length}問`}
             </div>
+
+            {/* =================================================
+                絞り込み結果
+            ================================================== */}
+
+            {filteredProblems.length === 0 ? (
+              <div className="rounded-2xl bg-white border border-slate-200 p-8 text-center">
+
+                <p className="font-bold text-slate-700">
+                  条件に一致する打球問題がありません。
+                </p>
+
+                <button
+                  type="button"
+                  onClick={resetFilters}
+                  className="inline-block mt-4 rounded-full bg-sky-500 px-5 py-2 text-sm font-bold text-white hover:bg-sky-400"
+                >
+                  条件をリセット
+                </button>
+
+              </div>
+            ) : (
+              <div className="space-y-5">
+
+                {filteredProblems.map((problem) => (
+                  <ProblemCard
+                    key={problem.id}
+                    problem={problem}
+                    onEdit={() => startEdit(problem)}
+                    onDelete={() => handleDelete(problem)}
+                  />
+                ))}
+
+              </div>
+            )}
 
           </>
         )}
@@ -990,6 +1215,43 @@ export default function TenipuriProblemsPage() {
   );
 }
 
+// =============================================================
+// 絞り込みプルダウン
+// =============================================================
+
+function FilterSelect({
+  label,
+  value,
+  options,
+  placeholder,
+  onChange,
+}) {
+  return (
+    <label className="block">
+
+      <span className="block text-xs font-extrabold text-slate-700 mb-1">
+        {label}
+      </span>
+
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="w-full rounded-xl border border-slate-300 bg-white px-3 py-3 text-sm font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-300"
+      >
+        <option value="">
+          {placeholder}
+        </option>
+
+        {options.map((option) => (
+          <option key={option} value={option}>
+            {option}
+          </option>
+        ))}
+      </select>
+
+    </label>
+  );
+}
 
 // =============================================================
 // 問題カード
@@ -1142,7 +1404,6 @@ function ProblemCard({
   );
 }
 
-
 // =============================================================
 // 答えタイプ表示
 // =============================================================
@@ -1159,7 +1420,6 @@ function getAnswerTypeLabel(answerType) {
   return '誰が打った？';
 }
 
-
 // =============================================================
 // 問題の正解取得
 // =============================================================
@@ -1175,7 +1435,6 @@ function getProblemAnswer(problem) {
 
   return problem.hitter || '';
 }
-
 
 // =============================================================
 // 情報表示
@@ -1208,7 +1467,6 @@ function Info({
     </div>
   );
 }
-
 
 // =============================================================
 // 答え選択肢
@@ -1282,3 +1540,4 @@ function InputField({
     </label>
   );
 }
+
