@@ -58,38 +58,122 @@ export default function TenipuriSubmitPage() {
   // Excelの打球データ取得
   // =========================================================
 
-  const loadWazaList = async () => {
-    if (wazaList.length > 0) return;
+ const loadWazaList = async () => {
+  if (wazaList.length > 0) return;
 
-    setLoadingWaza(true);
-    setWazaError('');
+  setLoadingWaza(true);
+  setWazaError('');
 
-    try {
-      const res = await fetch('/api/tenipuri/waza', {
-        cache: 'no-store',
-      });
+  try {
+    const res = await fetch('/api/tenipuri/waza', {
+      cache: 'no-store',
+    });
 
-      const data = await res.json();
+    // JSONかどうかを先に確認
+    const contentType = res.headers.get('content-type') || '';
 
-      if (!res.ok || !data.ok) {
-        throw new Error(
-          data.error ||
-            '打球データを取得できませんでした。'
-        );
-      }
+    if (!contentType.includes('application/json')) {
+      const text = await res.text();
 
-      setWazaList(data.waza || []);
-    } catch (e) {
-      console.error(e);
+      console.error(
+        '[tenipuri/submit] APIがJSONを返していません:',
+        {
+          status: res.status,
+          contentType,
+          body: text.slice(0, 1000),
+        }
+      );
 
-      setWazaError(
-        e.message ||
+      throw new Error(
+        `/api/tenipuri/waza がJSONを返しませんでした。` +
+        `（HTTP ${res.status}）`
+      );
+    }
+
+    const data = await res.json();
+
+    if (!res.ok || !data.ok) {
+      throw new Error(
+        data.error ||
           '打球データを取得できませんでした。'
       );
-    } finally {
-      setLoadingWaza(false);
     }
-  };
+
+    setWazaList(data.waza || []);
+
+  } catch (e) {
+    console.error(
+      '[tenipuri/submit] 打球データ取得エラー:',
+      e
+    );
+const loadWazaList = async () => {
+  if (wazaList.length > 0) return;
+
+  setLoadingWaza(true);
+  setWazaError('');
+
+  try {
+    const res = await fetch('/api/tenipuri/waza', {
+      cache: 'no-store',
+    });
+
+    // JSONかどうかを先に確認
+    const contentType = res.headers.get('content-type') || '';
+
+    if (!contentType.includes('application/json')) {
+      const text = await res.text();
+
+      console.error(
+        '[tenipuri/submit] APIがJSONを返していません:',
+        {
+          status: res.status,
+          contentType,
+          body: text.slice(0, 1000),
+        }
+      );
+
+      throw new Error(
+        `/api/tenipuri/waza がJSONを返しませんでした。` +
+        `（HTTP ${res.status}）`
+      );
+    }
+
+    const data = await res.json();
+
+    if (!res.ok || !data.ok) {
+      throw new Error(
+        data.error ||
+          '打球データを取得できませんでした。'
+      );
+    }
+
+    setWazaList(data.waza || []);
+
+  } catch (e) {
+    console.error(
+      '[tenipuri/submit] 打球データ取得エラー:',
+      e
+    );
+
+    setWazaError(
+      e.message ||
+        '打球データを取得できませんでした。'
+    );
+
+  } finally {
+    setLoadingWaza(false);
+  }
+};
+
+    setWazaError(
+      e.message ||
+        '打球データを取得できませんでした。'
+    );
+
+  } finally {
+    setLoadingWaza(false);
+  }
+};
 
   // =========================================================
   // Excel検索

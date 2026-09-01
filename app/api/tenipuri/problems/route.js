@@ -2,7 +2,6 @@
 
 import { NextResponse } from 'next/server';
 import db from '@/lib/db.js';
-import { createClient } from '@supabase/supabase-js';
 
 
 // =========================================================
@@ -13,61 +12,37 @@ export const runtime = 'nodejs';
 
 
 // =========================================================
-// Supabase
-// =========================================================
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY
-);
-
-
-// =========================================================
 // 共通設定
 // =========================================================
 
-// Supabase Storageで作成したバケット名
-const STORAGE_BUCKET = 'tenipuri-images';
-
-
-// 許可する画像形式
-const ALLOWED_EXTENSIONS = [
-  '.jpg',
-  '.jpeg',
-  '.png',
-  '.gif',
-  '.webp',
-  '.bmp',
+// 画像として受け付けるMIMEタイプ
+const ALLOWED_MIME_TYPES = [
+  'image/jpeg',
+  'image/png',
+  'image/gif',
+  'image/webp',
+  'image/bmp',
 ];
 
 
-// =========================================================
-// 共通：画像拡張子取得
-// =========================================================
-
-function getImageExtension(file, defaultExt = '.jpg') {
-  const originalName = file?.name || '';
-
-  let ext = originalName
-    ? originalName.substring(
-        originalName.lastIndexOf('.')
-      ).toLowerCase()
-    : '';
-
-  if (
-    !ext ||
-    ext === originalName.toLowerCase()
-  ) {
-    ext = defaultExt;
-  }
-
-  return ext;
-}
+// 画像サイズ上限
+//
+// DBにBase64で保存するため、あまり巨大な画像は拒否する。
+// 10MBまで。
+//
+const MAX_IMAGE_SIZE = 10 * 1024 * 1024;
 
 
 // =========================================================
-// 共通：画像保存
-// Supabase Storageへアップロード
+// 共通：画像をData URLへ変換
+// =========================================================
+//
+// Supabase Storageは使用しない。
+// 画像をBase64のData URLとしてDBへ直接保存する。
+//
+// 例：
+// data:image/jpeg;base64,/9j/4AAQ...
+//
 // =========================================================
 
 async function saveImage(file) {
@@ -77,37 +52,47 @@ async function saveImage(file) {
 
 
   // -------------------------------------------------------
-  // 拡張子チェック
+  // File確認
   // -------------------------------------------------------
 
-  const ext =
-    getImageExtension(file);
-
   if (
-    !ALLOWED_EXTENSIONS.includes(ext)
+    typeof file.arrayBuffer !== 'function'
   ) {
     throw new Error(
-      '対応していない画像形式です。'
+      '画像ファイルを正しく読み込めませんでした。'
     );
   }
 
 
   // -------------------------------------------------------
-  // ファイル名作成
+  // MIMEタイプ確認
   // -------------------------------------------------------
 
-  const fileName =
-    `${Date.now()}-${crypto.randomUUID()}${ext}`;
+  const contentType =
+    file.type || 'image/jpeg';
 
 
-  // Storage内の保存先
-  //
-  // tenipuri-images
-  // └── tenipuri
-  //     └── xxxx.jpeg
-  //
-  const storagePath =
-    `tenipuri/${fileName}`;
+  if (
+    !ALLOWED_MIME_TYPES.includes(contentType)
+  ) {
+    throw new Error(
+      '対応していない画像形式です。JPG、PNG、GIF、WEBP、BMPのみ使用できます。'
+    );
+  }
+
+
+  // -------------------------------------------------------
+  // サイズ確認
+  // -------------------------------------------------------
+
+  if (
+    typeof file.size === 'number' &&
+    file.size > MAX_IMAGE_SIZE
+  ) {
+    throw new Error(
+      '画像サイズが大きすぎます。10MB以下の画像を使用してください。'
+    );
+  }
 
 
   // -------------------------------------------------------
@@ -121,101 +106,65 @@ async function saveImage(file) {
     Buffer.from(arrayBuffer);
 
 
-  // -------------------------------------------------------
-  // Content-Type
-  // -------------------------------------------------------
-
-  const contentType =
-    file.type || 'image/jpeg';
-
-
-  // -------------------------------------------------------
-  // Supabase Storageへアップロード
-  // -------------------------------------------------------
-
-  console.log(
-    '[tenipuri/problems] Storageアップロード開始:',
-    storagePath
-  );
-
-  const {
-    error: uploadError,
-  } =
-    await supabase.storage
-      .from(STORAGE_BUCKET)
-      .upload(
-        storagePath,
-        buffer,
-        {
-          contentType,
-          upsert: false,
-        }
-      );
-
-
-  if (uploadError) {
-    console.error(
-      '[tenipuri/problems] Storageアップロード失敗:',
-      uploadError
-    );
-
+  if (
+    buffer.length === 0
+  ) {
     throw new Error(
-      `Supabase Storageへの画像アップロードに失敗しました：${uploadError.message}`
+      '画像ファイルが空です。'
     );
   }
-
-
-  // -------------------------------------------------------
-  // 公開URL取得
-  // -------------------------------------------------------
-
-  const {
-    data: publicUrlData,
-  } =
-    supabase.storage
-      .from(STORAGE_BUCKET)
-      .getPublicUrl(storagePath);
 
 
   if (
-    !publicUrlData ||
-    !publicUrlData.publicUrl
+    buffer.length > MAX_IMAGE_SIZE
   ) {
-    // URL取得に失敗した場合、
-    // 直前にアップロードした画像を削除しておく
-    try {
-      await supabase.storage
-        .from(STORAGE_BUCKET)
-        .remove([
-          storagePath,
-        ]);
-    } catch {
-      // 無視
-    }
-
     throw new Error(
-      '画像の公開URLを取得できませんでした。'
+      '画像サイズが大きすぎます。10MB以下の画像を使用してください。'
     );
   }
 
 
+  // -------------------------------------------------------
+  // Base64化
+  // -------------------------------------------------------
+
+  const base64 =
+    buffer.toString('base64');
+
+
+  // -------------------------------------------------------
+  // Data URL作成
+  // -------------------------------------------------------
+
+  const dataUrl =
+    `data:${contentType};base64,${base64}`;
+
+
   console.log(
-    '[tenipuri/problems] Storageアップロード成功:',
-    publicUrlData.publicUrl
+    '[tenipuri/problems] 画像をData URLへ変換:',
+    contentType,
+    `${Math.round(buffer.length / 1024)}KB`
   );
 
 
   return {
-    storagePath,
-    fileName,
-    url: publicUrlData.publicUrl,
+    url: dataUrl,
+    contentType,
+    size: buffer.length,
   };
 }
 
 
 // =========================================================
 // 共通：画像削除
-// Supabase Storageから削除
+// =========================================================
+//
+// 今回は画像そのものをDBに保存しているため、
+// DBのimage_urlを更新・削除すれば画像も消える。
+//
+// この関数は互換性のため残しているが、
+// 外部Storageへのアクセスは一切しない。
+//
 // =========================================================
 
 async function deleteImageByUrl(imageUrl) {
@@ -223,86 +172,20 @@ async function deleteImageByUrl(imageUrl) {
     return;
   }
 
-
-  // -------------------------------------------------------
-  // Supabase StorageのURLか確認
-  // -------------------------------------------------------
-
-  const marker =
-    `/storage/v1/object/public/${STORAGE_BUCKET}/`;
-
-
-  const index =
-    imageUrl.indexOf(marker);
-
-
-  // -------------------------------------------------------
-  // 旧方式のURLの場合
-  //
-  // 例：
-  // /uploads/tenipuri/xxxx.jpeg
-  //
-  // Vercel上では削除できないため何もしない。
-  // -------------------------------------------------------
-
-  if (index === -1) {
-    console.log(
-      '[tenipuri/problems] Supabase Storage URLではないため削除をスキップ:',
-      imageUrl
-    );
-
-    return;
-  }
-
-
-  // -------------------------------------------------------
-  // Storage内のパス取得
-  // -------------------------------------------------------
-
-  const storagePath =
-    imageUrl.substring(
-      index + marker.length
-    );
-
-
-  if (!storagePath) {
-    return;
-  }
-
-
-  // -------------------------------------------------------
-  // Supabase Storageから削除
-  // -------------------------------------------------------
-
   console.log(
-    '[tenipuri/problems] Storage画像削除開始:',
-    storagePath
+    '[tenipuri/problems] DB内画像データを削除対象として処理'
   );
+}
 
 
-  const {
-    error,
-  } =
-    await supabase.storage
-      .from(STORAGE_BUCKET)
-      .remove([
-        storagePath,
-      ]);
+// =========================================================
+// 共通：画像Data URLか確認
+// =========================================================
 
-
-  if (error) {
-    console.error(
-      '[tenipuri/problems] Storage画像削除失敗:',
-      error
-    );
-
-    return;
-  }
-
-
-  console.log(
-    '[tenipuri/problems] Storage画像削除成功:',
-    storagePath
+function isDataUrl(value) {
+  return (
+    typeof value === 'string' &&
+    value.startsWith('data:image/')
   );
 }
 
@@ -316,6 +199,7 @@ export async function GET() {
   console.log(
     '[tenipuri/problems] GET開始'
   );
+
 
   try {
 
@@ -462,7 +346,7 @@ export async function POST(request) {
 
 
     // -------------------------------------------------------
-    // バリデーション
+    // 必須画像チェック
     // -------------------------------------------------------
 
     if (
@@ -481,6 +365,10 @@ export async function POST(request) {
       );
     }
 
+
+    // -------------------------------------------------------
+    // 答えの種類チェック
+    // -------------------------------------------------------
 
     if (
       ![
@@ -502,6 +390,10 @@ export async function POST(request) {
     }
 
 
+    // -------------------------------------------------------
+    // 誰が
+    // -------------------------------------------------------
+
     if (
       answerType === 'hitter' &&
       !hitter
@@ -518,6 +410,10 @@ export async function POST(request) {
       );
     }
 
+
+    // -------------------------------------------------------
+    // 誰に
+    // -------------------------------------------------------
 
     if (
       answerType === 'target' &&
@@ -536,6 +432,10 @@ export async function POST(request) {
     }
 
 
+    // -------------------------------------------------------
+    // 技名
+    // -------------------------------------------------------
+
     if (
       answerType === 'technique' &&
       !technique
@@ -553,9 +453,9 @@ export async function POST(request) {
     }
 
 
-    // -------------------------------------------------------
+    // =======================================================
     // 問題画像保存
-    // -------------------------------------------------------
+    // =======================================================
 
     try {
 
@@ -564,14 +464,13 @@ export async function POST(request) {
 
 
       console.log(
-        '[tenipuri/problems] 画像保存成功:',
-        savedImage.url
+        '[tenipuri/problems] 問題画像変換成功'
       );
 
     } catch (error) {
 
       console.error(
-        '[tenipuri/problems] 画像保存失敗:',
+        '[tenipuri/problems] 問題画像保存失敗:',
         error
       );
 
@@ -591,9 +490,9 @@ export async function POST(request) {
     }
 
 
-    // -------------------------------------------------------
+    // =======================================================
     // 解説画像保存
-    // -------------------------------------------------------
+    // =======================================================
 
     if (
       explanationImage &&
@@ -609,8 +508,7 @@ export async function POST(request) {
 
 
         console.log(
-          '[tenipuri/problems] 解説画像保存成功:',
-          savedExplanationImage.url
+          '[tenipuri/problems] 解説画像変換成功'
         );
 
       } catch (error) {
@@ -619,14 +517,6 @@ export async function POST(request) {
           '[tenipuri/problems] 解説画像保存失敗:',
           error
         );
-
-
-        // 問題画像を削除
-        if (savedImage) {
-          await deleteImageByUrl(
-            savedImage.url
-          );
-        }
 
 
         return NextResponse.json(
@@ -645,9 +535,9 @@ export async function POST(request) {
     }
 
 
-    // -------------------------------------------------------
+    // =======================================================
     // DB登録
-    // -------------------------------------------------------
+    // =======================================================
 
     try {
 
@@ -703,7 +593,7 @@ export async function POST(request) {
 
       console.log(
         '[tenipuri/problems] 登録成功:',
-        problem
+        problem?.id
       );
 
 
@@ -725,21 +615,6 @@ export async function POST(request) {
       );
 
 
-      // DB登録に失敗したら画像削除
-      if (savedImage) {
-        await deleteImageByUrl(
-          savedImage.url
-        );
-      }
-
-
-      if (savedExplanationImage) {
-        await deleteImageByUrl(
-          savedExplanationImage.url
-        );
-      }
-
-
       return NextResponse.json(
         {
           ok: false,
@@ -754,27 +629,13 @@ export async function POST(request) {
       );
     }
 
+
   } catch (error) {
 
     console.error(
       '[tenipuri/problems] POSTエラー:',
       error
     );
-
-
-    // 予期せぬエラーでも画像を残さない
-    if (savedImage) {
-      await deleteImageByUrl(
-        savedImage.url
-      );
-    }
-
-
-    if (savedExplanationImage) {
-      await deleteImageByUrl(
-        savedExplanationImage.url
-      );
-    }
 
 
     return NextResponse.json(
@@ -801,10 +662,6 @@ export async function PUT(request) {
   console.log(
     '[tenipuri/problems] PUT開始'
   );
-
-
-  let newImage = null;
-  let newExplanationImage = null;
 
 
   try {
@@ -880,7 +737,7 @@ export async function PUT(request) {
 
 
     // -------------------------------------------------------
-    // バリデーション
+    // ID確認
     // -------------------------------------------------------
 
     if (!id) {
@@ -896,6 +753,10 @@ export async function PUT(request) {
       );
     }
 
+
+    // -------------------------------------------------------
+    // 答えの種類確認
+    // -------------------------------------------------------
 
     if (
       ![
@@ -916,6 +777,10 @@ export async function PUT(request) {
       );
     }
 
+
+    // -------------------------------------------------------
+    // 答え確認
+    // -------------------------------------------------------
 
     if (
       answerType === 'hitter' &&
@@ -968,9 +833,9 @@ export async function PUT(request) {
     }
 
 
-    // -------------------------------------------------------
+    // =======================================================
     // 現在の問題取得
-    // -------------------------------------------------------
+    // =======================================================
 
     const current =
       await db.get(
@@ -997,9 +862,9 @@ export async function PUT(request) {
     }
 
 
-    // -------------------------------------------------------
+    // =======================================================
     // 現在の画像を維持
-    // -------------------------------------------------------
+    // =======================================================
 
     let imageUrl =
       current.image_url;
@@ -1009,9 +874,9 @@ export async function PUT(request) {
       current.explanation_image_url;
 
 
-    // -------------------------------------------------------
+    // =======================================================
     // 新しい問題画像
-    // -------------------------------------------------------
+    // =======================================================
 
     if (
       image &&
@@ -1020,12 +885,17 @@ export async function PUT(request) {
 
       try {
 
-        newImage =
+        const newImage =
           await saveImage(image);
 
 
         imageUrl =
           newImage.url;
+
+
+        console.log(
+          '[tenipuri/problems] 新しい問題画像変換成功'
+        );
 
       } catch (error) {
 
@@ -1051,9 +921,9 @@ export async function PUT(request) {
     }
 
 
-    // -------------------------------------------------------
+    // =======================================================
     // 新しい解説画像
-    // -------------------------------------------------------
+    // =======================================================
 
     if (
       explanationImage &&
@@ -1062,7 +932,7 @@ export async function PUT(request) {
 
       try {
 
-        newExplanationImage =
+        const newExplanationImage =
           await saveImage(
             explanationImage
           );
@@ -1071,20 +941,17 @@ export async function PUT(request) {
         explanationImageUrl =
           newExplanationImage.url;
 
+
+        console.log(
+          '[tenipuri/problems] 新しい解説画像変換成功'
+        );
+
       } catch (error) {
 
         console.error(
           '[tenipuri/problems] 新解説画像保存失敗:',
           error
         );
-
-
-        // 新しい問題画像を削除
-        if (newImage) {
-          await deleteImageByUrl(
-            newImage.url
-          );
-        }
 
 
         return NextResponse.json(
@@ -1103,9 +970,9 @@ export async function PUT(request) {
     }
 
 
-    // -------------------------------------------------------
+    // =======================================================
     // DB更新
-    // -------------------------------------------------------
+    // =======================================================
 
     try {
 
@@ -1144,39 +1011,9 @@ export async function PUT(request) {
         );
 
 
-      // -----------------------------------------------------
-      // DB更新成功
-      // 古い画像を削除
-      // -----------------------------------------------------
-
-      if (
-        newImage &&
-        current.image_url &&
-        current.image_url !== imageUrl
-      ) {
-
-        await deleteImageByUrl(
-          current.image_url
-        );
-      }
-
-
-      if (
-        newExplanationImage &&
-        current.explanation_image_url &&
-        current.explanation_image_url !==
-          explanationImageUrl
-      ) {
-
-        await deleteImageByUrl(
-          current.explanation_image_url
-        );
-      }
-
-
       console.log(
         '[tenipuri/problems] 更新成功:',
-        problem
+        problem?.id
       );
 
 
@@ -1193,21 +1030,6 @@ export async function PUT(request) {
       );
 
 
-      // DB更新失敗なら新画像を削除
-      if (newImage) {
-        await deleteImageByUrl(
-          newImage.url
-        );
-      }
-
-
-      if (newExplanationImage) {
-        await deleteImageByUrl(
-          newExplanationImage.url
-        );
-      }
-
-
       return NextResponse.json(
         {
           ok: false,
@@ -1222,26 +1044,13 @@ export async function PUT(request) {
       );
     }
 
+
   } catch (error) {
 
     console.error(
       '[tenipuri/problems] PUTエラー:',
       error
     );
-
-
-    if (newImage) {
-      await deleteImageByUrl(
-        newImage.url
-      );
-    }
-
-
-    if (newExplanationImage) {
-      await deleteImageByUrl(
-        newExplanationImage.url
-      );
-    }
 
 
     return NextResponse.json(
@@ -1272,13 +1081,18 @@ export async function DELETE(request) {
 
   try {
 
-    const { searchParams } =
-      new URL(request.url);
+    const {
+      searchParams,
+    } = new URL(request.url);
 
 
     const id =
       searchParams.get('id');
 
+
+    // -------------------------------------------------------
+    // ID確認
+    // -------------------------------------------------------
 
     if (!id) {
       return NextResponse.json(
@@ -1336,32 +1150,6 @@ export async function DELETE(request) {
     );
 
 
-    // -------------------------------------------------------
-    // 問題画像削除
-    // -------------------------------------------------------
-
-    if (problem.image_url) {
-
-      await deleteImageByUrl(
-        problem.image_url
-      );
-    }
-
-
-    // -------------------------------------------------------
-    // 解説画像削除
-    // -------------------------------------------------------
-
-    if (
-      problem.explanation_image_url
-    ) {
-
-      await deleteImageByUrl(
-        problem.explanation_image_url
-      );
-    }
-
-
     console.log(
       '[tenipuri/problems] 削除成功:',
       id
@@ -1371,6 +1159,7 @@ export async function DELETE(request) {
     return NextResponse.json({
       ok: true,
     });
+
 
   } catch (error) {
 
