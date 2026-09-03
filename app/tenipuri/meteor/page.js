@@ -76,6 +76,56 @@ function normalize(str) {
 
 
 // =========================================================
+// 正解判定用
+//
+// 例:
+// 「羆落とし（ひぐまおとし）」なら
+//   ・羆落とし（ひぐまおとし）
+//   ・羆落とし
+//   ・ひぐまおとし
+// の3パターンを正解として扱う
+// =========================================================
+
+function getAcceptedAnswers(answer) {
+  const original = String(answer || '').trim();
+
+  if (!original) {
+    return [];
+  }
+
+  const answers = new Set();
+
+  // 元の答え
+  answers.add(normalize(original));
+
+  // 全角・半角カッコに対応
+  const match = original.match(
+    /^(.*?)\s*[（(]\s*(.*?)\s*[）)]\s*$/
+  );
+
+  if (match) {
+    const mainAnswer = match[1].trim();
+    const bracketAnswer = match[2].trim();
+
+    // カッコを除いた本体
+    if (mainAnswer) {
+      answers.add(
+        normalize(mainAnswer)
+      );
+    }
+
+    // カッコ内
+    if (bracketAnswer) {
+      answers.add(
+        normalize(bracketAnswer)
+      );
+    }
+  }
+
+  return [...answers];
+}
+
+// =========================================================
 // 問題の答え
 // =========================================================
 
@@ -136,6 +186,36 @@ function getProblemId(problem) {
     problem?.question_id ??
     null
   );
+}
+
+
+// =========================================================
+// 問題を一意に識別するキー
+//
+// IDがある問題はIDを使用。
+// IDがない場合は問題内容からキーを作る。
+// =========================================================
+
+function getProblemKey(problem, fallbackIndex = '') {
+  const id = getProblemId(problem);
+
+  if (id !== null && id !== undefined && id !== '') {
+    return `id:${String(id)}`;
+  }
+
+  return [
+    'fallback',
+    fallbackIndex,
+    problem?.answer_type || '',
+    problem?.hitter || '',
+    problem?.target || '',
+    problem?.episode || '',
+    problem?.technique || '',
+    problem?.location || '',
+    problem?.hand || '',
+    problem?.result || '',
+    problem?.image_url || '',
+  ].join('|');
 }
 
 
@@ -205,47 +285,58 @@ function createBall(problemIndex, problems) {
 
   return {
     problemIndex,
+
     remainingMs:
       getBallLimitMs(problem),
+
     returning: false,
   };
 }
 
 
 // =========================================================
-// ランダム問題
+// 未使用問題からランダムに1問選ぶ
+//
+// 一度ゲーム内で使った問題は usedProblemKeys から除外。
 // =========================================================
 
-function getRandomProblemIndex(
+function getRandomUnusedProblemIndex(
   problems,
-  currentIndex = -1
+  usedProblemKeys
 ) {
   if (!problems.length) {
     return -1;
   }
 
-  if (problems.length === 1) {
-    return 0;
-  }
+  const availableIndexes = [];
 
-  let index = currentIndex;
-
-  let guard = 0;
-
-  while (
-    index === currentIndex &&
-    guard < 20
+  for (
+    let i = 0;
+    i < problems.length;
+    i++
   ) {
-    index =
-      Math.floor(
-        Math.random() *
-          problems.length
+    const key =
+      getProblemKey(
+        problems[i],
+        i
       );
 
-    guard++;
+    if (!usedProblemKeys.has(key)) {
+      availableIndexes.push(i);
+    }
   }
 
-  return index;
+  if (!availableIndexes.length) {
+    return -1;
+  }
+
+  const randomPosition =
+    Math.floor(
+      Math.random() *
+        availableIndexes.length
+    );
+
+  return availableIndexes[randomPosition];
 }
 
 
@@ -291,6 +382,214 @@ export default function TenipuriMeteorPage() {
   const [answerHistory, setAnswerHistory] =
     useState([]);
 
+
+  // =======================================================
+  // ★追加
+  //
+  // 一覧取得では画像を取らず、
+  // 実際にゲームで使う問題だけ詳細データを取得する。
+  //
+  // Map:
+  //   problem ID -> 完全な問題データ
+  // =======================================================
+
+  const problemDetailsRef =
+    useRef(new Map());
+
+  // 同じ問題に対する同時fetchを防ぐ
+  const problemDetailPromisesRef =
+    useRef(new Map());
+
+
+  // =======================================================
+  // ★追加
+  //
+  // 問題の完全データを取得
+  //
+  // 通常の一覧にはBase64画像が入っていないため、
+  // 必要な問題だけ id 指定で取得する。
+  // =======================================================
+
+  const loadProblemDetail = async (problem) => {
+
+    if (!problem) {
+      return problem;
+    }
+
+    const id =
+      getProblemId(problem);
+
+    if (
+      id === null ||
+      id === undefined ||
+      id === ''
+    ) {
+      return problem;
+    }
+
+
+    const key =
+      String(id);
+
+
+    // -----------------------------------------------------
+    // すでに取得済み
+    // -----------------------------------------------------
+
+    const cached =
+      problemDetailsRef.current.get(key);
+
+    if (cached) {
+      return cached;
+    }
+
+
+    // -----------------------------------------------------
+    // 同じ問題を誰かが取得中
+    // -----------------------------------------------------
+
+    const existingPromise =
+      problemDetailPromisesRef.current.get(key);
+
+    if (existingPromise) {
+      return existingPromise;
+    }
+
+
+    // -----------------------------------------------------
+    // 詳細取得
+    // -----------------------------------------------------
+
+    const promise =
+      (async () => {
+
+        try {
+
+          const res =
+            await fetch(
+              `/api/tenipuri/problems?id=${encodeURIComponent(key)}`,
+              {
+                cache: 'no-store',
+              }
+            );
+
+
+          if (!res.ok) {
+            throw new Error(
+              `HTTP ${res.status}`
+            );
+          }
+
+
+          const data =
+            await res.json();
+
+
+          if (!data.ok) {
+            throw new Error(
+              data.error ||
+              '問題詳細の取得に失敗しました。'
+            );
+          }
+
+
+          const detail =
+            data.problem;
+
+
+          if (!detail) {
+            throw new Error(
+              '問題データがありません。'
+            );
+          }
+
+
+          // -------------------------------------------------
+          // キャッシュ
+          // -------------------------------------------------
+
+          problemDetailsRef.current.set(
+            key,
+            detail
+          );
+
+
+          return detail;
+
+        } catch (error) {
+
+          console.error(
+            '[tenipuri/meteor] problem detail fetch error:',
+            {
+              id: key,
+              error,
+            }
+          );
+
+
+          // 詳細取得に失敗しても
+          // 元のメタデータは返す。
+          return problem;
+
+        } finally {
+
+          problemDetailPromisesRef.current.delete(
+            key
+          );
+
+        }
+
+      })();
+
+
+    problemDetailPromisesRef.current.set(
+      key,
+      promise
+    );
+
+
+    return promise;
+  };
+
+
+  // =======================================================
+  // ★追加
+  //
+  // キャッシュされていれば完全データ、
+  // なければ元の問題を返す。
+  // =======================================================
+
+  const getDetailedProblem =
+    (problem) => {
+
+      if (!problem) {
+        return null;
+      }
+
+      const id =
+        getProblemId(problem);
+
+      if (
+        id === null ||
+        id === undefined ||
+        id === ''
+      ) {
+        return problem;
+      }
+
+      return (
+        problemDetailsRef.current.get(
+          String(id)
+        ) ||
+        problem
+      );
+    };
+
+
+  // =======================================================
+  // Ref
+  // =======================================================
+
   const inputRef =
     useRef(null);
 
@@ -302,6 +601,10 @@ export default function TenipuriMeteorPage() {
 
   const messageTimerRef =
     useRef(null);
+
+  // ゲーム中に一度出た問題を記録
+  const usedProblemKeysRef =
+    useRef(new Set());
 
 
   // =======================================================
@@ -315,23 +618,16 @@ export default function TenipuriMeteorPage() {
 
 
   // =======================================================
-  // ページスクロール防止
+  // ページスクロール制御
   //
-  // ゲーム中だけbodyを固定。
-  // スマホで入力欄をタップした際に
-  // ブラウザがページ全体を勝手に下げるのを防ぐ。
+  // ゲーム中だけbodyを固定
+  // 終了後は普通にスクロール可能
   // =======================================================
 
   useEffect(() => {
 
     if (
       typeof document === 'undefined'
-    ) {
-      return;
-    }
-
-    if (
-      status !== 'playing'
     ) {
       return;
     }
@@ -351,20 +647,49 @@ export default function TenipuriMeteorPage() {
     const previousBodyWidth =
       body.style.width;
 
+    const previousBodyTop =
+      body.style.top;
+
     const previousHtmlOverflow =
       html.style.overflow;
 
-    body.style.overflow =
-      'hidden';
 
-    html.style.overflow =
-      'hidden';
+    if (status === 'playing') {
 
-    body.style.position =
-      'fixed';
+      body.style.overflow =
+        'hidden';
 
-    body.style.width =
-      '100%';
+      html.style.overflow =
+        'hidden';
+
+      body.style.position =
+        'fixed';
+
+      body.style.width =
+        '100%';
+
+      body.style.top =
+        '0';
+
+    } else {
+
+      body.style.overflow =
+        'auto';
+
+      html.style.overflow =
+        'auto';
+
+      body.style.position =
+        '';
+
+      body.style.width =
+        '';
+
+      body.style.top =
+        '';
+
+    }
+
 
     return () => {
 
@@ -376,6 +701,9 @@ export default function TenipuriMeteorPage() {
 
       body.style.width =
         previousBodyWidth;
+
+      body.style.top =
+        previousBodyTop;
 
       html.style.overflow =
         previousHtmlOverflow;
@@ -425,6 +753,10 @@ export default function TenipuriMeteorPage() {
 
   // =======================================================
   // 問題読み込み
+  //
+  // ★ここが大きな変更点
+  //
+  // 一覧APIからは画像Base64を取得しない。
   // =======================================================
 
   useEffect(() => {
@@ -444,62 +776,96 @@ export default function TenipuriMeteorPage() {
               }
             );
 
+
           if (!res.ok) {
             throw new Error(
               `HTTP ${res.status}`
             );
           }
 
+
           const data =
             await res.json();
+
 
           if (cancelled) {
             return;
           }
 
-          if (!data.ok) {
 
-            setErrorText(
-              data.error ||
-              '問題の取得に失敗しました。'
-            );
+          // =====================================================
+// APIレスポンス確認
+//
+// ok / success のどちらを返すAPIでも対応。
+// 最終的には problems 配列が存在するかを基準にする。
+// =====================================================
 
-            setStatus(
-              'finished'
-            );
+if (
+  !Array.isArray(data.problems)
+) {
 
-            return;
-          }
+  console.error(
+    '[tenipuri/meteor] invalid API response:',
+    data
+  );
 
-          if (
-            !Array.isArray(
-              data.problems
-            ) ||
-            data.problems.length === 0
-          ) {
+  setErrorText(
+    data.error ||
+    data.message ||
+    '問題一覧を取得できませんでした。'
+  );
 
-            setErrorText(
-              '使える問題がありません。'
-            );
+  setStatus(
+    'finished'
+  );
 
-            setStatus(
-              'finished'
-            );
+  return;
+}
 
-            return;
-          }
+
+if (
+  data.problems.length === 0
+) {
+
+  setErrorText(
+    '使える問題がありません。'
+  );
+
+  setStatus(
+    'finished'
+  );
+
+  return;
+}
 
 
           const loadedProblems =
             data.problems;
 
-          setProblems(
-            loadedProblems
-          );
+
+          // -------------------------------------------------
+          // ゲーム内使用済み問題をリセット
+          // -------------------------------------------------
+
+          usedProblemKeysRef.current =
+            new Set();
+
+
+          // -------------------------------------------------
+          // 問題詳細キャッシュもリセット
+          // -------------------------------------------------
+
+          problemDetailsRef.current =
+            new Map();
+
+          problemDetailPromisesRef.current =
+            new Map();
 
 
           // -------------------------------------------------
           // 最初の3球
+          //
+          // 必ず別々の問題にする
           // -------------------------------------------------
 
           const count =
@@ -510,21 +876,59 @@ export default function TenipuriMeteorPage() {
 
           const initialBalls = [];
 
+
           for (
             let i = 0;
             i < count;
             i++
           ) {
 
+            const randomIndex =
+              getRandomUnusedProblemIndex(
+                loadedProblems,
+                usedProblemKeysRef.current
+              );
+
+
+            if (
+              randomIndex < 0
+            ) {
+              break;
+            }
+
+
+            const problem =
+              loadedProblems[
+                randomIndex
+              ];
+
+
+            const key =
+              getProblemKey(
+                problem,
+                randomIndex
+              );
+
+
+            // 使用済みに登録
+            usedProblemKeysRef.current.add(
+              key
+            );
+
+
             initialBalls.push(
               createBall(
-                i,
+                randomIndex,
                 loadedProblems
               )
             );
 
           }
 
+
+          setProblems(
+            loadedProblems
+          );
 
           ballsRef.current =
             initialBalls;
@@ -556,11 +960,37 @@ export default function TenipuriMeteorPage() {
           );
 
 
+          // -------------------------------------------------
+          // ★最初の3球だけ画像を取得
+          //
+          // 全問題ではなく、
+          // 実際に画面に出る3問だけ。
+          // -------------------------------------------------
+
+          initialBalls.forEach(
+            (ball) => {
+
+              const problem =
+                loadedProblems[
+                  ball.problemIndex
+                ];
+
+              loadProblemDetail(
+                problem
+              );
+
+            }
+          );
+
+
           setTimeout(() => {
 
-            inputRef.current?.focus();
+            inputRef.current?.focus({
+              preventScroll: true,
+            });
 
           }, 150);
+
 
         } catch (error) {
 
@@ -568,6 +998,7 @@ export default function TenipuriMeteorPage() {
             '[tenipuri/meteor] fetch error:',
             error
           );
+
 
           if (!cancelled) {
 
@@ -621,6 +1052,7 @@ export default function TenipuriMeteorPage() {
           ? score
           : prev;
 
+
       if (
         next > prev &&
         typeof window !== 'undefined'
@@ -639,6 +1071,7 @@ export default function TenipuriMeteorPage() {
 
       }
 
+
       return next;
 
     });
@@ -648,6 +1081,36 @@ export default function TenipuriMeteorPage() {
     score,
     errorText,
   ]);
+
+
+  // =======================================================
+  // メッセージ表示
+  // =======================================================
+
+  const showMessage = (text) => {
+
+    setMessage(text);
+
+
+    if (
+      messageTimerRef.current
+    ) {
+
+      clearTimeout(
+        messageTimerRef.current
+      );
+
+    }
+
+
+    messageTimerRef.current =
+      setTimeout(() => {
+
+        setMessage('');
+
+      }, 1800);
+
+  };
 
 
   // =======================================================
@@ -690,6 +1153,7 @@ export default function TenipuriMeteorPage() {
               prev - TICK_MS
             );
 
+
           if (
             next <= 0
           ) {
@@ -699,6 +1163,7 @@ export default function TenipuriMeteorPage() {
             );
 
           }
+
 
           return next;
 
@@ -737,9 +1202,11 @@ export default function TenipuriMeteorPage() {
             const ball =
               nextBalls[i];
 
+
             if (!ball) {
               continue;
             }
+
 
             // -------------------------------------------------
             // 打ち返し中はタイマー停止
@@ -771,13 +1238,24 @@ export default function TenipuriMeteorPage() {
               changed = true;
 
 
-              const problem =
+              const baseProblem =
                 problems[
                   ball.problemIndex
                 ];
 
 
+              // -------------------------------------------------
               // 振り返り
+              //
+              // ★キャッシュ済みなら画像付きデータを使用
+              // -------------------------------------------------
+
+              const problem =
+                getDetailedProblem(
+                  baseProblem
+                );
+
+
               if (problem) {
 
                 const review =
@@ -786,6 +1264,7 @@ export default function TenipuriMeteorPage() {
                     '（時間切れ）',
                     false
                   );
+
 
                 if (review) {
 
@@ -801,14 +1280,20 @@ export default function TenipuriMeteorPage() {
               }
 
 
+              // -------------------------------------------------
               // 被弾
+              // -------------------------------------------------
+
               setHits(
                 (prev) =>
                   prev + 1
               );
 
 
+              // -------------------------------------------------
               // 全体時間 -30秒
+              // -------------------------------------------------
+
               setTotalMs(
                 (prev) =>
                   Math.max(
@@ -824,11 +1309,16 @@ export default function TenipuriMeteorPage() {
               );
 
 
+              // -------------------------------------------------
               // 新しい問題
+              //
+              // 使用済み問題は絶対に選ばない
+              // -------------------------------------------------
+
               const randomIndex =
-                getRandomProblemIndex(
+                getRandomUnusedProblemIndex(
                   problems,
-                  ball.problemIndex
+                  usedProblemKeysRef.current
                 );
 
 
@@ -836,24 +1326,69 @@ export default function TenipuriMeteorPage() {
                 randomIndex >= 0
               ) {
 
+                const newProblem =
+                  problems[
+                    randomIndex
+                  ];
+
+
+                const newKey =
+                  getProblemKey(
+                    newProblem,
+                    randomIndex
+                  );
+
+
+                // 使用済みに登録
+                usedProblemKeysRef.current.add(
+                  newKey
+                );
+
+
                 nextBalls[i] =
                   createBall(
                     randomIndex,
                     problems
                   );
 
+
+                // -------------------------------------------------
+                // ★新しい球の詳細画像を先読み
+                // -------------------------------------------------
+
+                loadProblemDetail(
+                  newProblem
+                );
+
               }
+
+
+              // -------------------------------------------------
+              // 問題を使い切った場合
+              //
+              // 重複させず、その球を消す。
+              // -------------------------------------------------
+
+              else {
+
+                nextBalls.splice(i, 1);
+
+                i--;
+
+              }
+
 
             } else {
 
-              if (
-                nextMs !==
-                ball.remainingMs
-              ) {
+             if (
+  nextMs !==
+  ball.remainingMs
+) {
 
-                changed = true;
+  changed = true;
 
-              }
+}
+
 
               nextBalls[i] = {
                 ...ball,
@@ -874,6 +1409,7 @@ export default function TenipuriMeteorPage() {
             return nextBalls;
 
           }
+
 
           return prevBalls;
 
@@ -898,34 +1434,6 @@ export default function TenipuriMeteorPage() {
 
 
   // =======================================================
-  // メッセージ表示
-  // =======================================================
-
-  const showMessage = (text) => {
-
-    setMessage(text);
-
-    if (
-      messageTimerRef.current
-    ) {
-
-      clearTimeout(
-        messageTimerRef.current
-      );
-
-    }
-
-    messageTimerRef.current =
-      setTimeout(() => {
-
-        setMessage('');
-
-      }, 1800);
-
-  };
-
-
-  // =======================================================
   // クリーンアップ
   // =======================================================
 
@@ -943,9 +1451,12 @@ export default function TenipuriMeteorPage() {
 
       }
 
+
       returnTimersRef.current.forEach(
         (timer) => {
+
           clearTimeout(timer);
+
         }
       );
 
@@ -966,6 +1477,7 @@ export default function TenipuriMeteorPage() {
     const currentBalls =
       ballsRef.current;
 
+
     const ball =
       currentBalls[
         ballIndex
@@ -976,6 +1488,7 @@ export default function TenipuriMeteorPage() {
       return;
     }
 
+
     if (
       ball.returning
     ) {
@@ -983,15 +1496,25 @@ export default function TenipuriMeteorPage() {
     }
 
 
-    const problem =
+    const baseProblem =
       problems[
         ball.problemIndex
       ];
 
 
-    if (!problem) {
+    if (!baseProblem) {
       return;
     }
+
+
+    // -----------------------------------------------------
+    // ★キャッシュ済みなら画像付きデータを使う
+    // -----------------------------------------------------
+
+    const problem =
+      getDetailedProblem(
+        baseProblem
+      );
 
 
     // -----------------------------------------------------
@@ -1004,6 +1527,7 @@ export default function TenipuriMeteorPage() {
         userAnswer,
         true
       );
+
 
     if (review) {
 
@@ -1034,9 +1558,6 @@ export default function TenipuriMeteorPage() {
 
     // -----------------------------------------------------
     // 打ち返し状態
-    //
-    // ここで問題を消さず、
-    // returning=true のままエフェクトを表示。
     // -----------------------------------------------------
 
     setBalls((prevBalls) => {
@@ -1063,6 +1584,7 @@ export default function TenipuriMeteorPage() {
           }
         );
 
+
       ballsRef.current =
         next;
 
@@ -1073,6 +1595,8 @@ export default function TenipuriMeteorPage() {
 
     // -----------------------------------------------------
     // エフェクト終了後に新しい球へ交換
+    //
+    // 使用済み問題は選ばない
     // -----------------------------------------------------
 
     const timer =
@@ -1089,24 +1613,57 @@ export default function TenipuriMeteorPage() {
           }
 
 
-          const oldBall =
-            prevBalls[
-              ballIndex
-            ];
-
-
           const randomIndex =
-            getRandomProblemIndex(
+            getRandomUnusedProblemIndex(
               problems,
-              oldBall.problemIndex
+              usedProblemKeysRef.current
             );
 
+
+          // -------------------------------------------------
+          // 未使用問題がない
+          //
+          // 重複させず、この球を削除
+          // -------------------------------------------------
 
           if (
             randomIndex < 0
           ) {
-            return prevBalls;
+
+            const next =
+              prevBalls.filter(
+                (_, index) =>
+                  index !==
+                  ballIndex
+              );
+
+
+            ballsRef.current =
+              next;
+
+
+            return next;
+
           }
+
+
+          const newProblem =
+            problems[
+              randomIndex
+            ];
+
+
+          const newKey =
+            getProblemKey(
+              newProblem,
+              randomIndex
+            );
+
+
+          // 使用済みに登録
+          usedProblemKeysRef.current.add(
+            newKey
+          );
 
 
           const newBall =
@@ -1126,6 +1683,15 @@ export default function TenipuriMeteorPage() {
 
           ballsRef.current =
             next;
+
+
+          // -------------------------------------------------
+          // ★次の球の画像を先読み
+          // -------------------------------------------------
+
+          loadProblemDetail(
+            newProblem
+          );
 
 
           return next;
@@ -1157,7 +1723,9 @@ export default function TenipuriMeteorPage() {
       status !== 'playing'
     ) {
 
-      inputRef.current?.focus();
+      inputRef.current?.focus({
+        preventScroll: true,
+      });
 
       return;
     }
@@ -1169,7 +1737,9 @@ export default function TenipuriMeteorPage() {
 
     if (!input) {
 
-      inputRef.current?.focus();
+      inputRef.current?.focus({
+        preventScroll: true,
+      });
 
       return;
     }
@@ -1222,22 +1792,24 @@ export default function TenipuriMeteorPage() {
         continue;
       }
 
+const answer =
+  getAnswer(problem);
 
-      const answer =
-        getAnswer(problem);
+const acceptedAnswers =
+  getAcceptedAnswers(answer);
 
 
-      if (
-        normalize(answer) ===
-        normalizedInput
-      ) {
+if (
+  acceptedAnswers.includes(
+    normalizedInput
+  )
+) {
 
-        hitIndex = i;
+  hitIndex = i;
 
-        break;
+  break;
 
-      }
-
+}
     }
 
 
@@ -1255,6 +1827,7 @@ export default function TenipuriMeteorPage() {
       );
 
     }
+
 
     // -----------------------------------------------------
     // 不正解
@@ -1300,9 +1873,15 @@ export default function TenipuriMeteorPage() {
 
     return (
 
-      <GameLayout>
+      <GameLayout
+        scrollable
+      >
 
-        <div className="w-full max-w-5xl mx-auto px-3 pb-8 space-y-4">
+        <div className="w-full max-w-5xl mx-auto px-3 pb-12 space-y-4">
+
+          {/* -------------------------------------------------
+              結果
+          -------------------------------------------------- */}
 
           <div className="max-w-md mx-auto bg-slate-950/90 border border-slate-600 rounded-2xl shadow-xl p-4 sm:p-6">
 
@@ -1393,9 +1972,13 @@ export default function TenipuriMeteorPage() {
           </div>
 
 
+          {/* -------------------------------------------------
+              振り返り
+          -------------------------------------------------- */}
+
           {!errorText && (
 
-            <div className="max-w-3xl mx-auto">
+            <div className="max-w-3xl mx-auto w-full">
 
               <TenipuriMeteorReview
                 questions={
@@ -1412,6 +1995,7 @@ export default function TenipuriMeteorPage() {
       </GameLayout>
 
     );
+
   }
 
 
@@ -1539,7 +2123,7 @@ export default function TenipuriMeteorPage() {
 
 
         {/* =================================================
-            ボール3個
+            ボール
         ================================================== */}
 
         <div className="absolute inset-0">
@@ -1550,15 +2134,35 @@ export default function TenipuriMeteorPage() {
               index
             ) => {
 
-              const problem =
+              const baseProblem =
                 problems[
                   ball.problemIndex
                 ];
 
 
-              if (!problem) {
+              if (!baseProblem) {
                 return null;
               }
+
+
+              // ------------------------------------------------
+              // ★キャッシュ済みの完全データを取得
+              // ------------------------------------------------
+
+              const problem =
+                getDetailedProblem(
+                  baseProblem
+                );
+
+
+              const problemId =
+                getProblemId(
+                  problem
+                );
+
+
+              const imageUrl =
+                problem?.image_url || '';
 
 
               const limitMs =
@@ -1590,9 +2194,6 @@ export default function TenipuriMeteorPage() {
 
               // ------------------------------------------------
               // 接近度
-              //
-              // 開始時 = 0
-              // 時間切れ = 1
               // ------------------------------------------------
 
               const distance =
@@ -1618,14 +2219,6 @@ export default function TenipuriMeteorPage() {
 
               // ------------------------------------------------
               // サイズ
-              //
-              // 開始時はかなり小さい。
-              // 手前に来ても適度な大きさまで。
-              //
-              // 元の w-72 = 288px を基準にして、
-              // scale 0.28～0.72 にする。
-              //
-              // これで開始直後に巨大な球になるのを防ぐ。
               // ------------------------------------------------
 
               const scale =
@@ -1635,9 +2228,6 @@ export default function TenipuriMeteorPage() {
 
               // ------------------------------------------------
               // 奥→手前
-              //
-              // bottomを極端に動かさない。
-              // これが「球が画面外に消える」問題の対策。
               // ------------------------------------------------
 
               const bottom =
@@ -1652,20 +2242,26 @@ export default function TenipuriMeteorPage() {
               return (
 
                 <div
-                  key={`${index}-${ball.problemIndex}`}
+                  key={`${index}-${getProblemKey(problem, ball.problemIndex)}`}
                   className="absolute pointer-events-none"
                   style={{
                     left,
+
                     bottom:
                       `${bottom}%`,
+
                     transform:
                       `translate3d(-50%, 50%, 0) scale(${scale})`,
+
                     transformOrigin:
                       'center center',
+
                     zIndex:
                       20 + index,
+
                     willChange:
                       'transform',
+
                     transition:
                       isReturning
                         ? 'transform 0.45s cubic-bezier(.15,.8,.25,1)'
@@ -1713,12 +2309,25 @@ export default function TenipuriMeteorPage() {
                     <button
                       type="button"
                       className="pointer-events-auto relative w-72 h-72 rounded-full overflow-hidden border-4 border-yellow-200 bg-[#d9f000] shadow-[inset_-18px_-18px_30px_rgba(0,0,0,0.28),inset_12px_12px_20px_rgba(255,255,255,0.55),0_10px_25px_rgba(0,0,0,0.5)]"
-                      onClick={() => {
+                      onClick={async () => {
+
+                        // -----------------------------------------
+                        // ★タップ時にも確実に最新詳細を取得
+                        // -----------------------------------------
+
+                        const detailed =
+                          await loadProblemDetail(
+                            baseProblem
+                          );
+
 
                         setSelectedBall({
                           index:
                             index + 1,
-                          problem,
+
+                          problem:
+                            detailed ||
+                            problem,
                         });
 
                       }}
@@ -1728,20 +2337,41 @@ export default function TenipuriMeteorPage() {
                           問題画像
                       ======================================== */}
 
-                      <img
-                        src={
-                          problem.image_url
-                        }
-                        alt="打球問題"
-                        draggable="false"
-                        className="absolute inset-0 w-full h-full object-contain p-5"
-                        style={{
-                          backfaceVisibility:
-                            'hidden',
-                          WebkitBackfaceVisibility:
-                            'hidden',
-                        }}
-                      />
+                      {imageUrl ? (
+
+                        <img
+                          src={
+                            imageUrl
+                          }
+                          alt="打球問題"
+                          draggable="false"
+                          className="absolute inset-0 w-full h-full object-contain p-5 select-none"
+                          style={{
+                            backfaceVisibility:
+                              'hidden',
+
+                            WebkitBackfaceVisibility:
+                              'hidden',
+
+                            userSelect:
+                              'none',
+
+                            WebkitUserSelect:
+                              'none',
+                          }}
+                        />
+
+                      ) : (
+
+                        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+
+                          <div className="rounded-full bg-black/55 px-4 py-2 text-xs font-bold text-white">
+                            画像読み込み中…
+                          </div>
+
+                        </div>
+
+                      )}
 
 
                       {/* =======================================
@@ -1826,11 +2456,13 @@ export default function TenipuriMeteorPage() {
                   ref={inputRef}
                   type="text"
                   value={answerInput}
+
                   onChange={(e) =>
                     setAnswerInput(
                       e.target.value
                     )
                   }
+
                   onKeyDown={(e) => {
 
                     if (
@@ -1844,13 +2476,9 @@ export default function TenipuriMeteorPage() {
                     }
 
                   }}
+
                   onFocus={() => {
 
-                    // iOSでfocus時にページを
-                    // scrollIntoViewさせない。
-                    //
-                    // preventScroll対応ブラウザでは
-                    // 明示的にフォーカスし直す。
                     requestAnimationFrame(() => {
 
                       inputRef.current?.focus({
@@ -1860,21 +2488,30 @@ export default function TenipuriMeteorPage() {
                     });
 
                   }}
+
                   placeholder="答えを入力"
+
                   autoComplete="off"
+
                   autoCorrect="off"
+
                   autoCapitalize="none"
+
                   spellCheck={false}
+
                   enterKeyHint="send"
+
                   className="flex-1 min-w-0 rounded-full border-2 border-white/40 bg-black/70 px-4 py-2 text-sm text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-yellow-300 focus:border-yellow-300"
                 />
 
 
                 <button
                   type="button"
+
                   onClick={
                     handleAnswer
                   }
+
                   className="shrink-0 px-5 py-2 rounded-full bg-yellow-400 text-black text-sm font-black shadow-lg hover:bg-yellow-300 active:scale-95 transition whitespace-nowrap"
                 >
                   打ち返す！
@@ -1906,25 +2543,33 @@ export default function TenipuriMeteorPage() {
 
       {/* =================================================
           画像拡大モーダル
-      ================================================== */}
+      ================================================= */}
 
       {selectedBall && (
 
         <div
-          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/85 px-3"
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/85 p-3 sm:p-6"
           onClick={() =>
             setSelectedBall(null)
           }
         >
 
+          {/* -------------------------------------------------
+              モーダル本体
+          -------------------------------------------------- */}
+
           <div
-            className="relative max-w-4xl w-full max-h-[90dvh] bg-slate-950 border-2 border-yellow-300 rounded-2xl p-3 shadow-2xl"
+            className="relative w-full max-w-4xl max-h-[calc(100dvh-24px)] sm:max-h-[calc(100dvh-48px)] bg-slate-950 border-2 border-yellow-300 rounded-2xl p-3 shadow-2xl flex flex-col overflow-hidden"
             onClick={(e) =>
               e.stopPropagation()
             }
           >
 
-            <div className="text-center mb-2">
+            {/* -------------------------------------------------
+                問題タイトル
+            -------------------------------------------------- */}
+
+            <div className="text-center mb-2 shrink-0">
 
               <p className="text-sm font-black text-yellow-300">
                 {getQuestionText(
@@ -1935,32 +2580,69 @@ export default function TenipuriMeteorPage() {
             </div>
 
 
-            <div className="max-h-[75dvh] overflow-auto rounded-xl bg-black">
+            {/* -------------------------------------------------
+                画像エリア
+            -------------------------------------------------- */}
 
-              <img
-                src={
-                  selectedBall
-                    .problem
-                    .image_url
-                }
-                alt="打球問題"
-                draggable="false"
-                className="block max-w-full h-auto mx-auto"
-              />
+            <div className="flex-1 min-h-0 overflow-auto rounded-xl bg-black flex items-center justify-center">
+
+              {selectedBall.problem?.image_url ? (
+
+                <img
+                  src={
+                    selectedBall
+                      .problem
+                      .image_url
+                  }
+
+                  alt="打球問題"
+
+                  draggable="false"
+
+                  className="block max-w-full max-h-[calc(100dvh-150px)] w-auto h-auto mx-auto object-contain select-none"
+
+                  style={{
+                    userSelect:
+                      'none',
+
+                    WebkitUserSelect:
+                      'none',
+
+                    WebkitTouchCallout:
+                      'none',
+
+                    touchAction:
+                      'pan-y',
+                  }}
+                />
+
+              ) : (
+
+                <div className="text-sm text-white/70">
+                  画像を読み込み中…
+                </div>
+
+              )}
 
             </div>
 
 
-            <div className="mt-3 flex justify-center">
+            {/* -------------------------------------------------
+                閉じる
+            -------------------------------------------------- */}
+
+            <div className="mt-3 flex justify-center shrink-0">
 
               <button
                 type="button"
+
                 onClick={() =>
                   setSelectedBall(
                     null
                   )
                 }
-                className="px-5 py-2 rounded-full bg-yellow-400 text-black text-sm font-bold hover:bg-yellow-300"
+
+                className="px-5 py-2 rounded-full bg-yellow-400 text-black text-sm font-bold hover:bg-yellow-300 active:scale-95 transition"
               >
                 閉じる
               </button>
@@ -1974,7 +2656,9 @@ export default function TenipuriMeteorPage() {
       )}
 
     </GameLayout>
+
   );
+
 }
 
 
@@ -1983,6 +2667,7 @@ export default function TenipuriMeteorPage() {
 // =========================================================
 
 function totalRatio(totalMs) {
+
   return (
     Math.max(
       0,
@@ -1993,6 +2678,7 @@ function totalRatio(totalMs) {
       )
     ) * 100
   );
+
 }
 
 
@@ -2002,11 +2688,18 @@ function totalRatio(totalMs) {
 
 function GameLayout({
   children,
+  scrollable = false,
 }) {
 
   return (
 
-    <main className="tenipuri-nozoom min-h-[100dvh] h-[100dvh] bg-slate-950 text-white relative overflow-hidden">
+    <main
+      className={
+        scrollable
+          ? 'tenipuri-nozoom min-h-[100dvh] bg-slate-950 text-white relative'
+          : 'tenipuri-nozoom min-h-[100dvh] h-[100dvh] bg-slate-950 text-white relative overflow-hidden'
+      }
+    >
 
       {/* ===================================================
           iOS入力ズーム防止
@@ -2021,7 +2714,6 @@ function GameLayout({
 
         .tenipuri-nozoom {
           overscroll-behavior: none;
-          -webkit-overflow-scrolling: auto;
         }
 
         @media (max-width: 640px) {
@@ -2041,7 +2733,13 @@ function GameLayout({
       `}</style>
 
 
-      <div className="relative z-10 flex flex-col items-center justify-start h-full pt-3 px-3">
+      <div
+        className={
+          scrollable
+            ? 'relative z-10 flex flex-col items-center justify-start min-h-[100dvh] pt-3 px-3'
+            : 'relative z-10 flex flex-col items-center justify-start h-full pt-3 px-3'
+        }
+      >
 
         {/* =================================================
             ヘッダー
@@ -2071,5 +2769,5 @@ function GameLayout({
     </main>
 
   );
-}
 
+}

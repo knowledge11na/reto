@@ -2,7 +2,7 @@
 
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 
 export default function TenipuriProblemsPage() {
@@ -35,6 +35,8 @@ export default function TenipuriProblemsPage() {
 
   // =========================================================
   // 問題取得
+  //
+  // 一覧APIは高速化のため画像Base64を返さない。
   // =========================================================
 
   const loadProblems = async () => {
@@ -43,23 +45,58 @@ export default function TenipuriProblemsPage() {
 
     try {
       const res = await fetch('/api/tenipuri/problems', {
+        method: 'GET',
         cache: 'no-store',
       });
 
-      const data = await res.json();
+      let data = null;
 
-      if (!res.ok || !data.ok) {
+      try {
+        data = await res.json();
+      } catch {
         throw new Error(
-          data.error || '問題一覧を取得できませんでした。'
+          'APIから正しいJSONを受け取れませんでした。'
         );
       }
 
-      setProblems(data.problems || []);
+      console.log('[tenipuri/problems] frontend GET', {
+        status: res.status,
+        success: data?.success,
+        ok: data?.ok,
+        count: Array.isArray(data?.problems)
+          ? data.problems.length
+          : 0,
+      });
+
+      if (
+        !res.ok ||
+        (data?.success !== true && data?.ok !== true)
+      ) {
+        throw new Error(
+          data?.error ||
+            data?.message ||
+            '問題一覧を取得できませんでした。'
+        );
+      }
+
+      if (!Array.isArray(data?.problems)) {
+        throw new Error(
+          '問題一覧のデータ形式が正しくありません。'
+        );
+      }
+
+      setProblems(data.problems);
     } catch (e) {
-      console.error(e);
+      console.error(
+        '[tenipuri/problems] load failed:',
+        e
+      );
+
+      setProblems([]);
 
       setError(
-        e.message || '問題一覧を取得できませんでした。'
+        e?.message ||
+          '問題一覧を取得できませんでした。'
       );
     } finally {
       setLoading(false);
@@ -76,12 +113,19 @@ export default function TenipuriProblemsPage() {
 
   const filterOptions = useMemo(() => {
     const getUniqueValues = (key) => {
-      return [...new Set(
-        problems
-          .map((problem) => problem[key])
-          .filter((value) => value !== null && value !== undefined && String(value).trim() !== '')
-          .map((value) => String(value))
-      )];
+      return [
+        ...new Set(
+          problems
+            .map((problem) => problem[key])
+            .filter(
+              (value) =>
+                value !== null &&
+                value !== undefined &&
+                String(value).trim() !== ''
+            )
+            .map((value) => String(value))
+        ),
+      ];
     };
 
     const sortJapanese = (values) => {
@@ -97,24 +141,30 @@ export default function TenipuriProblemsPage() {
       hitter: sortJapanese(getUniqueValues('hitter')),
       target: sortJapanese(getUniqueValues('target')),
       episode: sortJapanese(getUniqueValues('episode')),
-      technique: sortJapanese(getUniqueValues('technique')),
-      location: sortJapanese(getUniqueValues('location')),
+      technique: sortJapanese(
+        getUniqueValues('technique')
+      ),
+      location: sortJapanese(
+        getUniqueValues('location')
+      ),
       hand: sortJapanese(getUniqueValues('hand')),
       result: sortJapanese(getUniqueValues('result')),
     };
   }, [problems]);
 
   // =========================================================
-  // 絞り込み実行
+  // 絞り込み
   // =========================================================
 
   const filteredProblems = useMemo(() => {
     return problems.filter((problem) => {
-      return Object.entries(filters).every(([key, value]) => {
-        if (!value) return true;
+      return Object.entries(filters).every(
+        ([key, value]) => {
+          if (!value) return true;
 
-        return String(problem[key] ?? '') === value;
-      });
+          return String(problem[key] ?? '') === value;
+        }
+      );
     });
   }, [problems, filters]);
 
@@ -156,7 +206,9 @@ export default function TenipuriProblemsPage() {
   const handleDelete = async (problem) => {
     const ok = window.confirm(
       `この問題を削除しますか？\n\n` +
-        `${problem.hitter} → ${problem.target}`
+        `${problem.hitter || ''} → ${
+          problem.target || ''
+        }`
     );
 
     if (!ok) return;
@@ -166,22 +218,32 @@ export default function TenipuriProblemsPage() {
 
     try {
       const res = await fetch(
-        `/api/tenipuri/problems?id=${problem.id}`,
+        `/api/tenipuri/problems?id=${encodeURIComponent(
+          problem.id
+        )}`,
         {
           method: 'DELETE',
+          cache: 'no-store',
         }
       );
 
       const data = await res.json();
 
-      if (!res.ok || !data.ok) {
+      if (
+        !res.ok ||
+        (data?.success !== true && data?.ok !== true)
+      ) {
         throw new Error(
-          data.error || '問題の削除に失敗しました。'
+          data?.error ||
+            data?.message ||
+            '問題の削除に失敗しました。'
         );
       }
 
       setProblems((prev) =>
-        prev.filter((p) => p.id !== problem.id)
+        prev.filter(
+          (p) => String(p.id) !== String(problem.id)
+        )
       );
 
       setMessage('問題を削除しました。');
@@ -189,61 +251,120 @@ export default function TenipuriProblemsPage() {
       console.error(e);
 
       setError(
-        e.message || '問題の削除に失敗しました。'
+        e?.message ||
+          '問題の削除に失敗しました。'
       );
     }
   };
 
   // =========================================================
   // 編集開始
+  //
+  // 一覧APIでは画像を取得していないため、
+  // 編集開始時だけ対象問題の完全データを取得する。
   // =========================================================
 
-  const startEdit = (problem) => {
+  const startEdit = async (problem) => {
     setMessage('');
     setError('');
 
-    let answerType = 'hitter';
+    try {
+      let fullProblem = problem;
 
-    if (problem.answer_type === 'target') {
-      answerType = 'target';
-    } else if (problem.answer_type === 'technique') {
-      answerType = 'technique';
+      const hasFullImageData =
+        typeof problem.image_url === 'string' &&
+        problem.image_url.length > 0;
+
+      const hasFullExplanationData =
+        typeof problem.explanation_image_url === 'string' &&
+        problem.explanation_image_url.length > 0;
+
+      if (!hasFullImageData && !hasFullExplanationData) {
+        const res = await fetch(
+          `/api/tenipuri/problems?id=${encodeURIComponent(
+            problem.id
+          )}`,
+          {
+            method: 'GET',
+            cache: 'no-store',
+          }
+        );
+
+        const data = await res.json();
+
+        if (
+          !res.ok ||
+          (data?.success !== true && data?.ok !== true)
+        ) {
+          throw new Error(
+            data?.error ||
+              data?.message ||
+              '問題データの取得に失敗しました。'
+          );
+        }
+
+        fullProblem = data.problem;
+
+        if (!fullProblem) {
+          throw new Error(
+            '問題データが見つかりませんでした。'
+          );
+        }
+      }
+
+      let answerType = 'hitter';
+
+      if (fullProblem.answer_type === 'target') {
+        answerType = 'target';
+      } else if (
+        fullProblem.answer_type === 'technique'
+      ) {
+        answerType = 'technique';
+      }
+
+      setEditing({
+        id: fullProblem.id,
+
+        hitter: fullProblem.hitter || '',
+        target: fullProblem.target || '',
+
+        answerType,
+
+        episode: fullProblem.episode || '',
+        technique: fullProblem.technique || '',
+        location: fullProblem.location || '',
+        hand: fullProblem.hand || '',
+        result: fullProblem.result || '',
+
+        imageUrl: fullProblem.image_url || '',
+        imageFile: null,
+        imagePreview: fullProblem.image_url || '',
+
+        explanationImageUrl:
+          fullProblem.explanation_image_url || '',
+        explanationImageFile: null,
+        explanationImagePreview:
+          fullProblem.explanation_image_url || '',
+      });
+
+      setIsImageDragging(false);
+      setIsExplanationImageDragging(false);
+
+      window.scrollTo({
+        top: 0,
+        behavior: 'smooth',
+      });
+    } catch (e) {
+      console.error(
+        '[tenipuri/problems] startEdit failed:',
+        e
+      );
+
+      setError(
+        e?.message ||
+          '問題データの取得に失敗しました。'
+      );
     }
-
-    setEditing({
-      id: problem.id,
-
-      hitter: problem.hitter || '',
-      target: problem.target || '',
-
-      answerType,
-
-      episode: problem.episode || '',
-      technique: problem.technique || '',
-      location: problem.location || '',
-      hand: problem.hand || '',
-      result: problem.result || '',
-
-      // 問題画像
-      imageUrl: problem.image_url || '',
-      imageFile: null,
-      imagePreview: problem.image_url || '',
-
-      // 解説画像
-      explanationImageUrl:
-        problem.explanation_image_url || '',
-      explanationImageFile: null,
-      explanationImagePreview:
-        problem.explanation_image_url || '',
-    });
-
-    setIsImageDragging(false);
-    setIsExplanationImageDragging(false);
-
-    window.scrollTo({
-      top: 0,
-      behavior: 'smooth',
-    });
   };
 
   // =========================================================
@@ -271,7 +392,7 @@ export default function TenipuriProblemsPage() {
   };
 
   // =========================================================
-  // 問題画像変更
+  // 問題画像
   // =========================================================
 
   const handleImageChange = (e) => {
@@ -283,10 +404,6 @@ export default function TenipuriProblemsPage() {
 
     e.target.value = '';
   };
-
-  // =========================================================
-  // 問題画像ファイル処理
-  // =========================================================
 
   const handleImageFile = (file) => {
     if (!validateImageFile(file, '打球画像')) {
@@ -314,10 +431,6 @@ export default function TenipuriProblemsPage() {
     setIsImageDragging(false);
   };
 
-  // =========================================================
-  // 問題画像ドラッグ開始
-  // =========================================================
-
   const handleImageDragOver = (e) => {
     e.preventDefault();
     e.stopPropagation();
@@ -329,15 +442,10 @@ export default function TenipuriProblemsPage() {
     setIsImageDragging(true);
   };
 
-  // =========================================================
-  // 問題画像ドラッグ離脱
-  // =========================================================
-
   const handleImageDragLeave = (e) => {
     e.preventDefault();
     e.stopPropagation();
 
-    // 子要素へ移動しただけの場合は解除しない
     if (
       e.currentTarget &&
       e.relatedTarget &&
@@ -348,10 +456,6 @@ export default function TenipuriProblemsPage() {
 
     setIsImageDragging(false);
   };
-
-  // =========================================================
-  // 問題画像ドロップ
-  // =========================================================
 
   const handleImageDrop = (e) => {
     e.preventDefault();
@@ -367,7 +471,7 @@ export default function TenipuriProblemsPage() {
   };
 
   // =========================================================
-  // 解説画像変更
+  // 解説画像
   // =========================================================
 
   const handleExplanationImageChange = (e) => {
@@ -380,10 +484,6 @@ export default function TenipuriProblemsPage() {
     e.target.value = '';
   };
 
-  // =========================================================
-  // 解説画像ファイル処理
-  // =========================================================
-
   const handleExplanationImageFile = (file) => {
     if (!validateImageFile(file, '解説画像')) {
       return;
@@ -394,9 +494,13 @@ export default function TenipuriProblemsPage() {
 
       if (
         prev.explanationImagePreview &&
-        prev.explanationImagePreview.startsWith('blob:')
+        prev.explanationImagePreview.startsWith(
+          'blob:'
+        )
       ) {
-        URL.revokeObjectURL(prev.explanationImagePreview);
+        URL.revokeObjectURL(
+          prev.explanationImagePreview
+        );
       }
 
       return {
@@ -411,10 +515,6 @@ export default function TenipuriProblemsPage() {
     setIsExplanationImageDragging(false);
   };
 
-  // =========================================================
-  // 解説画像ドラッグ開始
-  // =========================================================
-
   const handleExplanationImageDragOver = (e) => {
     e.preventDefault();
     e.stopPropagation();
@@ -425,10 +525,6 @@ export default function TenipuriProblemsPage() {
 
     setIsExplanationImageDragging(true);
   };
-
-  // =========================================================
-  // 解説画像ドラッグ離脱
-  // =========================================================
 
   const handleExplanationImageDragLeave = (e) => {
     e.preventDefault();
@@ -444,10 +540,6 @@ export default function TenipuriProblemsPage() {
 
     setIsExplanationImageDragging(false);
   };
-
-  // =========================================================
-  // 解説画像ドロップ
-  // =========================================================
 
   const handleExplanationImageDrop = (e) => {
     e.preventDefault();
@@ -496,43 +588,61 @@ export default function TenipuriProblemsPage() {
       return;
     }
 
-    if (
-      editing.answerType === 'hitter' &&
-      !editing.hitter.trim()
-    ) {
-      setError(
-        '答えを「誰が打ったか」にする場合は、「誰が」を入力してください。'
-      );
-      return;
-    }
-
-    if (
-      editing.answerType === 'target' &&
-      !editing.target.trim()
-    ) {
-      setError(
-        '答えを「誰に打ったか」にする場合は、「誰に」を入力してください。'
-      );
-      return;
-    }
-
     setSaving(true);
 
     try {
       const formData = new FormData();
 
-      formData.append('id', String(editing.id));
-      formData.append('hitter', editing.hitter.trim());
-      formData.append('target', editing.target.trim());
-      formData.append('answerType', editing.answerType);
-      formData.append('episode', editing.episode.trim());
-      formData.append('technique', editing.technique.trim());
-      formData.append('location', editing.location.trim());
-      formData.append('hand', editing.hand.trim());
-      formData.append('result', editing.result.trim());
+      formData.append(
+        'id',
+        String(editing.id)
+      );
+
+      formData.append(
+        'hitter',
+        editing.hitter.trim()
+      );
+
+      formData.append(
+        'target',
+        editing.target.trim()
+      );
+
+      formData.append(
+        'answerType',
+        editing.answerType
+      );
+
+      formData.append(
+        'episode',
+        editing.episode.trim()
+      );
+
+      formData.append(
+        'technique',
+        editing.technique.trim()
+      );
+
+      formData.append(
+        'location',
+        editing.location.trim()
+      );
+
+      formData.append(
+        'hand',
+        editing.hand.trim()
+      );
+
+      formData.append(
+        'result',
+        editing.result.trim()
+      );
 
       if (editing.imageFile) {
-        formData.append('image', editing.imageFile);
+        formData.append(
+          'image',
+          editing.imageFile
+        );
       }
 
       if (editing.explanationImageFile) {
@@ -547,40 +657,36 @@ export default function TenipuriProblemsPage() {
         {
           method: 'PUT',
           body: formData,
+          cache: 'no-store',
         }
       );
 
       const data = await res.json();
 
-      if (!res.ok || !data.ok) {
+      if (
+        !res.ok ||
+        (data?.success !== true && data?.ok !== true)
+      ) {
         throw new Error(
-          data.error || '問題の更新に失敗しました。'
+          data?.error ||
+            data?.message ||
+            '問題の更新に失敗しました。'
         );
       }
 
-      setProblems((prev) =>
-        prev.map((p) =>
-          p.id === editing.id
-            ? data.problem
-            : p
-        )
-      );
-
-      if (
-        editing.imagePreview &&
-        editing.imagePreview.startsWith('blob:')
-      ) {
-        URL.revokeObjectURL(editing.imagePreview);
-      }
-
-      if (
-        editing.explanationImagePreview &&
-        editing.explanationImagePreview.startsWith('blob:')
-      ) {
-        URL.revokeObjectURL(
-          editing.explanationImagePreview
+      if (data.problem) {
+        setProblems((prev) =>
+          prev.map((p) =>
+            String(p.id) === String(editing.id)
+              ? data.problem
+              : p
+          )
         );
+      } else {
+        await loadProblems();
       }
+
+      revokeEditingBlobUrls(editing);
 
       setEditing(null);
       setMessage('問題を更新しました。');
@@ -590,13 +696,43 @@ export default function TenipuriProblemsPage() {
         behavior: 'smooth',
       });
     } catch (e) {
-      console.error(e);
+      console.error(
+        '[tenipuri/problems] update failed:',
+        e
+      );
 
       setError(
-        e.message || '問題の更新に失敗しました。'
+        e?.message ||
+          '問題の更新に失敗しました。'
       );
     } finally {
       setSaving(false);
+    }
+  };
+
+  // =========================================================
+  // Blob URL解放
+  // =========================================================
+
+  const revokeEditingBlobUrls = (state) => {
+    if (
+      state?.imagePreview &&
+      state.imagePreview.startsWith('blob:')
+    ) {
+      URL.revokeObjectURL(
+        state.imagePreview
+      );
+    }
+
+    if (
+      state?.explanationImagePreview &&
+      state.explanationImagePreview.startsWith(
+        'blob:'
+      )
+    ) {
+      URL.revokeObjectURL(
+        state.explanationImagePreview
+      );
     }
   };
 
@@ -629,14 +765,10 @@ export default function TenipuriProblemsPage() {
           </header>
 
           {error && (
-            <div className="mb-4 rounded-xl border border-red-300 bg-red-50 px-4 py-3 text-sm font-bold text-red-700">
+            <div className="mb-4 rounded-xl border border-red-300 bg-red-50 px-4 py-3 text-sm font-bold text-red-700 whitespace-pre-wrap">
               {error}
             </div>
           )}
-
-          {/* =================================================
-              打球情報
-          ================================================== */}
 
           <section className="mb-5 rounded-2xl border-2 border-slate-200 bg-white p-4 shadow-sm">
 
@@ -734,10 +866,6 @@ export default function TenipuriProblemsPage() {
             </div>
           </section>
 
-          {/* =================================================
-              答え
-          ================================================== */}
-
           <section className="mb-5 rounded-2xl border-2 border-amber-300 bg-amber-50 p-4">
 
             <h2 className="font-extrabold text-amber-900 mb-1">
@@ -798,10 +926,6 @@ export default function TenipuriProblemsPage() {
             </div>
           </section>
 
-          {/* =================================================
-              問題画像
-          ================================================== */}
-
           <section className="mb-5 rounded-2xl border-2 border-sky-300 bg-white p-4">
 
             <h2 className="font-extrabold mb-3">
@@ -821,11 +945,13 @@ export default function TenipuriProblemsPage() {
             )}
 
             <div
-              onClick={() => {
+              onClick={() =>
                 document
-                  .getElementById('edit-image-input')
-                  ?.click();
-              }}
+                  .getElementById(
+                    'edit-image-input'
+                  )
+                  ?.click()
+              }
               onDragEnter={handleImageDragOver}
               onDragOver={handleImageDragOver}
               onDragLeave={handleImageDragLeave}
@@ -865,10 +991,6 @@ export default function TenipuriProblemsPage() {
 
           </section>
 
-          {/* =================================================
-              解説画像
-          ================================================== */}
-
           <section className="mb-5 rounded-2xl border-2 border-violet-300 bg-violet-50 p-4">
 
             <h2 className="font-extrabold text-violet-900 mb-3">
@@ -883,7 +1005,9 @@ export default function TenipuriProblemsPage() {
               <div className="mb-4 rounded-xl overflow-hidden border border-violet-200 bg-white">
 
                 <img
-                  src={editing.explanationImagePreview}
+                  src={
+                    editing.explanationImagePreview
+                  }
                   alt="解説画像"
                   className="w-full max-h-[400px] object-contain"
                 />
@@ -892,17 +1016,25 @@ export default function TenipuriProblemsPage() {
             )}
 
             <div
-              onClick={() => {
+              onClick={() =>
                 document
                   .getElementById(
                     'edit-explanation-image-input'
                   )
-                  ?.click();
-              }}
-              onDragEnter={handleExplanationImageDragOver}
-              onDragOver={handleExplanationImageDragOver}
-              onDragLeave={handleExplanationImageDragLeave}
-              onDrop={handleExplanationImageDrop}
+                  ?.click()
+              }
+              onDragEnter={
+                handleExplanationImageDragOver
+              }
+              onDragOver={
+                handleExplanationImageDragOver
+              }
+              onDragLeave={
+                handleExplanationImageDragLeave
+              }
+              onDrop={
+                handleExplanationImageDrop
+              }
               className={`block cursor-pointer rounded-xl border-2 border-dashed px-4 py-8 text-center transition ${
                 isExplanationImageDragging
                   ? 'border-violet-500 bg-violet-100 scale-[1.01]'
@@ -930,17 +1062,15 @@ export default function TenipuriProblemsPage() {
                 id="edit-explanation-image-input"
                 type="file"
                 accept="image/*"
-                onChange={handleExplanationImageChange}
+                onChange={
+                  handleExplanationImageChange
+                }
                 className="hidden"
               />
 
             </div>
 
           </section>
-
-          {/* =================================================
-              保存
-          ================================================== */}
 
           <div className="flex flex-col gap-3">
 
@@ -950,36 +1080,22 @@ export default function TenipuriProblemsPage() {
               disabled={saving}
               className="w-full rounded-2xl bg-emerald-500 px-4 py-4 text-sm font-extrabold text-white hover:bg-emerald-400 disabled:opacity-50"
             >
-              {saving ? '保存中...' : '変更を保存する'}
+              {saving
+                ? '保存中...'
+                : '変更を保存する'}
             </button>
 
             <button
               type="button"
               onClick={() => {
-                if (
-                  editing.imagePreview &&
-                  editing.imagePreview.startsWith('blob:')
-                ) {
-                  URL.revokeObjectURL(
-                    editing.imagePreview
-                  );
-                }
-
-                if (
-                  editing.explanationImagePreview &&
-                  editing.explanationImagePreview.startsWith(
-                    'blob:'
-                  )
-                ) {
-                  URL.revokeObjectURL(
-                    editing.explanationImagePreview
-                  );
-                }
+                revokeEditingBlobUrls(editing);
 
                 setEditing(null);
                 setError('');
                 setIsImageDragging(false);
-                setIsExplanationImageDragging(false);
+                setIsExplanationImageDragging(
+                  false
+                );
               }}
               className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-xs font-bold"
             >
@@ -1094,7 +1210,10 @@ export default function TenipuriProblemsPage() {
                   options={filterOptions.hitter}
                   placeholder="全員"
                   onChange={(value) =>
-                    handleFilterChange('hitter', value)
+                    handleFilterChange(
+                      'hitter',
+                      value
+                    )
                   }
                 />
 
@@ -1104,7 +1223,10 @@ export default function TenipuriProblemsPage() {
                   options={filterOptions.target}
                   placeholder="全員"
                   onChange={(value) =>
-                    handleFilterChange('target', value)
+                    handleFilterChange(
+                      'target',
+                      value
+                    )
                   }
                 />
 
@@ -1114,27 +1236,40 @@ export default function TenipuriProblemsPage() {
                   options={filterOptions.episode}
                   placeholder="全話"
                   onChange={(value) =>
-                    handleFilterChange('episode', value)
+                    handleFilterChange(
+                      'episode',
+                      value
+                    )
                   }
                 />
 
                 <FilterSelect
                   label="技名"
                   value={filters.technique}
-                  options={filterOptions.technique}
+                  options={
+                    filterOptions.technique
+                  }
                   placeholder="全技"
                   onChange={(value) =>
-                    handleFilterChange('technique', value)
+                    handleFilterChange(
+                      'technique',
+                      value
+                    )
                   }
                 />
 
                 <FilterSelect
                   label="場所"
                   value={filters.location}
-                  options={filterOptions.location}
+                  options={
+                    filterOptions.location
+                  }
                   placeholder="全場所"
                   onChange={(value) =>
-                    handleFilterChange('location', value)
+                    handleFilterChange(
+                      'location',
+                      value
+                    )
                   }
                 />
 
@@ -1144,7 +1279,10 @@ export default function TenipuriProblemsPage() {
                   options={filterOptions.hand}
                   placeholder="全て"
                   onChange={(value) =>
-                    handleFilterChange('hand', value)
+                    handleFilterChange(
+                      'hand',
+                      value
+                    )
                   }
                 />
 
@@ -1154,7 +1292,10 @@ export default function TenipuriProblemsPage() {
                   options={filterOptions.result}
                   placeholder="全結果"
                   onChange={(value) =>
-                    handleFilterChange('result', value)
+                    handleFilterChange(
+                      'result',
+                      value
+                    )
                   }
                 />
 
@@ -1162,19 +1303,11 @@ export default function TenipuriProblemsPage() {
 
             </section>
 
-            {/* =================================================
-                件数
-            ================================================== */}
-
             <div className="mb-3 text-xs font-bold text-slate-600">
               {hasActiveFilters
                 ? `${filteredProblems.length}問 / ${problems.length}問`
                 : `${problems.length}問`}
             </div>
-
-            {/* =================================================
-                絞り込み結果
-            ================================================== */}
 
             {filteredProblems.length === 0 ? (
               <div className="rounded-2xl bg-white border border-slate-200 p-8 text-center">
@@ -1195,14 +1328,20 @@ export default function TenipuriProblemsPage() {
             ) : (
               <div className="space-y-5">
 
-                {filteredProblems.map((problem) => (
-                  <ProblemCard
-                    key={problem.id}
-                    problem={problem}
-                    onEdit={() => startEdit(problem)}
-                    onDelete={() => handleDelete(problem)}
-                  />
-                ))}
+                {filteredProblems.map(
+                  (problem) => (
+                    <ProblemCard
+                      key={problem.id}
+                      problem={problem}
+                      onEdit={() =>
+                        startEdit(problem)
+                      }
+                      onDelete={() =>
+                        handleDelete(problem)
+                      }
+                    />
+                  )
+                )}
 
               </div>
             )}
@@ -1235,7 +1374,9 @@ function FilterSelect({
 
       <select
         value={value}
-        onChange={(e) => onChange(e.target.value)}
+        onChange={(e) =>
+          onChange(e.target.value)
+        }
         className="w-full rounded-xl border border-slate-300 bg-white px-3 py-3 text-sm font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-300"
       >
         <option value="">
@@ -1243,10 +1384,14 @@ function FilterSelect({
         </option>
 
         {options.map((option) => (
-          <option key={option} value={option}>
+          <option
+            key={option}
+            value={option}
+          >
             {option}
           </option>
         ))}
+
       </select>
 
     </label>
@@ -1263,10 +1408,24 @@ function ProblemCard({
   onDelete,
 }) {
   const answerLabel =
-    getAnswerTypeLabel(problem.answer_type);
+    getAnswerTypeLabel(
+      problem.answer_type
+    );
 
   const answer =
     getProblemAnswer(problem);
+
+  const hasImage =
+    Boolean(
+      problem.has_image ||
+        problem.image_url
+    );
+
+  const hasExplanationImage =
+    Boolean(
+      problem.has_explanation_image ||
+        problem.explanation_image_url
+    );
 
   return (
     <article className="rounded-2xl border-2 border-slate-200 bg-white shadow-sm overflow-hidden">
@@ -1297,36 +1456,19 @@ function ProblemCard({
 
         </div>
 
-        {problem.image_url && (
-          <div className="mb-4 rounded-xl overflow-hidden border border-slate-200 bg-slate-100">
+        {/* ===================================================
+            画像はカードが画面付近に来た時だけ取得。
+            1問題につきAPIアクセスは1回。
+        =================================================== */}
 
-            <img
-              src={problem.image_url}
-              alt="打球画像"
-              className="w-full max-h-[500px] object-contain"
-            />
-
-          </div>
-        )}
-
-        {problem.explanation_image_url && (
-          <div className="mt-4 mb-4">
-
-            <p className="text-xs font-extrabold text-violet-700 mb-2">
-              解説画像
-            </p>
-
-            <div className="rounded-xl overflow-hidden border border-violet-200 bg-violet-50">
-
-              <img
-                src={problem.explanation_image_url}
-                alt="解説画像"
-                className="w-full max-h-[500px] object-contain"
-              />
-
-            </div>
-
-          </div>
+        {(hasImage || hasExplanationImage) && (
+          <LazyProblemImages
+            problemId={problem.id}
+            hasImage={hasImage}
+            hasExplanationImage={
+              hasExplanationImage
+            }
+          />
         )}
 
         <div className="rounded-xl bg-slate-50 border border-slate-200 p-3">
@@ -1405,6 +1547,282 @@ function ProblemCard({
 }
 
 // =============================================================
+// 画像遅延取得
+//
+// ★ここが今回の大きな変更点
+//
+// 以前:
+//   打球画像 → API
+//   解説画像 → API
+//
+//   1問題で最大2回APIアクセス
+//
+// 今回:
+//   問題カードが画面付近に来る
+//       ↓
+//   1回だけAPIアクセス
+//       ↓
+//   image_url / explanation_image_url を両方取得
+//
+// さらにIntersectionObserverにより、
+// 画面からかなり遠い問題は最初は一切取得しない。
+// =============================================================
+
+function LazyProblemImages({
+  problemId,
+  hasImage,
+  hasExplanationImage,
+}) {
+  const containerRef = useRef(null);
+
+  const [shouldLoad, setShouldLoad] = useState(false);
+
+  const [imageSrc, setImageSrc] = useState('');
+  const [explanationImageSrc, setExplanationImageSrc] =
+    useState('');
+
+  const [loading, setLoading] = useState(false);
+  const [failed, setFailed] = useState(false);
+
+  // =========================================================
+  // IntersectionObserver
+  //
+  // rootMargin で「画面に入る少し前」に読み込み開始。
+  // =========================================================
+
+  useEffect(() => {
+    const element = containerRef.current;
+
+    if (!element) return;
+
+    if (!('IntersectionObserver' in window)) {
+      setShouldLoad(true);
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const entry = entries[0];
+
+        if (entry?.isIntersecting) {
+          setShouldLoad(true);
+          observer.disconnect();
+        }
+      },
+      {
+        root: null,
+
+        // 画面の800px手前から読み込み開始。
+        // いきなり画面内に入ってから取得するより
+        // スクロール時の表示がスムーズになる。
+        rootMargin: '800px 0px 800px 0px',
+
+        threshold: 0,
+      }
+    );
+
+    observer.observe(element);
+
+    return () => {
+      observer.disconnect();
+    };
+  }, []);
+
+  // =========================================================
+  // 実際の画像取得
+  // =========================================================
+
+  useEffect(() => {
+    if (!shouldLoad) return;
+
+    let cancelled = false;
+
+    const loadImages = async () => {
+      setLoading(true);
+      setFailed(false);
+
+      try {
+        const res = await fetch(
+          `/api/tenipuri/problems?id=${encodeURIComponent(
+            problemId
+          )}`,
+          {
+            method: 'GET',
+            cache: 'no-store',
+          }
+        );
+
+        let data = null;
+
+        try {
+          data = await res.json();
+        } catch {
+          throw new Error(
+            '画像データを正しく取得できませんでした。'
+          );
+        }
+
+        if (
+          !res.ok ||
+          (data?.success !== true &&
+            data?.ok !== true)
+        ) {
+          throw new Error(
+            data?.error ||
+              data?.message ||
+              '画像の取得に失敗しました。'
+          );
+        }
+
+        const problem = data?.problem;
+
+        if (!problem) {
+          throw new Error(
+            '問題データが見つかりませんでした。'
+          );
+        }
+
+        const image =
+          typeof problem.image_url === 'string'
+            ? problem.image_url
+            : '';
+
+        const explanationImage =
+          typeof problem.explanation_image_url ===
+          'string'
+            ? problem.explanation_image_url
+            : '';
+
+        if (cancelled) return;
+
+        setImageSrc(
+          hasImage ? image : ''
+        );
+
+        setExplanationImageSrc(
+          hasExplanationImage
+            ? explanationImage
+            : ''
+        );
+
+        setLoading(false);
+
+        if (
+          (hasImage && !image) &&
+          (hasExplanationImage &&
+            !explanationImage)
+        ) {
+          setFailed(true);
+        }
+      } catch (e) {
+        console.error(
+          '[tenipuri/problems] image load failed:',
+          e
+        );
+
+        if (!cancelled) {
+          setFailed(true);
+          setLoading(false);
+        }
+      }
+    };
+
+    loadImages();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    shouldLoad,
+    problemId,
+    hasImage,
+    hasExplanationImage,
+  ]);
+
+  // =========================================================
+  // まだ画面付近に来ていない
+  // =========================================================
+
+  if (!shouldLoad) {
+    return (
+      <div
+        ref={containerRef}
+        className="mb-4 min-h-[20px]"
+        aria-hidden="true"
+      />
+    );
+  }
+
+  // =========================================================
+  // 読み込み中
+  // =========================================================
+
+  if (loading) {
+    return (
+      <div className="mb-4 rounded-xl border border-slate-200 bg-slate-100 p-5 text-center">
+        <span className="text-xs text-slate-400">
+          画像を読み込み中...
+        </span>
+      </div>
+    );
+  }
+
+  // =========================================================
+  // 取得失敗
+  // =========================================================
+
+  if (failed) {
+    return null;
+  }
+
+  // =========================================================
+  // 画像表示
+  // =========================================================
+
+  return (
+    <div ref={containerRef}>
+
+      {imageSrc && (
+        <div className="mb-4 rounded-xl overflow-hidden border border-slate-200 bg-slate-100">
+
+          <img
+            src={imageSrc}
+            alt="打球画像"
+            className="w-full max-h-[500px] object-contain"
+            loading="lazy"
+            decoding="async"
+          />
+
+        </div>
+      )}
+
+      {explanationImageSrc && (
+        <div className="mt-4 mb-4">
+
+          <p className="text-xs font-extrabold text-violet-700 mb-2">
+            解説画像
+          </p>
+
+          <div className="rounded-xl overflow-hidden border border-violet-200 bg-white">
+
+            <img
+              src={explanationImageSrc}
+              alt="解説画像"
+              className="w-full max-h-[500px] object-contain"
+              loading="lazy"
+              decoding="async"
+            />
+
+          </div>
+
+        </div>
+      )}
+
+    </div>
+  );
+}
+
+// =============================================================
 // 答えタイプ表示
 // =============================================================
 
@@ -1445,7 +1863,13 @@ function Info({
   value,
   highlight = false,
 }) {
-  if (!value) return null;
+  if (
+    value === null ||
+    value === undefined ||
+    String(value).trim() === ''
+  ) {
+    return null;
+  }
 
   return (
     <div>
@@ -1540,4 +1964,3 @@ function InputField({
     </label>
   );
 }
-

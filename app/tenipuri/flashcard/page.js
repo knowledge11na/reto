@@ -2,967 +2,1186 @@
 
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
-
-
-// =========================================================
-// 設定
-// =========================================================
 
 const PROGRESS_KEY = 'tenipuri_flashcard_progress';
 
-const SWIPE_THRESHOLD = 100;
+const QUESTION_COUNTS = [
+  { label: '10問', value: 10 },
+  { label: '20問', value: 20 },
+  { label: '50問', value: 50 },
+  { label: '全問', value: 'all' },
+];
 
+function normalize(value) {
+  return String(value ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, '');
+}
 
-// =========================================================
-// メイン
-// =========================================================
+function getAnswer(problem) {
+  if (!problem) return '';
 
-export default function TenipuriFlashcardPage() {
+  switch (problem.answer_type) {
+    case 'hitter':
+      return problem.hitter ?? '';
 
-  // -------------------------------------------------------
-  // 問題データ
-  // -------------------------------------------------------
+    case 'target':
+      return problem.target ?? '';
 
+    case 'technique':
+      return problem.technique ?? '';
+
+    default:
+      return (
+        problem.hitter ??
+        problem.target ??
+        problem.technique ??
+        ''
+      );
+  }
+}
+
+function getQuestionText(problem) {
+  if (!problem) return '';
+
+  switch (problem.answer_type) {
+    case 'hitter':
+      return 'この打球を放ったのは誰？';
+
+    case 'target':
+      return 'この打球を受けたのは誰？';
+
+    case 'technique':
+      return 'この技の名前は？';
+
+    default:
+      return 'この問題の答えは？';
+  }
+}
+
+function getProblemId(problem) {
+  return problem?.id != null ? String(problem.id) : '';
+}
+
+function shuffle(array) {
+  const result = [...array];
+
+  for (let i = result.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+
+    [result[i], result[j]] = [
+      result[j],
+      result[i],
+    ];
+  }
+
+  return result;
+}
+
+function getSavedProgress() {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+
+  try {
+    const raw = localStorage.getItem(PROGRESS_KEY);
+
+    if (!raw) {
+      return null;
+    }
+
+    const parsed = JSON.parse(raw);
+
+    if (!parsed || typeof parsed !== 'object') {
+      return null;
+    }
+
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function saveProgress(progress) {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  try {
+    localStorage.setItem(
+      PROGRESS_KEY,
+      JSON.stringify(progress)
+    );
+  } catch {
+    // localStorage失敗でゲームを止めない
+  }
+}
+
+function clearProgress() {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  try {
+    localStorage.removeItem(PROGRESS_KEY);
+  } catch {
+    // 無視
+  }
+}
+
+export default function FlashcardPage() {
   const [problems, setProblems] = useState([]);
+  const [currentProblems, setCurrentProblems] = useState([]);
+
+  const [currentIndex, setCurrentIndex] = useState(0);
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
-
-  // -------------------------------------------------------
-  // 設定
-  // -------------------------------------------------------
-
-  const [questionCount, setQuestionCount] = useState(20);
-  const [random, setRandom] = useState(true);
-
-
-  // -------------------------------------------------------
-  // ゲーム状態
-  // -------------------------------------------------------
-
-  const [gameStarted, setGameStarted] = useState(false);
-  const [currentIndex, setCurrentIndex] = useState(0);
   const [showAnswer, setShowAnswer] = useState(false);
 
-  const [results, setResults] = useState([]);
-  const [finished, setFinished] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(true);
 
-  const [problemsForGame, setProblemsForGame] = useState([]);
+  const [questionCount, setQuestionCount] =
+    useState(10);
 
+  const [randomMode, setRandomMode] =
+    useState(true);
 
-  // -------------------------------------------------------
-  // 中断・再開
-  // -------------------------------------------------------
+  const [resumeAvailable, setResumeAvailable] =
+    useState(false);
 
-  const [resumeAvailable, setResumeAvailable] = useState(false);
+  const [imageCache, setImageCache] =
+    useState({});
 
+  /**
+   * ========================================================
+   * 問題ごとの判定
+   *
+   * remembered:
+   *   true  = 分かった
+   *   false = 分からない
+   *   null  = まだ判定していない
+   * ========================================================
+   */
+  const [problemResults, setProblemResults] =
+    useState({});
 
-  // -------------------------------------------------------
-  // スワイプ
-  // -------------------------------------------------------
+  const imageLoadingRef = useRef(
+    new Set()
+  );
 
-  const [dragX, setDragX] = useState(0);
-  const [isDragging, setIsDragging] = useState(false);
-
-  const touchStartX = useRef(null);
-  const touchCurrentX = useRef(null);
-
-  const cardRef = useRef(null);
-
-
-  // =========================================================
-  // 問題取得
-  // =========================================================
-
+  /**
+   * ========================================================
+   * 問題一覧取得
+   *
+   * 画像は取得しない
+   * ========================================================
+   */
   useEffect(() => {
+    let cancelled = false;
+
+    async function loadProblems() {
+      try {
+        setLoading(true);
+        setError('');
+
+        const response = await fetch(
+          '/api/tenipuri/problems',
+          {
+            method: 'GET',
+            cache: 'no-store',
+          }
+        );
+
+        if (!response.ok) {
+          throw new Error(
+            `HTTP ${response.status}`
+          );
+        }
+
+        const data = await response.json();
+
+        if (
+          !data?.success &&
+          !data?.ok
+        ) {
+          throw new Error(
+            data?.error ||
+              '問題の取得に失敗しました'
+          );
+        }
+
+        const loaded =
+          Array.isArray(data.problems)
+            ? data.problems
+            : [];
+
+        if (!cancelled) {
+          setProblems(loaded);
+
+          const progress =
+            getSavedProgress();
+
+          if (
+            progress &&
+            Array.isArray(
+              progress.problemIds
+            ) &&
+            progress.problemIds.length > 0
+          ) {
+            const progressIndex =
+              Number(
+                progress.currentIndex
+              );
+
+            if (
+              Number.isFinite(
+                progressIndex
+              ) &&
+              progressIndex <
+                progress.problemIds.length
+            ) {
+              setResumeAvailable(true);
+            }
+          }
+        }
+      } catch (err) {
+        console.error(
+          '[flashcard] load error',
+          err
+        );
+
+        if (!cancelled) {
+          setError(
+            err?.message ||
+              '問題の取得に失敗しました'
+          );
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    }
+
     loadProblems();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
+  /**
+   * ========================================================
+   * 画像取得
+   *
+   * 必要な問題だけ取得
+   * ========================================================
+   */
+  const loadProblemImage = useCallback(
+    async (problemId) => {
+      const id = String(problemId ?? '');
 
-  const loadProblems = async () => {
-    setLoading(true);
-    setError('');
-
-    try {
-      const res = await fetch(
-        '/api/tenipuri/problems',
-        {
-          cache: 'no-store',
-        }
-      );
-
-      const data = await res.json();
-
-      if (!res.ok || !data.ok) {
-        throw new Error(
-          data.error ||
-          '問題を取得できませんでした。'
-        );
+      if (!id) {
+        return null;
       }
 
-      const list = Array.isArray(data.problems)
-        ? data.problems
-        : [];
-
-      setProblems(list);
-
-    } catch (e) {
-      console.error(e);
-
-      setError(
-        e.message ||
-        '問題を取得できませんでした。'
-      );
-    } finally {
-      setLoading(false);
-    }
-  };
-
-
-  // =========================================================
-  // 問題文
-  // =========================================================
-
-  const getQuestionText = (problem) => {
-    if (!problem) {
-      return '';
-    }
-
-    if (problem.answer_type === 'target') {
-      return '誰に打った？';
-    }
-
-    if (problem.answer_type === 'technique') {
-      return '技名は？';
-    }
-
-    return '誰が打った？';
-  };
-
-
-  // =========================================================
-  // 正解
-  // =========================================================
-
-  const getAnswer = (problem) => {
-    if (!problem) {
-      return '';
-    }
-
-    if (problem.answer_type === 'target') {
-      return problem.target || '';
-    }
-
-    if (problem.answer_type === 'technique') {
-      return problem.technique || '';
-    }
-
-    return problem.hitter || '';
-  };
-
-
-  // =========================================================
-  // 出題対象
-  // =========================================================
-
-  const availableProblems = useMemo(() => {
-    return problems.filter(
-      (problem) =>
-        problem &&
-        problem.image_url &&
-        getAnswer(problem)
-    );
-  }, [problems]);
-
-
-  // =========================================================
-  // シャッフル
-  // =========================================================
-
-  const shuffle = (array) => {
-    const result = [...array];
-
-    for (let i = result.length - 1; i > 0; i--) {
-      const j =
-        Math.floor(
-          Math.random() * (i + 1)
-        );
-
-      [
-        result[i],
-        result[j],
-      ] = [
-        result[j],
-        result[i],
-      ];
-    }
-
-    return result;
-  };
-
-
-  // =========================================================
-  // 進捗保存
-  // =========================================================
-
-  const saveProgress = (data) => {
-    try {
-      localStorage.setItem(
-        PROGRESS_KEY,
-        JSON.stringify(data)
-      );
-    } catch {
-      // 無視
-    }
-  };
-
-
-  // =========================================================
-  // 保存データ削除
-  // =========================================================
-
-  const clearProgress = () => {
-    try {
-      localStorage.removeItem(
-        PROGRESS_KEY
-      );
-    } catch {
-      // 無視
-    }
-
-    setResumeAvailable(false);
-  };
-
-
-  // =========================================================
-  // 保存された途中データ確認
-  // =========================================================
-
-  useEffect(() => {
-    try {
-      const saved =
-        localStorage.getItem(
-          PROGRESS_KEY
-        );
-
-      if (!saved) {
-        return;
+      if (imageCache[id]) {
+        return imageCache[id];
       }
-
-      const data =
-        JSON.parse(saved);
 
       if (
-        data?.active &&
-        Array.isArray(data.problems) &&
-        data.problems.length > 0
+        imageLoadingRef.current.has(id)
       ) {
-        setProblemsForGame(data.problems);
-
-        setCurrentIndex(
-          Number(data.currentIndex) || 0
-        );
-
-        setResults(
-          Array.isArray(data.results)
-            ? data.results
-            : []
-        );
-
-        setResumeAvailable(true);
+        return null;
       }
 
-    } catch {
-      // 無視
-    }
-  }, []);
+      imageLoadingRef.current.add(id);
 
+      try {
+        const response = await fetch(
+          `/api/tenipuri/problems?id=${encodeURIComponent(
+            id
+          )}`,
+          {
+            method: 'GET',
+            cache: 'no-store',
+          }
+        );
 
-  // =========================================================
-  // ゲーム開始
-  // =========================================================
+        if (!response.ok) {
+          throw new Error(
+            `HTTP ${response.status}`
+          );
+        }
 
-  const startGame = () => {
-    if (availableProblems.length === 0) {
-      setError(
-        '出題できる問題がありません。'
-      );
-      return;
-    }
+        const data = await response.json();
 
-    let list = [...availableProblems];
+        if (
+          !data?.success &&
+          !data?.ok
+        ) {
+          throw new Error(
+            data?.error ||
+              '問題画像の取得に失敗しました'
+          );
+        }
 
-    if (random) {
-      list = shuffle(list);
-    }
+        const problem =
+          data?.problem;
 
-    if (questionCount !== 'all') {
-      list = list.slice(
-        0,
-        Number(questionCount)
-      );
-    }
+        if (!problem) {
+          return null;
+        }
 
-    setProblemsForGame(list);
-    setCurrentIndex(0);
-    setResults([]);
-    setShowAnswer(false);
-    setFinished(false);
-    setGameStarted(true);
-    setDragX(0);
-    setResumeAvailable(false);
+        const imageUrl =
+          problem.image_url || null;
 
-    saveProgress({
-      active: true,
-      finished: false,
-      problems: list,
-      currentIndex: 0,
-      results: [],
-    });
-  };
+        const explanationImageUrl =
+          problem.explanation_image_url ||
+          null;
 
+        const result = {
+          imageUrl,
+          explanationImageUrl,
+        };
 
-  // =========================================================
-  // 続きから再開
-  // =========================================================
+        setImageCache((prev) => ({
+          ...prev,
+          [id]: result,
+        }));
 
-  const resumeGame = () => {
-    if (
-      problemsForGame.length === 0 ||
-      currentIndex >= problemsForGame.length
-    ) {
-      return;
-    }
+        return result;
+      } catch (err) {
+        console.error(
+          '[flashcard] image load error',
+          {
+            problemId: id,
+            error: err,
+          }
+        );
 
-    setGameStarted(true);
-    setFinished(false);
-    setShowAnswer(false);
-    setDragX(0);
-    setResumeAvailable(false);
-  };
+        return null;
+      } finally {
+        imageLoadingRef.current.delete(id);
+      }
+    },
+    [imageCache]
+  );
 
-
-  // =========================================================
-  // 問題の判定
-  // =========================================================
-
-  const judge = (known) => {
-    if (!gameStarted || finished) {
-      return;
-    }
-
-    if (
-      currentIndex >=
-      problemsForGame.length
-    ) {
+  /**
+   * ========================================================
+   * 現在＋次の画像を先読み
+   * ========================================================
+   */
+  useEffect(() => {
+    if (!currentProblems.length) {
       return;
     }
 
     const current =
-      problemsForGame[currentIndex];
+      currentProblems[currentIndex];
 
-    const newResults = [
-      ...results,
-      {
-        id: current.id,
-        known,
+    const next =
+      currentProblems[currentIndex + 1];
+
+    if (current?.id) {
+      loadProblemImage(current.id);
+    }
+
+    if (next?.id) {
+      loadProblemImage(next.id);
+    }
+  }, [
+    currentProblems,
+    currentIndex,
+    loadProblemImage,
+  ]);
+
+  /**
+   * ========================================================
+   * 現在の問題ID
+   * ========================================================
+   */
+  const currentProblem =
+    currentProblems[currentIndex] ||
+    null;
+
+  const currentProblemId =
+    getProblemId(currentProblem);
+
+  const currentImage =
+    currentProblemId
+      ? imageCache[currentProblemId]
+      : null;
+
+  /**
+   * ========================================================
+   * 現在問題の判定
+   * ========================================================
+   */
+  const currentResult =
+    currentProblemId
+      ? problemResults[
+          currentProblemId
+        ]
+      : null;
+
+  /**
+   * ========================================================
+   * 保存
+   *
+   * 判定状況も一緒に保存する
+   * ========================================================
+   */
+  const saveCurrentProgress =
+    useCallback(
+      ({
+        problemList = currentProblems,
+        index = currentIndex,
+        answerShown = showAnswer,
+        results = problemResults,
+      } = {}) => {
+        if (!problemList.length) {
+          return;
+        }
+
+        saveProgress({
+          problemIds:
+            problemList.map(
+              getProblemId
+            ),
+          currentIndex: index,
+          showAnswer: answerShown,
+          results,
+          questionCount,
+          randomMode,
+          updatedAt: Date.now(),
+        });
       },
-    ];
+      [
+        currentProblems,
+        currentIndex,
+        showAnswer,
+        problemResults,
+        questionCount,
+        randomMode,
+      ]
+    );
 
-    setResults(newResults);
+  /**
+   * ========================================================
+   * 新規ゲーム
+   * ========================================================
+   */
+  const startGame = useCallback(() => {
+    if (!problems.length) {
+      return;
+    }
 
-    setDragX(0);
+    let selected;
+
+    if (randomMode) {
+      selected = shuffle(problems);
+    } else {
+      selected = [...problems];
+    }
+
+    if (questionCount !== 'all') {
+      selected = selected.slice(
+        0,
+        Math.min(
+          Number(questionCount),
+          selected.length
+        )
+      );
+    }
+
+    if (!selected.length) {
+      return;
+    }
+
+    setCurrentProblems(selected);
+    setCurrentIndex(0);
     setShowAnswer(false);
+    setSettingsOpen(false);
+    setResumeAvailable(false);
+
+    /**
+     * 新しいゲームなので全問題を未判定に戻す
+     */
+    setProblemResults({});
+
+    saveProgress({
+      problemIds: selected.map(
+        getProblemId
+      ),
+      currentIndex: 0,
+      showAnswer: false,
+      results: {},
+      questionCount,
+      randomMode,
+      updatedAt: Date.now(),
+    });
+  }, [
+    problems,
+    questionCount,
+    randomMode,
+  ]);
+
+  /**
+   * ========================================================
+   * 続きから
+   * ========================================================
+   */
+  const resumeGame = useCallback(() => {
+    const progress =
+      getSavedProgress();
+
+    if (
+      !progress ||
+      !Array.isArray(
+        progress.problemIds
+      )
+    ) {
+      return;
+    }
+
+    const map = new Map(
+      problems.map((problem) => [
+        getProblemId(problem),
+        problem,
+      ])
+    );
+
+    const restored =
+      progress.problemIds
+        .map((id) =>
+          map.get(String(id))
+        )
+        .filter(Boolean);
+
+    if (!restored.length) {
+      setResumeAvailable(false);
+      return;
+    }
+
+    let index = Number(
+      progress.currentIndex
+    );
+
+    if (!Number.isFinite(index)) {
+      index = 0;
+    }
+
+    index = Math.max(
+      0,
+      Math.min(
+        index,
+        restored.length - 1
+      )
+    );
+
+    /**
+     * 保存されていた判定結果を復元
+     */
+    const savedResults =
+      progress.results &&
+      typeof progress.results ===
+        'object'
+        ? progress.results
+        : {};
+
+    /**
+     * 現在の問題一覧に存在するIDだけ残す
+     */
+    const restoredResults = {};
+
+    for (const problem of restored) {
+      const id =
+        getProblemId(problem);
+
+      if (
+        Object.prototype.hasOwnProperty.call(
+          savedResults,
+          id
+        )
+      ) {
+        restoredResults[id] =
+          savedResults[id];
+      }
+    }
+
+    setCurrentProblems(restored);
+    setCurrentIndex(index);
+    setShowAnswer(
+      Boolean(progress.showAnswer)
+    );
+    setProblemResults(
+      restoredResults
+    );
+    setSettingsOpen(false);
+    setResumeAvailable(false);
+
+    /**
+     * questionCount / randomMode も復元
+     */
+    if (
+      progress.questionCount ===
+        'all' ||
+      typeof progress.questionCount ===
+        'number'
+    ) {
+      setQuestionCount(
+        progress.questionCount
+      );
+    }
+
+    if (
+      typeof progress.randomMode ===
+      'boolean'
+    ) {
+      setRandomMode(
+        progress.randomMode
+      );
+    }
+  }, [problems]);
+
+  /**
+   * ========================================================
+   * 判定
+   *
+   * 分かった / 分からない
+   * ========================================================
+   */
+  const markProblem = useCallback(
+    (remembered) => {
+      if (!currentProblemId) {
+        return;
+      }
+
+      const nextResults = {
+        ...problemResults,
+        [currentProblemId]:
+          remembered,
+      };
+
+      setProblemResults(
+        nextResults
+      );
+
+      /**
+       * 判定した瞬間に自動保存
+       */
+      saveProgress({
+        problemIds:
+          currentProblems.map(
+            getProblemId
+          ),
+        currentIndex,
+        showAnswer: true,
+        results: nextResults,
+        questionCount,
+        randomMode,
+        updatedAt: Date.now(),
+      });
+
+      setShowAnswer(true);
+    },
+    [
+      currentProblemId,
+      problemResults,
+      currentProblems,
+      currentIndex,
+      questionCount,
+      randomMode,
+    ]
+  );
+
+  /**
+   * ========================================================
+   * 次へ
+   * ========================================================
+   */
+  const nextQuestion = useCallback(() => {
+    if (!currentProblems.length) {
+      return;
+    }
 
     const nextIndex =
       currentIndex + 1;
 
-    // -------------------------------------------------------
-    // 最後の問題
-    // -------------------------------------------------------
-
     if (
       nextIndex >=
-      problemsForGame.length
+      currentProblems.length
     ) {
-      setCurrentIndex(nextIndex);
-      setFinished(true);
-      setResumeAvailable(false);
-
+      /**
+       * 最後まで到達
+       */
       saveProgress({
-        active: false,
-        finished: true,
-        problems: problemsForGame,
-        currentIndex: nextIndex,
-        results: newResults,
+        problemIds:
+          currentProblems.map(
+            getProblemId
+          ),
+        currentIndex:
+          currentProblems.length,
+        showAnswer: false,
+        results: problemResults,
+        questionCount,
+        randomMode,
+        updatedAt: Date.now(),
       });
 
+      setCurrentIndex(
+        currentProblems.length
+      );
+      setShowAnswer(false);
+
       return;
     }
-
-    // -------------------------------------------------------
-    // 次の問題
-    // -------------------------------------------------------
 
     setCurrentIndex(nextIndex);
-
-    saveProgress({
-      active: true,
-      finished: false,
-      problems: problemsForGame,
-      currentIndex: nextIndex,
-      results: newResults,
-    });
-  };
-
-
-  // =========================================================
-  // 中断する
-  // =========================================================
-
-  const interruptGame = () => {
-    if (
-      !gameStarted ||
-      finished
-    ) {
-      return;
-    }
-
-    // 現在位置をそのまま保存
-    saveProgress({
-      active: true,
-      finished: false,
-      problems: problemsForGame,
-      currentIndex,
-      results,
-    });
-
-    setGameStarted(false);
     setShowAnswer(false);
-    setDragX(0);
-    setResumeAvailable(true);
-  };
 
+    saveProgress({
+      problemIds:
+        currentProblems.map(
+          getProblemId
+        ),
+      currentIndex: nextIndex,
+      showAnswer: false,
+      results: problemResults,
+      questionCount,
+      randomMode,
+      updatedAt: Date.now(),
+    });
+  }, [
+    currentProblems,
+    currentIndex,
+    problemResults,
+    questionCount,
+    randomMode,
+  ]);
 
-  // =========================================================
-  // タッチ開始
-  // =========================================================
-
-  const handleTouchStart = (e) => {
-    if (
-      !gameStarted ||
-      finished
-    ) {
-      return;
-    }
-
-    const touch =
-      e.touches?.[0];
-
-    if (!touch) {
-      return;
-    }
-
-    touchStartX.current =
-      touch.clientX;
-
-    touchCurrentX.current =
-      touch.clientX;
-
-    setIsDragging(true);
-  };
-
-
-  // =========================================================
-  // タッチ移動
-  // =========================================================
-
-  const handleTouchMove = (e) => {
-    if (
-      !isDragging ||
-      touchStartX.current === null
-    ) {
-      return;
-    }
-
-    const touch =
-      e.touches?.[0];
-
-    if (!touch) {
-      return;
-    }
-
-    touchCurrentX.current =
-      touch.clientX;
-
-    const diff =
-      touch.clientX -
-      touchStartX.current;
-
-    const limited =
-      Math.max(
-        -180,
-        Math.min(180, diff)
-      );
-
-    setDragX(limited);
-  };
-
-
-  // =========================================================
-  // タッチ終了
-  // =========================================================
-
-  const handleTouchEnd = () => {
-    if (!isDragging) {
-      return;
-    }
-
-    setIsDragging(false);
-
-    const diff =
-      (touchCurrentX.current || 0) -
-      (touchStartX.current || 0);
-
-    touchStartX.current = null;
-    touchCurrentX.current = null;
-
-    if (
-      Math.abs(diff) >=
-      SWIPE_THRESHOLD
-    ) {
-
-      /*
-       * 左  = わかった
-       * 右  = わからない
-       */
-
-      if (diff < 0) {
-        judge(true);
-      } else {
-        judge(false);
+  /**
+   * ========================================================
+   * 前へ
+   * ========================================================
+   */
+  const previousQuestion =
+    useCallback(() => {
+      if (currentIndex <= 0) {
+        return;
       }
 
+      const nextIndex =
+        currentIndex - 1;
+
+      setCurrentIndex(nextIndex);
+      setShowAnswer(false);
+
+      saveProgress({
+        problemIds:
+          currentProblems.map(
+            getProblemId
+          ),
+        currentIndex: nextIndex,
+        showAnswer: false,
+        results: problemResults,
+        questionCount,
+        randomMode,
+        updatedAt: Date.now(),
+      });
+    }, [
+      currentProblems,
+      currentIndex,
+      problemResults,
+      questionCount,
+      randomMode,
+    ]);
+
+  /**
+   * ========================================================
+   * 中断
+   * ========================================================
+   */
+  const pauseGame = useCallback(() => {
+    if (!currentProblems.length) {
       return;
     }
-
-    setDragX(0);
-  };
-
-
-  // =========================================================
-  // マウス操作
-  // =========================================================
-
-  const handleMouseDown = (e) => {
-    if (
-      !gameStarted ||
-      finished
-    ) {
-      return;
-    }
-
-    touchStartX.current =
-      e.clientX;
-
-    touchCurrentX.current =
-      e.clientX;
-
-    setIsDragging(true);
-  };
-
-
-  const handleMouseMove = (e) => {
-    if (
-      !isDragging ||
-      touchStartX.current === null
-    ) {
-      return;
-    }
-
-    touchCurrentX.current =
-      e.clientX;
-
-    const diff =
-      e.clientX -
-      touchStartX.current;
-
-    const limited =
-      Math.max(
-        -180,
-        Math.min(180, diff)
-      );
-
-    setDragX(limited);
-  };
-
-
-  const handleMouseUp = () => {
-    if (!isDragging) {
-      return;
-    }
-
-    handleTouchEnd();
-  };
-
-
-  // =========================================================
-  // カードタップ
-  // =========================================================
-
-  const handleCardClick = () => {
-    if (isDragging) {
-      return;
-    }
-
-    if (
-      !gameStarted ||
-      finished
-    ) {
-      return;
-    }
-
-    setShowAnswer(
-      (prev) => !prev
-    );
-  };
-
-
-  // =========================================================
-  // 最初から
-  // =========================================================
-
-  const resetToStart = () => {
-    clearProgress();
-
-    setGameStarted(false);
-    setFinished(false);
-    setProblemsForGame([]);
-    setCurrentIndex(0);
-    setResults([]);
-    setShowAnswer(false);
-    setDragX(0);
-  };
-
-
-  // =========================================================
-  // 分からなかった問題だけ復習
-  // =========================================================
-
-  const retryWrong = () => {
-    const wrongIds =
-      new Set(
-        results
-          .filter(
-            (result) =>
-              !result.known
-          )
-          .map(
-            (result) =>
-              result.id
-          )
-      );
-
-    const wrongProblems =
-      problemsForGame.filter(
-        (problem) =>
-          wrongIds.has(problem.id)
-      );
-
-    if (
-      wrongProblems.length === 0
-    ) {
-      return;
-    }
-
-    let nextProblems =
-      random
-        ? shuffle(wrongProblems)
-        : [...wrongProblems];
-
-    setProblemsForGame(
-      nextProblems
-    );
-
-    setCurrentIndex(0);
-    setResults([]);
-    setShowAnswer(false);
-    setFinished(false);
-    setGameStarted(true);
-    setDragX(0);
-    setResumeAvailable(false);
 
     saveProgress({
-      active: true,
-      finished: false,
-      problems: nextProblems,
-      currentIndex: 0,
-      results: [],
+      problemIds:
+        currentProblems.map(
+          getProblemId
+        ),
+      currentIndex,
+      showAnswer,
+      results: problemResults,
+      questionCount,
+      randomMode,
+      updatedAt: Date.now(),
     });
-  };
 
+    setSettingsOpen(true);
+    setResumeAvailable(true);
+  }, [
+    currentProblems,
+    currentIndex,
+    showAnswer,
+    problemResults,
+    questionCount,
+    randomMode,
+  ]);
 
-  // =========================================================
-  // 終了集計
-  // =========================================================
+  /**
+   * ========================================================
+   * 間違えた問題だけもう一度
+   *
+   * 「分からない」にした問題だけを抽出
+   * ========================================================
+   */
+  const retryWrongProblems = useCallback(() => {
+    const wrongProblems =
+      currentProblems.filter(
+        (problem) =>
+          problemResults[
+            getProblemId(problem)
+          ] === false
+      );
 
-  const knownCount =
-    results.filter(
-      (result) =>
-        result.known
-    ).length;
+    if (!wrongProblems.length) {
+      return;
+    }
 
-  const unknownCount =
-    results.filter(
-      (result) =>
-        !result.known
-    ).length;
+    /**
+     * 間違えた問題だけで新しいセットを作る
+     */
+    const selected = randomMode
+      ? shuffle(wrongProblems)
+      : [...wrongProblems];
 
+    setCurrentProblems(selected);
+    setCurrentIndex(0);
+    setShowAnswer(false);
+    setSettingsOpen(false);
+    setResumeAvailable(false);
 
-  // =========================================================
-  // ローディング
-  // =========================================================
+    /**
+     * 再挑戦する問題は再び未判定
+     *
+     * ただし、元の問題以外の判定は残す。
+     */
+    const nextResults = {
+      ...problemResults,
+    };
 
+    for (const problem of selected) {
+      delete nextResults[
+        getProblemId(problem)
+      ];
+    }
+
+    setProblemResults(nextResults);
+
+    saveProgress({
+      problemIds:
+        selected.map(
+          getProblemId
+        ),
+      currentIndex: 0,
+      showAnswer: false,
+      results: nextResults,
+      questionCount:
+        selected.length,
+      randomMode,
+      updatedAt: Date.now(),
+    });
+  }, [
+    currentProblems,
+    problemResults,
+    randomMode,
+  ]);
+
+  /**
+   * ========================================================
+   * 判定済み数
+   * ========================================================
+   */
+  const resultSummary = useMemo(() => {
+    let remembered = 0;
+    let notRemembered = 0;
+    let unanswered = 0;
+
+    for (const problem of currentProblems) {
+      const id =
+        getProblemId(problem);
+
+      if (
+        problemResults[id] === true
+      ) {
+        remembered++;
+      } else if (
+        problemResults[id] === false
+      ) {
+        notRemembered++;
+      } else {
+        unanswered++;
+      }
+    }
+
+    return {
+      remembered,
+      notRemembered,
+      unanswered,
+    };
+  }, [
+    currentProblems,
+    problemResults,
+  ]);
+
+  /**
+   * ========================================================
+   * キーボード
+   * ========================================================
+   */
+  useEffect(() => {
+    function handleKeyDown(event) {
+      if (settingsOpen) {
+        return;
+      }
+
+      if (
+        event.target instanceof
+          HTMLInputElement ||
+        event.target instanceof
+          HTMLTextAreaElement
+      ) {
+        return;
+      }
+
+      if (
+        event.key === ' ' ||
+        event.key === 'Enter'
+      ) {
+        event.preventDefault();
+
+        if (!showAnswer) {
+          setShowAnswer(true);
+
+          saveProgress({
+            problemIds:
+              currentProblems.map(
+                getProblemId
+              ),
+            currentIndex,
+            showAnswer: true,
+            results: problemResults,
+            questionCount,
+            randomMode,
+            updatedAt: Date.now(),
+          });
+        } else {
+          nextQuestion();
+        }
+      }
+
+      if (
+        event.key === 'ArrowRight'
+      ) {
+        nextQuestion();
+      }
+
+      if (
+        event.key === 'ArrowLeft'
+      ) {
+        previousQuestion();
+      }
+    }
+
+    window.addEventListener(
+      'keydown',
+      handleKeyDown
+    );
+
+    return () => {
+      window.removeEventListener(
+        'keydown',
+        handleKeyDown
+      );
+    };
+  }, [
+    settingsOpen,
+    showAnswer,
+    currentProblems,
+    currentIndex,
+    problemResults,
+    questionCount,
+    randomMode,
+    nextQuestion,
+    previousQuestion,
+  ]);
+
+  /**
+   * ========================================================
+   * ローディング
+   * ========================================================
+   */
   if (loading) {
     return (
       <main className="min-h-screen bg-sky-50 text-sky-900">
+        <div className="mx-auto max-w-md px-4 py-8 text-center">
+          <p className="text-lg font-bold">
+            問題を読み込んでいます…
+          </p>
 
-        <div className="max-w-xl mx-auto px-4 py-6">
-
-          <header className="mb-6 flex items-center justify-between">
-
-            <h1 className="text-xl sm:text-2xl font-extrabold">
-              打球単語帳
-            </h1>
-
-            <Link
-              href="/tenipuri"
-              className="text-xs font-bold text-sky-700 underline"
-            >
-              テニプリへ戻る
-            </Link>
-
-          </header>
-
-          <div className="rounded-2xl border-2 border-sky-200 bg-white p-8 text-center shadow-sm">
-
-            <p className="font-bold text-slate-600">
-              問題を読み込み中...
-            </p>
-
-          </div>
-
+          <p className="mt-2 text-sm text-sky-700">
+            画像は必要なときだけ取得します
+          </p>
         </div>
-
       </main>
     );
   }
 
-
-  // =========================================================
-  // エラー
-  // =========================================================
-
+  /**
+   * ========================================================
+   * エラー
+   * ========================================================
+   */
   if (error) {
     return (
       <main className="min-h-screen bg-sky-50 text-sky-900">
-
-        <div className="max-w-xl mx-auto px-4 py-6">
-
-          <header className="mb-6 flex items-center justify-between">
-
-            <h1 className="text-xl sm:text-2xl font-extrabold">
-              打球単語帳
+        <div className="mx-auto max-w-md px-4 py-8">
+          <div className="rounded-2xl bg-white p-6 shadow">
+            <h1 className="text-xl font-bold text-red-600">
+              問題の取得に失敗しました
             </h1>
 
-            <Link
-              href="/tenipuri"
-              className="text-xs font-bold text-sky-700 underline"
-            >
-              テニプリへ戻る
-            </Link>
-
-          </header>
-
-          <div className="rounded-2xl border-2 border-red-200 bg-red-50 p-5">
-
-            <p className="font-bold text-red-700">
+            <p className="mt-3 break-words text-sm">
               {error}
             </p>
 
+            <button
+              type="button"
+              onClick={() =>
+                window.location.reload()
+              }
+              className="mt-5 w-full rounded-xl bg-sky-600 px-4 py-3 font-bold text-white"
+            >
+              再読み込み
+            </button>
+
+            <Link
+              href="/tenipuri"
+              className="mt-3 block text-center text-sm font-bold text-sky-700"
+            >
+              戻る
+            </Link>
           </div>
-
-          <button
-            type="button"
-            onClick={loadProblems}
-            className="mt-4 w-full rounded-2xl bg-sky-500 px-4 py-4 text-sm font-extrabold text-white"
-          >
-            もう一度読み込む
-          </button>
-
         </div>
-
       </main>
     );
   }
 
+  /**
+   * ========================================================
+   * 設定画面
+   * ========================================================
+   */
+  if (settingsOpen) {
+    const wrongCount =
+      currentProblems.filter(
+        (problem) =>
+          problemResults[
+            getProblemId(problem)
+          ] === false
+      ).length;
 
-  // =========================================================
-  // スタート画面
-  // =========================================================
-
-  if (!gameStarted) {
     return (
       <main className="min-h-screen bg-sky-50 text-sky-900">
-
-        <div className="max-w-xl mx-auto px-4 py-6">
-
+        <div className="mx-auto max-w-md px-4 py-6">
           <header className="mb-6 flex items-center justify-between">
+            <Link
+              href="/tenipuri"
+              className="text-sm font-bold text-sky-700"
+            >
+              ← 戻る
+            </Link>
 
-            <h1 className="text-xl sm:text-2xl font-extrabold">
+            <h1 className="text-xl font-black">
               打球単語帳
             </h1>
 
-            <Link
-              href="/tenipuri"
-              className="text-xs font-bold text-sky-700 underline"
-            >
-              テニプリへ戻る
-            </Link>
-
+            <div className="w-10" />
           </header>
 
-
-          <section className="rounded-2xl border-2 border-fuchsia-200 bg-white p-5 shadow-sm">
-
-            <div className="mb-5">
-
-              <h2 className="text-lg font-extrabold text-fuchsia-900">
-                打球単語帳
-              </h2>
-
-              <p className="mt-2 text-xs leading-relaxed text-slate-600">
-                打球画像を見て答えを思い出してください。
-                分かったら左へ、分からなかったら右へスワイプします。
+          {/* 続きから */}
+          {resumeAvailable && (
+            <div className="mb-4 rounded-2xl bg-emerald-50 p-4 shadow">
+              <p className="text-sm font-bold text-emerald-800">
+                前回の途中データがあります
               </p>
 
+              <button
+                type="button"
+                onClick={resumeGame}
+                className="mt-3 w-full rounded-xl bg-emerald-500 px-4 py-4 text-lg font-black text-white"
+              >
+                ▶ 続きから
+              </button>
+            </div>
+          )}
+
+          <div className="rounded-2xl bg-white p-5 shadow">
+            <p className="text-sm text-slate-600">
+              問題数
+            </p>
+
+            <div className="mt-3 grid grid-cols-4 gap-2">
+              {QUESTION_COUNTS.map(
+                (item) => (
+                  <button
+                    key={String(
+                      item.value
+                    )}
+                    type="button"
+                    onClick={() =>
+                      setQuestionCount(
+                        item.value
+                      )
+                    }
+                    className={`rounded-xl px-2 py-3 text-sm font-bold ${
+                      questionCount ===
+                      item.value
+                        ? 'bg-sky-600 text-white'
+                        : 'bg-sky-100 text-sky-800'
+                    }`}
+                  >
+                    {item.label}
+                  </button>
+                )
+              )}
             </div>
 
-
-            {/* =================================================
-                中断データがある場合
-            ================================================= */}
-
-            {resumeAvailable && (
-
-              <div className="mb-5 rounded-2xl border-2 border-amber-200 bg-amber-50 p-4">
-
-                <p className="text-sm font-extrabold text-amber-900">
-                  前回の続きがあります
-                </p>
-
-                <p className="mt-1 text-xs text-amber-700">
-                  {Math.min(
-                    currentIndex + 1,
-                    problemsForGame.length
-                  )}
-                  問目から再開できます。
-                </p>
-
-                <button
-                  type="button"
-                  onClick={resumeGame}
-                  className="mt-3 w-full rounded-xl bg-amber-500 px-4 py-3 text-sm font-extrabold text-white shadow-sm hover:bg-amber-400"
-                >
-                  続きから再開
-                </button>
-
-                <button
-                  type="button"
-                  onClick={resetToStart}
-                  className="mt-2 w-full rounded-xl border-2 border-amber-200 bg-white px-4 py-2 text-xs font-extrabold text-amber-800"
-                >
-                  途中データを消して最初から
-                </button>
-
-              </div>
-
-            )}
-
-
-            {/* =================================================
-                問題数
-            ================================================= */}
-
-            <div className="mb-5">
-
-              <p className="mb-2 text-xs font-extrabold text-slate-700">
-                問題数
-              </p>
-
-              <div className="grid grid-cols-4 gap-2">
-
-                {[10, 20, 50].map(
-                  (count) => (
-                    <button
-                      key={count}
-                      type="button"
-                      onClick={() =>
-                        setQuestionCount(count)
-                      }
-                      className={`rounded-xl border-2 px-2 py-3 text-sm font-extrabold transition ${
-                        questionCount === count
-                          ? 'border-fuchsia-500 bg-fuchsia-100 text-fuchsia-900'
-                          : 'border-slate-200 bg-slate-50 text-slate-700'
-                      }`}
-                    >
-                      {count}問
-                    </button>
-                  )
-                )}
-
-                <button
-                  type="button"
-                  onClick={() =>
-                    setQuestionCount('all')
-                  }
-                  className={`rounded-xl border-2 px-2 py-3 text-sm font-extrabold transition ${
-                    questionCount === 'all'
-                      ? 'border-fuchsia-500 bg-fuchsia-100 text-fuchsia-900'
-                      : 'border-slate-200 bg-slate-50 text-slate-700'
-                  }`}
-                >
-                  全問
-                </button>
-
-              </div>
-
-            </div>
-
-
-            {/* =================================================
-                出題順
-            ================================================= */}
-
-            <div className="mb-6">
-
-              <p className="mb-2 text-xs font-extrabold text-slate-700">
+            <div className="mt-6">
+              <p className="text-sm text-slate-600">
                 出題順
               </p>
 
-              <div className="grid grid-cols-2 gap-2">
-
+              <div className="mt-3 grid grid-cols-2 gap-2">
                 <button
                   type="button"
                   onClick={() =>
-                    setRandom(true)
+                    setRandomMode(true)
                   }
-                  className={`rounded-xl border-2 px-3 py-3 text-sm font-extrabold ${
-                    random
-                      ? 'border-indigo-500 bg-indigo-50 text-indigo-900'
-                      : 'border-slate-200 bg-slate-50 text-slate-700'
+                  className={`rounded-xl px-3 py-3 font-bold ${
+                    randomMode
+                      ? 'bg-sky-600 text-white'
+                      : 'bg-sky-100 text-sky-800'
                   }`}
                 >
                   ランダム
@@ -971,737 +1190,465 @@ export default function TenipuriFlashcardPage() {
                 <button
                   type="button"
                   onClick={() =>
-                    setRandom(false)
+                    setRandomMode(false)
                   }
-                  className={`rounded-xl border-2 px-3 py-3 text-sm font-extrabold ${
-                    !random
-                      ? 'border-indigo-500 bg-indigo-50 text-indigo-900'
-                      : 'border-slate-200 bg-slate-50 text-slate-700'
+                  className={`rounded-xl px-3 py-3 font-bold ${
+                    !randomMode
+                      ? 'bg-sky-600 text-white'
+                      : 'bg-sky-100 text-sky-800'
                   }`}
                 >
                   登録順
                 </button>
-
               </div>
-
             </div>
-
-
-            {/* =================================================
-                問題数表示
-            ================================================= */}
-
-            <div className="mb-4 rounded-xl bg-slate-50 px-4 py-3 text-center">
-
-              <p className="text-xs text-slate-500">
-                出題可能
-              </p>
-
-              <p className="text-xl font-extrabold text-slate-800">
-                {availableProblems.length}
-                <span className="ml-1 text-xs font-bold">
-                  問
-                </span>
-              </p>
-
-            </div>
-
-
-            {/* =================================================
-                スタート
-            ================================================= */}
 
             <button
               type="button"
               onClick={startGame}
-              disabled={
-                availableProblems.length === 0
-              }
-              className="w-full rounded-2xl bg-fuchsia-500 px-4 py-4 text-sm font-extrabold text-white shadow-sm transition hover:bg-fuchsia-400 disabled:cursor-not-allowed disabled:opacity-50"
+              disabled={!problems.length}
+              className="mt-7 w-full rounded-xl bg-sky-600 px-4 py-4 text-lg font-black text-white disabled:opacity-40"
             >
-              単語帳を始める
+              スタート
             </button>
 
-          </section>
+            {/* 前回の問題で間違えたもの */}
+            {wrongCount > 0 && (
+              <button
+                type="button"
+                onClick={
+                  retryWrongProblems
+                }
+                className="mt-3 w-full rounded-xl bg-rose-500 px-4 py-4 text-lg font-black text-white"
+              >
+                ❌ 間違えた問題だけもう一度
+                <span className="ml-2 text-sm">
+                  ({wrongCount}問)
+                </span>
+              </button>
+            )}
 
+            <div className="mt-5 rounded-xl bg-slate-50 p-3 text-center">
+              <p className="text-xs text-slate-500">
+                全 {problems.length} 問
+              </p>
+
+              {currentProblems.length >
+                0 && (
+                <div className="mt-2 flex justify-center gap-4 text-xs font-bold">
+                  <span className="text-emerald-600">
+                    ○ 分かった{' '}
+                    {
+                      resultSummary.remembered
+                    }
+                  </span>
+
+                  <span className="text-rose-600">
+                    × 分からない{' '}
+                    {
+                      resultSummary.notRemembered
+                    }
+                  </span>
+
+                  <span className="text-slate-500">
+                    未判定{' '}
+                    {
+                      resultSummary.unanswered
+                    }
+                  </span>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
-
       </main>
     );
   }
 
+  /**
+   * ========================================================
+   * ゲーム終了
+   * ========================================================
+   */
+  const isFinished =
+    currentProblems.length > 0 &&
+    currentIndex >=
+      currentProblems.length;
 
-  // =========================================================
-  // 終了画面
-  // =========================================================
-
-  if (finished) {
-
-    const total =
-      problemsForGame.length;
-
-    const percent =
-      total > 0
-        ? Math.round(
-            (knownCount / total) * 100
-          )
-        : 0;
+  if (isFinished) {
+    const wrongCount =
+      currentProblems.filter(
+        (problem) =>
+          problemResults[
+            getProblemId(problem)
+          ] === false
+      ).length;
 
     return (
       <main className="min-h-screen bg-sky-50 text-sky-900">
-
-        <div className="max-w-xl mx-auto px-4 py-6">
-
-          <header className="mb-6 flex items-center justify-between">
-
-            <h1 className="text-xl sm:text-2xl font-extrabold">
-              打球単語帳
+        <div className="mx-auto max-w-md px-4 py-8">
+          <div className="rounded-2xl bg-white p-6 text-center shadow">
+            <h1 className="text-2xl font-black">
+              終了！
             </h1>
 
-            <Link
-              href="/tenipuri"
-              className="text-xs font-bold text-sky-700 underline"
-            >
-              テニプリへ戻る
-            </Link>
-
-          </header>
-
-
-          <section className="rounded-2xl border-2 border-fuchsia-300 bg-white p-6 shadow-sm text-center">
-
-            <p className="text-sm font-bold text-fuchsia-700">
-              単語帳終了！
+            <p className="mt-3 text-slate-600">
+              {currentProblems.length}問
+              終了しました。
             </p>
 
-            <h2 className="mt-2 text-2xl font-extrabold">
-              お疲れさま！
-            </h2>
-
-
-            {/* =================================================
-                正答率
-            ================================================= */}
-
-            <div className="mt-6">
-
-              <p className="text-xs font-bold text-slate-500">
-                わかった割合
-              </p>
-
-              <p className="mt-1 text-4xl font-black text-fuchsia-600">
-                {percent}%
-              </p>
-
-            </div>
-
-
-            {/* =================================================
-                結果
-            ================================================= */}
-
-            <div className="mt-6 grid grid-cols-2 gap-3">
-
-              <div className="rounded-2xl border-2 border-emerald-200 bg-emerald-50 p-4">
-
+            <div className="mt-5 grid grid-cols-3 gap-2">
+              <div className="rounded-xl bg-emerald-50 p-3">
                 <p className="text-xs font-bold text-emerald-700">
-                  わかった
+                  分かった
                 </p>
 
-                <p className="mt-1 text-2xl font-extrabold text-emerald-700">
-                  {knownCount}
-                  <span className="ml-1 text-xs">
-                    問
-                  </span>
+                <p className="mt-1 text-2xl font-black text-emerald-700">
+                  {
+                    resultSummary.remembered
+                  }
                 </p>
-
               </div>
 
-
-              <div className="rounded-2xl border-2 border-red-200 bg-red-50 p-4">
-
-                <p className="text-xs font-bold text-red-700">
-                  わからない
+              <div className="rounded-xl bg-rose-50 p-3">
+                <p className="text-xs font-bold text-rose-700">
+                  分からない
                 </p>
 
-                <p className="mt-1 text-2xl font-extrabold text-red-700">
-                  {unknownCount}
-                  <span className="ml-1 text-xs">
-                    問
-                  </span>
+                <p className="mt-1 text-2xl font-black text-rose-700">
+                  {
+                    resultSummary.notRemembered
+                  }
                 </p>
-
               </div>
 
+              <div className="rounded-xl bg-slate-50 p-3">
+                <p className="text-xs font-bold text-slate-500">
+                  未判定
+                </p>
+
+                <p className="mt-1 text-2xl font-black text-slate-500">
+                  {
+                    resultSummary.unanswered
+                  }
+                </p>
+              </div>
             </div>
 
-
-            {/* =================================================
-                分からなかった問題だけもう一回
-            ================================================= */}
-
-            {unknownCount > 0 && (
-
+            {wrongCount > 0 && (
               <button
                 type="button"
-                onClick={retryWrong}
-                className="mt-6 w-full rounded-2xl bg-red-500 px-4 py-4 text-sm font-extrabold text-white shadow-sm hover:bg-red-400"
+                onClick={
+                  retryWrongProblems
+                }
+                className="mt-6 w-full rounded-xl bg-rose-500 px-4 py-4 font-black text-white"
               >
-                分からなかった問題だけもう一回
+                ❌ 間違えた問題だけもう一度
+                <span className="ml-2">
+                  ({wrongCount}問)
+                </span>
               </button>
-
             )}
-
-
-            {/* =================================================
-                最初から
-            ================================================= */}
 
             <button
               type="button"
-              onClick={resetToStart}
-              className="mt-3 w-full rounded-2xl border-2 border-slate-200 bg-white px-4 py-3 text-sm font-extrabold text-slate-700 hover:bg-slate-50"
+              onClick={() => {
+                clearProgress();
+
+                setSettingsOpen(true);
+                setCurrentProblems([]);
+                setCurrentIndex(0);
+                setShowAnswer(false);
+                setProblemResults({});
+                setResumeAvailable(false);
+              }}
+              className="mt-3 w-full rounded-xl bg-sky-600 px-4 py-4 font-black text-white"
             >
-              もう一度最初から
+              もう一度
             </button>
-
-
-            {/* =================================================
-                テニプリへ
-            ================================================= */}
 
             <Link
               href="/tenipuri"
-              className="mt-3 block w-full rounded-2xl border border-sky-300 bg-sky-50 px-4 py-3 text-sm font-extrabold text-sky-700"
+              className="mt-3 block rounded-xl bg-slate-100 px-4 py-4 font-bold"
             >
-              テニプリへ戻る
+              テニプリメニューへ
             </Link>
-
-          </section>
-
+          </div>
         </div>
-
       </main>
     );
   }
 
-
-  // =========================================================
-  // 現在の問題
-  // =========================================================
-
-  const currentProblem =
-    problemsForGame[currentIndex];
-
-
-  if (!currentProblem) {
-    return null;
-  }
-
-
-  // =========================================================
-  // 進捗
-  // =========================================================
-
-  const total =
-    problemsForGame.length;
-
-  const displayNumber =
-    currentIndex + 1;
-
-  const progress =
-    total > 0
-      ? (currentIndex / total) * 100
-      : 0;
-
-
-  // =========================================================
-  // カードの見た目
-  // =========================================================
-
-  const rotation =
-    dragX * 0.04;
-
-  const opacity =
-    Math.max(
-      0.65,
-      1 - Math.abs(dragX) / 500
-    );
-
-
-  // =========================================================
-  // プレイ画面
-  // =========================================================
-
+  /**
+   * ========================================================
+   * プレイ画面
+   * ========================================================
+   */
   return (
     <main className="min-h-screen bg-sky-50 text-sky-900">
-
-      <div className="max-w-xl mx-auto px-4 py-4 sm:py-6">
-
-        {/* =================================================
-            ヘッダー
-        ================================================= */}
-
+      <div className="mx-auto max-w-md px-4 py-4">
         <header className="mb-4 flex items-center justify-between">
+          <button
+            type="button"
+            onClick={pauseGame}
+            className="text-sm font-bold text-sky-700"
+          >
+            ← 中断
+          </button>
 
-          <div>
-
-            <h1 className="text-xl sm:text-2xl font-extrabold">
-              打球単語帳
-            </h1>
-
-            <p className="text-[11px] text-slate-500 mt-1">
-              {displayNumber} / {total}
-            </p>
-
+          <div className="text-sm font-black">
+            {currentIndex + 1} /{' '}
+            {currentProblems.length}
           </div>
 
           <button
             type="button"
-            onClick={interruptGame}
-            className="rounded-xl border-2 border-slate-200 bg-white px-3 py-2 text-xs font-extrabold text-slate-600 shadow-sm hover:bg-slate-50"
-          >
-            中断する
-          </button>
+            onClick={() => {
+              setShowAnswer(
+                (previous) => {
+                  const next = !previous;
 
+                  saveProgress({
+                    problemIds:
+                      currentProblems.map(
+                        getProblemId
+                      ),
+                    currentIndex,
+                    showAnswer: next,
+                    results:
+                      problemResults,
+                    questionCount,
+                    randomMode,
+                    updatedAt: Date.now(),
+                  });
+
+                  return next;
+                }
+              );
+            }}
+            className="text-sm font-bold text-sky-700"
+          >
+            答え
+          </button>
         </header>
 
-
-        {/* =================================================
-            進捗バー
-        ================================================= */}
-
-        <div className="mb-5">
-
-          <div className="h-3 overflow-hidden rounded-full bg-slate-200">
-
-            <div
-              className="h-full rounded-full bg-fuchsia-500 transition-all duration-300"
-              style={{
-                width: `${progress}%`,
-              }}
-            />
-
-          </div>
-
-          <div className="mt-2 flex justify-between text-[11px] font-bold">
-
-            <span className="text-emerald-600">
-              わかった {knownCount}
+        {/* 判定状況 */}
+        <div className="mb-3 flex items-center justify-center gap-3 text-xs font-bold">
+          {currentResult === true && (
+            <span className="rounded-full bg-emerald-100 px-3 py-1 text-emerald-700">
+              ○ 分かった
             </span>
+          )}
 
-            <span className="text-red-600">
-              わからない {unknownCount}
+          {currentResult === false && (
+            <span className="rounded-full bg-rose-100 px-3 py-1 text-rose-700">
+              × 分からない
             </span>
+          )}
 
-          </div>
-
+          {!currentResult &&
+            currentResult !== false && (
+              <span className="rounded-full bg-slate-100 px-3 py-1 text-slate-500">
+                未判定
+              </span>
+            )}
         </div>
 
-
-        {/* =================================================
-            スワイプ案内
-        ================================================= */}
-
-        <div className="mb-3 flex items-center justify-between text-[11px] font-extrabold">
-
-          <span
-            className={
-              dragX < -20
-                ? 'text-emerald-600'
-                : 'text-slate-400'
-            }
-          >
-            ← わかった
-          </span>
-
-          <span className="text-slate-400">
-            タップで答えを見る
-          </span>
-
-          <span
-            className={
-              dragX > 20
-                ? 'text-red-600'
-                : 'text-slate-400'
-            }
-          >
-            わからない →
-          </span>
-
-        </div>
-
-
-        {/* =================================================
-            カード
-        ================================================= */}
-
-        <div
-          ref={cardRef}
-          onClick={handleCardClick}
-          onTouchStart={handleTouchStart}
-          onTouchMove={handleTouchMove}
-          onTouchEnd={handleTouchEnd}
-          onMouseDown={handleMouseDown}
-          onMouseMove={handleMouseMove}
-          onMouseUp={handleMouseUp}
-          onMouseLeave={() => {
-            if (isDragging) {
-              handleTouchEnd();
-            }
-          }}
-          className="relative select-none touch-pan-y"
-          style={{
-            cursor: isDragging
-              ? 'grabbing'
-              : 'pointer',
-          }}
-        >
-
-          {/* =================================================
-              わかった表示
-          ================================================= */}
-
-          <div
-            className="pointer-events-none absolute left-2 top-6 z-20 rounded-xl border-2 border-emerald-400 bg-emerald-50 px-4 py-2 font-black text-emerald-700 shadow-sm transition-opacity"
-            style={{
-              opacity:
-                dragX < 0
-                  ? Math.min(
-                      1,
-                      Math.abs(dragX) /
-                        SWIPE_THRESHOLD
-                    )
-                  : 0,
-            }}
-          >
-            わかった
-          </div>
-
-
-          {/* =================================================
-              わからない表示
-          ================================================= */}
-
-          <div
-            className="pointer-events-none absolute right-2 top-6 z-20 rounded-xl border-2 border-red-400 bg-red-50 px-4 py-2 font-black text-red-700 shadow-sm"
-            style={{
-              opacity:
-                dragX > 0
-                  ? Math.min(
-                      1,
-                      dragX /
-                        SWIPE_THRESHOLD
-                    )
-                  : 0,
-            }}
-          >
-            わからない
-          </div>
-
-
-          <div
-            className="overflow-hidden rounded-3xl border-2 border-fuchsia-200 bg-white shadow-lg transition-transform"
-            style={{
-              transform:
-                `translateX(${dragX}px) rotate(${rotation}deg)`,
-              opacity,
-              transition: isDragging
-                ? 'none'
-                : 'transform 0.25s ease, opacity 0.25s ease',
-            }}
-          >
-
-            {/* =================================================
-                表面
-            ================================================= */}
-
-            {!showAnswer ? (
-
-              <div>
-
-                <div className="bg-fuchsia-50 px-4 py-4 text-center">
-
-                  <p className="text-xs font-bold text-fuchsia-700">
-                    問題
-                  </p>
-
-                  <p className="mt-1 text-xl sm:text-2xl font-black text-fuchsia-950">
-                    {getQuestionText(
-                      currentProblem
-                    )}
-                  </p>
-
-                </div>
-
-
-                <div className="bg-slate-100">
-
-                  <img
-                    src={
-                      currentProblem.image_url
-                    }
-                    alt="打球画像"
-                    draggable={false}
-                    className="block h-auto max-h-[55vh] w-full object-contain"
-                  />
-
-                </div>
-
-
-                <div className="px-4 py-5 text-center">
-
-                  <p className="text-xs font-bold text-slate-400">
-                    タップすると答えが表示されます
-                  </p>
-
-                </div>
-
-              </div>
-
+        <section className="overflow-hidden rounded-2xl bg-white shadow">
+          <div className="flex min-h-[280px] items-center justify-center bg-slate-100 p-3">
+            {currentImage?.imageUrl ? (
+              <img
+                src={currentImage.imageUrl}
+                alt="打球問題"
+                className="max-h-[55vh] w-auto max-w-full object-contain"
+                draggable={false}
+              />
             ) : (
+              <div className="text-sm text-slate-400">
+                画像を読み込んでいます…
+              </div>
+            )}
+          </div>
 
-              /* =================================================
-                 裏面
-              ================================================= */
+          <div className="p-5">
+            <p className="text-lg font-black">
+              {getQuestionText(
+                currentProblem
+              )}
+            </p>
 
-              <div>
+            {showAnswer && (
+              <div className="mt-5 rounded-xl bg-emerald-50 p-4">
+                <p className="text-xs font-bold text-emerald-700">
+                  答え
+                </p>
 
-                <div className="bg-emerald-50 px-4 py-4 text-center">
+                <p className="mt-1 text-2xl font-black text-emerald-900">
+                  {getAnswer(
+                    currentProblem
+                  )}
+                </p>
 
-                  <p className="text-xs font-bold text-emerald-700">
-                    正解
-                  </p>
-
-                  <p className="mt-1 text-2xl sm:text-3xl font-black text-emerald-900 break-words">
-                    {getAnswer(
-                      currentProblem
-                    )}
-                  </p>
-
-                </div>
-
-
-                {/* 打球画像 */}
-
-                <div className="bg-slate-100">
-
-                  <img
-                    src={
-                      currentProblem.image_url
+                {currentProblem?.episode && (
+                  <p className="mt-3 text-sm">
+                    話数：
+                    {
+                      currentProblem.episode
                     }
-                    alt="打球画像"
-                    draggable={false}
-                    className="block h-auto max-h-[45vh] w-full object-contain"
-                  />
-
-                </div>
-
-
-                {/* 詳細 */}
-
-                <div className="space-y-2 px-4 py-5">
-
-                  {currentProblem.hitter && (
-                    <InfoRow
-                      label="誰が"
-                      value={
-                        currentProblem.hitter
-                      }
-                    />
-                  )}
-
-                  {currentProblem.target && (
-                    <InfoRow
-                      label="誰に"
-                      value={
-                        currentProblem.target
-                      }
-                    />
-                  )}
-
-                  {currentProblem.technique && (
-                    <InfoRow
-                      label="技名"
-                      value={
-                        currentProblem.technique
-                      }
-                    />
-                  )}
-
-                  {currentProblem.episode && (
-                    <InfoRow
-                      label="話数"
-                      value={`${currentProblem.episode}話`}
-                    />
-                  )}
-
-                  {currentProblem.location && (
-                    <InfoRow
-                      label="場所"
-                      value={
-                        currentProblem.location
-                      }
-                    />
-                  )}
-
-                  {currentProblem.hand && (
-                    <InfoRow
-                      label="右・左"
-                      value={
-                        currentProblem.hand
-                      }
-                    />
-                  )}
-
-                  {currentProblem.result && (
-                    <InfoRow
-                      label="結果"
-                      value={
-                        currentProblem.result
-                      }
-                    />
-                  )}
-
-                </div>
-
-
-                {/* 解説画像 */}
-
-                {currentProblem.explanation_image_url && (
-
-                  <div className="border-t-2 border-violet-100 bg-violet-50 px-4 py-5">
-
-                    <p className="mb-3 text-center text-xs font-extrabold text-violet-800">
-                      解説画像
-                    </p>
-
-                    <img
-                      src={
-                        currentProblem.explanation_image_url
-                      }
-                      alt="解説画像"
-                      draggable={false}
-                      className="block max-h-[50vh] w-full rounded-xl bg-white object-contain"
-                    />
-
-                  </div>
-
+                  </p>
                 )}
 
-
-                <div className="px-4 py-5 text-center">
-
-                  <p className="text-xs font-bold text-slate-400">
-                    もう一度タップすると問題に戻ります
+                {currentProblem?.technique && (
+                  <p className="mt-1 text-sm">
+                    技名：
+                    {
+                      currentProblem.technique
+                    }
                   </p>
+                )}
 
-                </div>
+                {currentProblem?.location && (
+                  <p className="mt-1 text-sm">
+                    場所：
+                    {
+                      currentProblem.location
+                    }
+                  </p>
+                )}
 
+                {currentProblem?.hand && (
+                  <p className="mt-1 text-sm">
+                    利き手：
+                    {
+                      currentProblem.hand
+                    }
+                  </p>
+                )}
+
+                {currentProblem?.result && (
+                  <p className="mt-1 text-sm">
+                    結果：
+                    {
+                      currentProblem.result
+                    }
+                  </p>
+                )}
+
+                {currentImage?.explanationImageUrl && (
+                  <img
+                    src={
+                      currentImage.explanationImageUrl
+                    }
+                    alt="解説"
+                    className="mt-4 max-h-[50vh] w-auto max-w-full object-contain"
+                    draggable={false}
+                  />
+                )}
               </div>
-
             )}
-
           </div>
+        </section>
 
-        </div>
-
-
-        {/* =================================================
-            判定ボタン
-        ================================================= */}
-
-        <div className="mt-5 grid grid-cols-2 gap-3">
-
+        {/* 分かった / 分からない */}
+        <div className="mt-4 grid grid-cols-2 gap-3">
           <button
             type="button"
             onClick={() =>
-              judge(true)
+              markProblem(false)
             }
-            className="rounded-2xl border-2 border-emerald-300 bg-emerald-50 px-4 py-4 text-sm font-extrabold text-emerald-800 shadow-sm hover:bg-emerald-100"
+            className={`rounded-xl px-3 py-4 text-base font-black shadow ${
+              currentResult === false
+                ? 'bg-rose-600 text-white ring-4 ring-rose-200'
+                : 'bg-rose-100 text-rose-700'
+            }`}
           >
-            ← わかった
+            × 分からない
           </button>
 
           <button
             type="button"
             onClick={() =>
-              judge(false)
+              markProblem(true)
             }
-            className="rounded-2xl border-2 border-red-300 bg-red-50 px-4 py-4 text-sm font-extrabold text-red-800 shadow-sm hover:bg-red-100"
+            className={`rounded-xl px-3 py-4 text-base font-black shadow ${
+              currentResult === true
+                ? 'bg-emerald-600 text-white ring-4 ring-emerald-200'
+                : 'bg-emerald-100 text-emerald-700'
+            }`}
           >
-            わからない →
+            ○ 分かった
+          </button>
+        </div>
+
+        {/* 前へ / 答え / 次へ */}
+        <div className="mt-3 grid grid-cols-3 gap-2">
+          <button
+            type="button"
+            onClick={previousQuestion}
+            disabled={currentIndex <= 0}
+            className="rounded-xl bg-white px-3 py-4 font-bold shadow disabled:opacity-30"
+          >
+            ← 前へ
           </button>
 
+          <button
+            type="button"
+            onClick={() => {
+              setShowAnswer(
+                (previous) => {
+                  const next = !previous;
+
+                  saveProgress({
+                    problemIds:
+                      currentProblems.map(
+                        getProblemId
+                      ),
+                    currentIndex,
+                    showAnswer: next,
+                    results:
+                      problemResults,
+                    questionCount,
+                    randomMode,
+                    updatedAt: Date.now(),
+                  });
+
+                  return next;
+                }
+              );
+            }}
+            className="rounded-xl bg-sky-600 px-3 py-4 font-black text-white shadow"
+          >
+            {showAnswer
+              ? '答えを隠す'
+              : '答えを見る'}
+          </button>
+
+          <button
+            type="button"
+            onClick={nextQuestion}
+            className="rounded-xl bg-white px-3 py-4 font-bold shadow"
+          >
+            次へ →
+          </button>
         </div>
 
-
-        {/* =================================================
-            操作説明
-        ================================================= */}
-
-        <div className="mt-4 rounded-xl bg-white px-4 py-3 text-center shadow-sm">
-
-          <p className="text-[11px] leading-relaxed text-slate-500">
-
-            スマホ：カードを
-
-            <span className="font-extrabold text-emerald-600">
-              左へスワイプ
+        {/* 現在の進捗 */}
+        <div className="mt-4 rounded-xl bg-white p-3 text-center shadow">
+          <div className="flex justify-center gap-4 text-xs font-bold">
+            <span className="text-emerald-600">
+              ○ {resultSummary.remembered}
             </span>
 
-            すると「わかった」、
-
-            <span className="font-extrabold text-red-600">
-              右へスワイプ
+            <span className="text-rose-600">
+              × {resultSummary.notRemembered}
             </span>
 
-            すると「わからない」
-
-          </p>
-
+            <span className="text-slate-500">
+              未判定 {resultSummary.unanswered}
+            </span>
+          </div>
         </div>
-
-
-        {/* =================================================
-            中断ボタン（下にも配置）
-        ================================================= */}
-
-        <button
-          type="button"
-          onClick={interruptGame}
-          className="mt-4 w-full rounded-2xl border-2 border-slate-200 bg-white px-4 py-3 text-xs font-extrabold text-slate-500 hover:bg-slate-50"
-        >
-          中断する
-        </button>
-
       </div>
-
     </main>
   );
 }
-
-
-// =============================================================
-// 情報行
-// =============================================================
-
-function InfoRow({
-  label,
-  value,
-}) {
-  return (
-    <div className="flex items-start gap-3 rounded-xl bg-slate-50 px-3 py-2">
-
-      <span className="w-14 shrink-0 text-xs font-extrabold text-slate-500">
-        {label}
-      </span>
-
-      <span className="text-sm font-bold text-slate-800 break-words">
-        {value}
-      </span>
-
-    </div>
-  );
-}
-
