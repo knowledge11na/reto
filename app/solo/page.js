@@ -555,6 +555,28 @@ ageSortBest,
             </div>
           </div>
 
+          {/* ★ キャラクター全部言えるかな？ */}
+          <div className="rounded-2xl border border-sky-500 bg-sky-50 px-3 py-3 shadow-sm">
+            <Link
+              href="/solo/character-ierukana"
+              className="block hover:bg-sky-100 rounded-2xl -mx-3 -my-3 px-3 py-3 transition"
+            >
+              <p className="text-sm font-bold text-sky-900">
+                キャラクター脳内読みチャレンジ
+              </p>
+
+              <p className="text-[11px] text-sky-950 leading-tight mt-1">
+                ONE PIECEのキャラクターを、記憶だけでどこまで言えるか挑戦しよう。
+                              </p>
+            </Link>
+
+            <div className="mt-2 flex items-center justify-end text-[11px] text-sky-900">
+              <span>
+                
+              </span>
+            </div>
+          </div>
+
           {/* ナレッジタワー*/}
           <Link
   href="/solo/knowledge-tower"
