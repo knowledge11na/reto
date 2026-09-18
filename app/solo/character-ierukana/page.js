@@ -1283,7 +1283,7 @@ export default function CharacterIerukanaPage() {
 
                 {selectedArcs.length > 0 && (
                   <p className="text-[11px] text-slate-500 mt-1">
-                    選択した編に含まれる、CSVに存在するキャラクターのみ出題されます。
+                    選択した編に含まれる、キャラクターのみ出題されます。
                   </p>
                 )}
               </div>
@@ -1515,7 +1515,7 @@ export default function CharacterIerukanaPage() {
             </p>
 
             <p>
-              キャラクター名またはCSVの関連ワードを入力して回答します。
+              キャラクター名または関連ワードを入力して回答します。
             </p>
 
             <p>
@@ -1604,7 +1604,7 @@ export default function CharacterIerukanaPage() {
             <div className="text-xs sm:text-sm font-extrabold truncate">
               ONE PIECE キャラクター
               <span className="hidden sm:inline">
-                全部言えるかな？
+                脳内読みチャレンジ
               </span>
             </div>
 
