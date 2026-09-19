@@ -95,6 +95,8 @@ function normalizeAnswer(value) {
     .trim()
     .replace(/\s+/g, '')
     .toLowerCase()
+    // 長音・波ダッシュ・チルダをすべて「ー」に統一
+    .replace(/[〜～~ーｰ\-－−‐-‒–—―]/g, 'ー')
     .replace(/[\u30a1-\u30f6]/g, (char) =>
       String.fromCharCode(char.charCodeAt(0) - 0x60)
     );
