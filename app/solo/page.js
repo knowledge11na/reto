@@ -22,6 +22,9 @@ const [hukurouFlapBest, setHukurouFlapBest] = useState(0);
 const [heightSortBest, setHeightSortBest] = useState(0);
 const [ageSortBest, setAgeSortBest] = useState(0);
 
+// ★ キャラクター画像5番勝負
+const [characterImageQuizBest, setCharacterImageQuizBest] = useState(0);
+
   // ★ 風船割り：各モード自己ベスト（ローカル保存）
   const [balloonBests, setBalloonBests] = useState({
     food: 0,
@@ -103,6 +106,10 @@ if (!Number.isNaN(as) && as > 0)
       const bp = rawBefore ? Number(rawBefore) : 0;
       if (!Number.isNaN(bp) && bp > 0) setBeforeBest(bp);
 
+      const rawCharacterImageQuiz = window.localStorage.getItem('characterImageQuizBestScore');
+      const ciq = rawCharacterImageQuiz ? Number(rawCharacterImageQuiz) : 0;
+      if (Number.isFinite(ciq) && ciq > 0) setCharacterImageQuizBest(ciq);
+
 
 
 
@@ -134,7 +141,8 @@ if (!Number.isNaN(as) && as > 0)
       bloodtypeBest > 0 ||
 heightSortBest > 0 ||
 ageSortBest > 0 ||
-      Math.max(
+characterImageQuizBest > 0 ||
+Math.max(
         balloonBests.food || 0,
         balloonBests.height || 0,
         balloonBests.age || 0,
@@ -162,6 +170,7 @@ ageSortBest > 0 ||
 
 heightSortBest,
 ageSortBest,
+characterImageQuizBest,
 
         // ★ 血液型も送る（API側で未対応なら無視されるだけ）
         bloodtypeBest,
@@ -175,7 +184,19 @@ ageSortBest,
         },
       }),
     }).catch(() => {});
-  }, [me, meteorBest, sniperBest, dungeonBest, bombBest, bornBest, bloodtypeBest, heightSortBest,ageSortBest,balloonBests]);
+}, [
+  me,
+  meteorBest,
+  sniperBest,
+  dungeonBest,
+  bombBest,
+  bornBest,
+  bloodtypeBest,
+  heightSortBest,
+  ageSortBest,
+  characterImageQuizBest,
+  balloonBests,
+]);
 
   return (
     <main className="min-h-screen bg-sky-50 text-sky-900">
@@ -574,6 +595,28 @@ ageSortBest,
               <span>
                 
               </span>
+            </div>
+          </div>
+
+          {/* ★ キャラクター画像5番勝負 */}
+          <div className="rounded-2xl border border-violet-500 bg-violet-50 px-4 py-4 shadow-sm">
+            <Link
+              href="/solo/character-image-quiz"
+              className="block hover:bg-violet-100 rounded-2xl -mx-4 -my-4 px-4 py-4 transition"
+            >
+              <p className="text-base font-extrabold text-violet-900">
+                キャラクター画像5番勝負
+              </p>
+              <p className="text-[11px] text-violet-950 leading-tight mt-1">
+                ドアップ・モザイク・バラバラ・パズル・スポットライトの5ゲーム。
+                順番は毎回ランダム、全500点満点。
+              </p>
+            </Link>
+            <div className="mt-2 flex items-center justify-between text-[11px] text-violet-900">
+              <span>
+                自己ベスト: <span className="font-semibold">{characterImageQuizBest}</span> / 500
+              </span>
+              <span className="text-violet-700">5ゲーム × 100点</span>
             </div>
           </div>
 
