@@ -152,9 +152,9 @@ export default function HomePage() {
 
         {/* 🎮 ソロゲームにまとめて移動（1ボタンだけ） */}
         <section className="bg-sky-100 border-2 border-violet-500 rounded-3xl p-4 shadow-sm">
-          <h2 className="text-xl font-extrabold mb-2">🎮 ソロゲーム</h2>
+          <h2 className="text-xl font-extrabold mb-2">🎮 ソロ(マルチ)ゲーム</h2>
           <p className="text-[11px] text-sky-900 mb-3">
-            1人で黙々と遊べる練習モード。レートは変動しません。
+            ゲームで遊べるモード。レートは変動しません。
           </p>
           {me ? (
             <Link

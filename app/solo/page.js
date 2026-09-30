@@ -620,6 +620,36 @@ characterImageQuizBest,
             </div>
           </div>
 
+{/* ★ エクストラキャラクター当て */}
+<Link
+  href="/solo/extra-character"
+  className="block rounded-2xl border border-emerald-500 bg-emerald-50 px-4 py-5 shadow-sm hover:bg-emerald-100 transition"
+>
+  <p className="text-base font-extrabold text-emerald-900">
+    エクストラキャラクター当て
+  </p>
+  <p className="text-[12px] text-emerald-950 leading-relaxed mt-2">
+    キャラクターの説明文を手掛かりに、誰なのかを当てよう。
+    <br />
+    ONE PIECEの知識が試されるエクストラキャラクイズ。
+  </p>
+</Link>
+
+{/* ★ パンクレコード */}
+<Link
+  href="/solo/punkrecords"
+  className="block rounded-2xl border border-slate-400 bg-slate-100 px-4 py-5 shadow-sm hover:bg-slate-200 transition"
+>
+  <p className="text-base font-extrabold text-slate-900">
+    パンクレコード
+  </p>
+  <p className="text-[12px] text-slate-950 leading-relaxed mt-2">
+    エクストラキャラクターを使用したマルチゲーム。
+    <br />
+    知識を用いて勝利を目指す。
+  </p>
+</Link>
+
           {/* ナレッジタワー*/}
           <Link
   href="/solo/knowledge-tower"
