@@ -206,6 +206,7 @@ export default function ExtraCharacterPage() {
   const [revealedChars, setRevealedChars] = useState([]);
 
   const [answer, setAnswer] = useState('');
+const [soloAnswerUsed, setSoloAnswerUsed] = useState(false);
   const [message, setMessage] = useState('');
   const [answerResult, setAnswerResult] = useState(null);
 
@@ -745,8 +746,13 @@ export default function ExtraCharacterPage() {
       return false;
     }
 
+    // まだ誰もめくっていない文字だけを対象にする
     const availableIndexes =
-      getCoopAvailableIndexes();
+      coopRevealOwners
+        .map((owner, index) =>
+          owner === -1 ? index : null
+        )
+        .filter((index) => index !== null);
 
     if (availableIndexes.length === 0) {
       return false;
@@ -754,32 +760,32 @@ export default function ExtraCharacterPage() {
 
     let selectedIndex = null;
 
-    if (
-      revealType ===
-      REVEAL_TYPES.SELECT
-    ) {
-      if (
-        coopSelectedIndexes.length !== 1
-      ) {
+    // 自分で指定
+    if (revealType === REVEAL_TYPES.SELECT) {
+      if (coopSelectedIndexes.length !== 1) {
+        setMessage(
+          'めくる文字を1つ選択してください。'
+        );
+
         return false;
       }
 
       const candidate =
         coopSelectedIndexes[0];
 
+      // すでに他のプレイヤーがめくっていたら無効
       if (
-        coopRevealOwners[candidate] !== -1
+        !availableIndexes.includes(candidate)
       ) {
+        setCoopSelectedIndexes([]);
         return false;
       }
 
       selectedIndex = candidate;
     }
 
-    if (
-      revealType ===
-      REVEAL_TYPES.RANDOM
-    ) {
+    // ランダム
+    if (revealType === REVEAL_TYPES.RANDOM) {
       selectedIndex =
         availableIndexes[
           Math.floor(
@@ -789,10 +795,8 @@ export default function ExtraCharacterPage() {
         ];
     }
 
-    if (
-      revealType ===
-      REVEAL_TYPES.SEQUENTIAL
-    ) {
+    // 先頭から順番
+    if (revealType === REVEAL_TYPES.SEQUENTIAL) {
       selectedIndex =
         availableIndexes[0];
     }
@@ -801,8 +805,16 @@ export default function ExtraCharacterPage() {
       return false;
     }
 
+    // 選んだ文字を現在のプレイヤーの所有にする
     setCoopRevealOwners((prev) => {
       const next = [...prev];
+
+      // 念のため、すでに誰かが取っていた場合は変更しない
+      if (
+        next[selectedIndex] !== -1
+      ) {
+        return prev;
+      }
 
       next[selectedIndex] =
         coopCurrentPlayerIndex;
@@ -810,11 +822,11 @@ export default function ExtraCharacterPage() {
       return next;
     });
 
+    // 選択状態を解除
     setCoopSelectedIndexes([]);
 
     return true;
   }
-
   function toggleCoopIndex(index) {
     if (
       coopRevealOwners[index] !== -1
@@ -1073,11 +1085,31 @@ export default function ExtraCharacterPage() {
   }
 
   function handleSoloReveal() {
+    if (!currentCharacter) {
+      return;
+    }
+
+    // まだめくれる文字がない場合
+    if (getUnrevealedCount(revealedChars) <= 0) {
+      setMessage(
+        'これ以上めくれる文字がありません。'
+      );
+      return;
+    }
+
     const revealed = revealOne();
 
     if (!revealed) {
       return;
     }
+
+    // 新しい文字をめくったので、
+    // その文字について新しく1回回答できる
+    setSoloAnswerUsed(false);
+
+    setAnswer('');
+    setAnswerResult(null);
+    setMessage('');
 
     startSoloAnswerTimer();
   }
@@ -1301,6 +1333,10 @@ export default function ExtraCharacterPage() {
       return;
     }
 
+
+    // 回答権を使用済みにする
+    setSoloAnswerUsed(true);
+
     const correct =
       isAnswerCorrect(
         answer,
@@ -1308,10 +1344,13 @@ export default function ExtraCharacterPage() {
       );
 
     if (!correct) {
+      // 不正解でも回答権は消費する
+      stopTimer();
+
       setAnswerResult('wrong');
 
       setMessage(
-        '不正解！もう一度回答できます。'
+        '不正解！次の文字をめくくって、もう一度回答できます。'
       );
 
       setAnswer('');
@@ -1319,6 +1358,7 @@ export default function ExtraCharacterPage() {
       return;
     }
 
+    // 正解
     stopTimer();
 
     const points =
@@ -1389,6 +1429,9 @@ export default function ExtraCharacterPage() {
       setMessage('');
       setAnswerResult(null);
       setSelectedIndexes([]);
+
+      // 新しい問題なので回答権をリセット
+      setSoloAnswerUsed(false);
     }, 900);
   }
 
@@ -1518,11 +1561,26 @@ export default function ExtraCharacterPage() {
       return;
     }
 
+    // まだめくれる文字がない場合
+    if (getUnrevealedCount(revealedChars) <= 0) {
+      setMessage(
+        'これ以上めくれる文字がありません。'
+      );
+      return;
+    }
+
     const revealed = revealOne();
 
     if (!revealed) {
       return;
     }
+
+    // 次の文字をめくったので、
+    // 新しい文字について回答できる
+    setSoloAnswerUsed(false);
+
+    setAnswer('');
+    setAnswerResult(null);
 
     setMessage(
       '1文字めくりました。'
@@ -3055,18 +3113,10 @@ export default function ExtraCharacterPage() {
 
           <div className="reveal-controls">
             <button
+              type="button"
               className="reveal-button"
-              onClick={() => {
-                const revealed =
-                  revealCoopOne();
-
-                if (!revealed) {
-                  return;
-                }
-              }}
-              disabled={
-                availableCount === 0
-              }
+              onClick={revealCoopOne}
+              disabled={availableCount === 0}
             >
               文字をめくる
             </button>
@@ -3485,9 +3535,14 @@ export default function ExtraCharacterPage() {
               autoComplete="off"
             />
 
-            <button type="submit">
-              回答する
-            </button>
+<button
+  type="submit"
+  disabled={soloAnswerUsed}
+>
+  {soloAnswerUsed
+    ? '次の文字をめくってください'
+    : '回答する'}
+</button>
           </form>
 
           {message && (

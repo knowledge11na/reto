@@ -5,6 +5,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 
+
 const MAX_PLAYERS = 7;
 
 const CIVILIAN_ROLES = [
@@ -259,6 +260,20 @@ export default function PunkRecordsPage() {
   // 「ステルスをやり直す」でここを取り消す
   const [lastStealthTargetIndex, setLastStealthTargetIndex] =
     useState(null);
+
+// 直前の「記号を隠す」ステルスで隠した記号
+const [lastHiddenSymbolIndexes, setLastHiddenSymbolIndexes] =
+  useState([]);
+
+// 記号を隠すステルスで現在選択中の記号
+const [selectedHiddenSymbolIndexes, setSelectedHiddenSymbolIndexes] =
+  useState([]);
+
+// ステルスの種類
+// 'character' = 文字を変更
+// 'symbol' = 記号を隠す
+const [stealthType, setStealthType] =
+  useState('character');
 
   const [answer, setAnswer] =
     useState('');
@@ -566,10 +581,13 @@ export default function PunkRecordsPage() {
 
     setYorkStealthValues({});
     setYorkStealthUsed(0);
-    setStealthMode(false);
-    setStealthCharacter('');
-    setStealthTargetIndex(null);
-    setLastStealthTargetIndex(null);
+setStealthMode(false);
+setStealthCharacter('');
+setStealthTargetIndex(null);
+setLastStealthTargetIndex(null);
+setLastHiddenSymbolIndexes([]);
+setSelectedHiddenSymbolIndexes([]);
+setStealthType('character');
 
     setAnswer('');
 
@@ -842,6 +860,120 @@ function isCurrentPlayersSlot(
       [charIndex]: nextValue,
     }));
   }
+
+  // -------------------------
+  // 記号ステルス
+  // -------------------------
+
+  function toggleHiddenSymbol(index) {
+    // 記号フルオープンOFFでは使用不可
+    if (!symbolsOpen) {
+      return;
+    }
+
+    // ヨーク本人以外は使用不可
+    if (!isCurrentPlayerYork()) {
+      return;
+    }
+
+    // ステルスモード中のみ
+    if (!stealthMode) {
+      return;
+    }
+
+    // 記号ではない場合
+    if (!isOpenSymbol(descriptionChars[index])) {
+      return;
+    }
+
+    // 文字ステルス中は操作不可
+    if (stealthType !== 'symbol') {
+      return;
+    }
+
+    setSelectedHiddenSymbolIndexes((prev) => {
+      // すでに選択している場合
+      if (prev.includes(index)) {
+        return prev.filter(
+          (item) => item !== index
+        );
+      }
+
+      // 最大3個
+      if (prev.length >= 3) {
+        return prev;
+      }
+
+      return [
+        ...prev,
+        index,
+      ];
+    });
+  }
+
+  // -------------------------
+  // 記号ステルスを確定
+  // -------------------------
+
+  function confirmSymbolStealth() {
+    if (!isCurrentPlayerYork()) {
+      return;
+    }
+
+    if (!stealthMode) {
+      return;
+    }
+
+    if (stealthType !== 'symbol') {
+      return;
+    }
+
+    if (
+      selectedHiddenSymbolIndexes.length === 0
+    ) {
+      setMessage(
+        '隠す記号を1つ以上選んでください。'
+      );
+
+      return;
+    }
+
+    // すでに使用回数を使い切っている場合
+    if (
+      yorkStealthUsed >= yorkStealthCount
+    ) {
+      setMessage(
+        'ステルスの使用回数を使い切っています。'
+      );
+
+      return;
+    }
+
+    // 直前の記号ステルスとして保存
+    setLastHiddenSymbolIndexes(
+      [...selectedHiddenSymbolIndexes]
+    );
+
+    // 1回消費
+    setYorkStealthUsed((used) =>
+      Math.min(
+        yorkStealthCount,
+        used + 1
+      )
+    );
+
+    // 選択状態を解除
+    setSelectedHiddenSymbolIndexes([]);
+
+    // ステルス終了
+    setStealthMode(false);
+
+    setStealthTargetIndex(null);
+
+    setMessage(
+      `記号を${selectedHiddenSymbolIndexes.length}個隠しました。`
+    );
+  }
   // -------------------------
   // 自分の入力完了
   // -------------------------
@@ -851,20 +983,65 @@ function finishCurrentInput() {
     return;
   }
 
-const myIndexes =
-  descriptionChars
-    .map((char, index) => ({
-      char,
-      index,
-    }))
-    .filter(
-      ({ char, index }) =>
-        !isOpenSymbol(char) &&
-        isCurrentPlayersSlot(index)
-    )
-    .map(
-      ({ index }) => index
+  // --------------------------------
+  // 記号ステルスを確定
+  // --------------------------------
+  if (
+    isCurrentPlayerYork() &&
+    stealthMode &&
+    stealthType === 'symbol'
+  ) {
+    if (
+      selectedHiddenSymbolIndexes.length === 0
+    ) {
+      setMessage(
+        '記号を1つ以上選択してください。'
+      );
+
+      return;
+    }
+
+    if (
+      yorkStealthUsed >= yorkStealthCount
+    ) {
+      setMessage(
+        'ステルスの使用回数を使い切っています。'
+      );
+
+      return;
+    }
+
+    setLastHiddenSymbolIndexes(
+      [...selectedHiddenSymbolIndexes]
     );
+
+    setYorkStealthUsed((used) =>
+      Math.min(
+        yorkStealthCount,
+        used + 1
+      )
+    );
+
+    setSelectedHiddenSymbolIndexes([]);
+    setStealthMode(false);
+    setStealthTargetIndex(null);
+    setMessage('');
+  }
+
+  const myIndexes =
+    descriptionChars
+      .map((char, index) => ({
+        char,
+        index,
+      }))
+      .filter(
+        ({ char, index }) =>
+          !isOpenSymbol(char) &&
+          isCurrentPlayersSlot(index)
+      )
+      .map(
+        ({ index }) => index
+      );
 
   const missing =
     myIndexes.some(
@@ -1135,10 +1312,13 @@ const myIndexes =
 
     setYorkStealthValues({});
     setYorkStealthUsed(0);
-    setStealthMode(false);
-    setStealthCharacter('');
-    setStealthTargetIndex(null);
-    setLastStealthTargetIndex(null);
+setStealthMode(false);
+setStealthCharacter('');
+setStealthTargetIndex(null);
+setLastStealthTargetIndex(null);
+setLastHiddenSymbolIndexes([]);
+setSelectedHiddenSymbolIndexes([]);
+setStealthType('character');
 
     setAnswer('');
 
@@ -1156,109 +1336,6 @@ const myIndexes =
 
     setMessage('');
   }
-
-  // -------------------------
-  // 説明文表示
-  // -------------------------
-
-  function renderDescription(
-    revealAll = false,
-    viewerIsYork = false
-  ) {
-    if (
-      !currentCharacter
-    ) {
-      return null;
-    }
-
-    return (
-      <div className="description-grid">
-        {descriptionChars.map(
-          (char, index) => {
-            const symbol =
-              isOpenSymbol(char);
-
-            const owner =
-              getOwnerNumber(index);
-
-            const stealthValue =
-              yorkStealthValues[index];
-
-            let display =
-              '？';
-
-            if (
-              symbolsOpen &&
-              symbol
-            ) {
-              display = char;
-            } else if (
-              revealAll
-            ) {
-              // ヨークのステルス入力を最優先
- display =
-  Array.from(
-    stealthValue ||
-    inputValues[index] ||
-    ''
-  )[0] || '？';
-            } else if (
-              viewerIsYork &&
-              stealthValue
-            ) {
-              // ヨーク本人だけ
-              // ステルス入力を確認できる
-              display =
-                stealthValue;
-            } else if (
-              isCurrentPlayersSlot(
-                index
-              )
-            ) {
-              display =
-  Array.from(
-    inputValues[index] || ''
-  )[0] || '';
-            }
-
-            return (
-              <div
-                key={index}
-                className={[
-                  'description-cell',
-                  symbol &&
-                  symbolsOpen
-                    ? 'symbol-cell'
-                    : '',
-                  revealAll
-                    ? 'revealed-cell'
-                    : '',
-                ]
-                  .filter(Boolean)
-                  .join(' ')}
-              >
-                {revealAll &&
-                  owner && (
-                    <span className="owner-number">
-                      {String.fromCharCode(
-                        0x2460 +
-                          owner -
-                          1
-                      )}
-                    </span>
-                  )}
-
-                <span className="cell-character">
-                  {display}
-                </span>
-              </div>
-            );
-          }
-        )}
-      </div>
-    );
-  }
-
 
 function renderCorrectDescription() {
   if (!currentCharacter) {
@@ -1290,6 +1367,133 @@ function renderCorrectDescription() {
             </span>
           </div>
         )
+      )}
+    </div>
+  );
+}
+
+  // -------------------------
+  // 説明文表示
+  // -------------------------
+
+function renderDescription(
+  revealAll = false,
+  viewerIsYork = false
+) {
+  if (!currentCharacter) {
+    return null;
+  }
+
+  return (
+    <div className="description-grid">
+      {descriptionChars.map(
+        (char, index) => {
+          const symbol =
+            isOpenSymbol(char);
+
+          const owner =
+            getOwnerNumber(index);
+
+          const stealthValue =
+            yorkStealthValues[index];
+
+          // ステルスで隠された記号か
+          const hiddenSymbol =
+            selectedHiddenSymbolIndexes.includes(index) ||
+            lastHiddenSymbolIndexes.includes(index);
+
+          let display = '？';
+
+          /*
+           * 回答者用の表示
+           *
+           * ヨークが隠した文字は、
+           * 回答者側では「？」ではなく完全に非表示にする。
+           *
+           * 例：
+           * 出題者側
+           * ①②③「欲(ヨーク)が隠した」①②③
+           *
+           * 回答者側
+           * ①②③①②③
+           */
+
+          /*
+           * ヨークが隠した文字は、
+           * 回答者側ではセルそのものを表示しない。
+           *
+           * ただし、隠した本人（ヨーク）には
+           * これまで通り自分の文字を表示する。
+           */
+          if (
+            hiddenSymbol &&
+            !viewerIsYork
+          ) {
+            return null;
+          }
+
+          if (
+            symbolsOpen &&
+            symbol
+          ) {
+            display = char;
+          } else if (
+            revealAll
+          ) {
+            display =
+              Array.from(
+                stealthValue ||
+                inputValues[index] ||
+                ''
+              )[0] || '？';
+          } else if (
+            viewerIsYork &&
+            stealthValue
+          ) {
+            display =
+              stealthValue;
+          } else if (
+            isCurrentPlayersSlot(index)
+          ) {
+            display =
+              Array.from(
+                inputValues[index] || ''
+              )[0] || '';
+          }
+
+          return (
+            <div
+              key={index}
+              className={[
+                'description-cell',
+                symbol &&
+                symbolsOpen
+                  ? 'symbol-cell'
+                  : '',
+                revealAll
+                  ? 'revealed-cell'
+                  : '',
+              ]
+                .filter(Boolean)
+                .join(' ')}
+            >
+              {revealAll &&
+                owner && (
+                  <span className="owner-number">
+                    {String.fromCharCode(
+                      0x2460 +
+                        owner -
+                        1
+                    )}
+                  </span>
+                )}
+
+              <span className="cell-character">
+                {display}
+              </span>
+            </div>
+          );
+        }
       )}
     </div>
   );
@@ -1537,7 +1741,7 @@ function renderCorrectDescription() {
                   見えません。
                 </p>
 
-               <div className="description-grid input-grid">
+ <div className="description-grid input-grid">
   {descriptionChars.map(
     (char, index) => {
       const symbol =
@@ -1549,10 +1753,49 @@ function renderCorrectDescription() {
       const stealthValue =
         yorkStealthValues[index];
 
+      const selectedHidden =
+        selectedHiddenSymbolIndexes.includes(
+          index
+        );
+
+      const anotherTargetSelected =
+        stealthTargetIndex !== null &&
+        stealthTargetIndex !== index;
+
+      // --------------------------------
+      // 記号
+      // --------------------------------
       if (
         symbolsOpen &&
         symbol
       ) {
+        // 記号ステルス中
+        if (
+          isCurrentPlayerYork() &&
+          stealthMode &&
+          stealthType === 'symbol'
+        ) {
+          return (
+            <button
+              key={index}
+              type="button"
+              className={
+                selectedHidden
+                  ? 'description-cell symbol-cell stealth-symbol selected'
+                  : 'description-cell symbol-cell stealth-symbol'
+              }
+              onClick={() =>
+                toggleHiddenSymbol(index)
+              }
+            >
+              {selectedHidden
+                ? '？'
+                : char}
+            </button>
+          );
+        }
+
+        // 通常の記号
         return (
           <div
             key={index}
@@ -1563,21 +1806,15 @@ function renderCorrectDescription() {
         );
       }
 
-        // -------------------------------
-      // ステルスモード中のヨーク
-      // -------------------------------
+      // --------------------------------
+      // 文字ステルス中のヨーク
+      // --------------------------------
       if (
         isCurrentPlayerYork() &&
         stealthMode &&
+        stealthType === 'character' &&
         !mine
       ) {
-        const isSelectedTarget =
-          stealthTargetIndex === index;
-
-        const anotherTargetSelected =
-          stealthTargetIndex !== null &&
-          stealthTargetIndex !== index;
-
         return (
           <input
             key={index}
@@ -1602,36 +1839,40 @@ function renderCorrectDescription() {
         );
       }
 
-     // ヨークが以前仕込んだ場所
-if (
-  isCurrentPlayerYork() &&
-  Object.prototype.hasOwnProperty.call(
-    yorkStealthValues,
-    index
-  )
-) {
-  return (
-   <input
-  key={index}
-  className="description-input stealth-input"
-  type="text"
-  inputMode="text"
-  autoComplete="off"
-  maxLength={1}
-  value={
-    yorkStealthValues[index] || ''
-  }
-  placeholder="＋"
-  onChange={(event) =>
-    handleStealthInput(
-      index,
-      event.target.value
-    )
-  }
-/>
-  );
-}
+      // --------------------------------
+      // ヨークが以前仕込んだ場所
+      // --------------------------------
+      if (
+        isCurrentPlayerYork() &&
+        Object.prototype.hasOwnProperty.call(
+          yorkStealthValues,
+          index
+        )
+      ) {
+        return (
+          <input
+            key={index}
+            className="description-input stealth-input"
+            type="text"
+            inputMode="text"
+            autoComplete="off"
+            value={
+              yorkStealthValues[index] || ''
+            }
+            placeholder="＋"
+            onChange={(event) =>
+              handleStealthInput(
+                index,
+                event.target.value
+              )
+            }
+          />
+        );
+      }
 
+      // --------------------------------
+      // 他プレイヤーの文字
+      // --------------------------------
       if (!mine) {
         return (
           <div
@@ -1643,6 +1884,9 @@ if (
         );
       }
 
+      // --------------------------------
+      // 自分の担当文字
+      // --------------------------------
       return (
         <input
           key={index}
@@ -1653,7 +1897,6 @@ if (
           value={
             inputValues[index] || ''
           }
-          
           onChange={(event) =>
             handleCharacterInput(
               index,
@@ -1672,113 +1915,248 @@ if (
             )}
 
             {isCurrentPlayerYork() && (
-              <div className="stealth-control">
-                <div className="stealth-status">
-                  <strong>
-                    欲（ヨーク）の特殊能力
-                  </strong>
+  <div className="stealth-control">
+    <div className="stealth-status">
+      <strong>
+        欲（ヨーク）の特殊能力
+      </strong>
 
-                  <span>
-                    残り{' '}
-                    {Math.max(
-                      0,
-                      yorkStealthCount -
-                        yorkStealthUsed
-                    )}
-                    回
-                  </span>
-                </div>
+      <span>
+        残り{' '}
+        {Math.max(
+          0,
+          yorkStealthCount -
+            yorkStealthUsed
+        )}
+        回
+      </span>
+    </div>
 
-                                <button
-                  type="button"
-                  className={
-                    stealthMode
-                      ? 'stealth-button active'
-                      : 'stealth-button'
-                  }
-                  disabled={
-                    !stealthMode &&
-                    yorkStealthUsed >=
-                      yorkStealthCount &&
-                    lastStealthTargetIndex === null
-                  }
-                  onClick={() => {
-                    // -------------------------
-                    // ステルス中
-                    // -------------------------
-                    if (stealthMode) {
-                      setStealthMode(false);
-                      setStealthTargetIndex(null);
-                      return;
-                    }
+    {symbolsOpen && (
+      <div className="stealth-type-grid">
+        <button
+          type="button"
+          className={
+            stealthType === 'character'
+              ? 'stealth-type-button selected'
+              : 'stealth-type-button'
+          }
+          disabled={
+            stealthMode
+          }
+          onClick={() =>
+            setStealthType('character')
+          }
+        >
+          <strong>
+            文字を変える
+          </strong>
 
-                    // -------------------------
-                    // 直前のステルスをやり直す
-                    // -------------------------
-                    if (
-                      lastStealthTargetIndex !== null
-                    ) {
-                      const target =
-                        lastStealthTargetIndex;
+          <span>
+            他プレイヤーの文字を1つ変更
+          </span>
+        </button>
 
-                      setYorkStealthValues(
-                        (prev) => {
-                          const next = {
-                            ...prev,
-                          };
+        <button
+          type="button"
+          className={
+            stealthType === 'symbol'
+              ? 'stealth-type-button selected'
+              : 'stealth-type-button'
+          }
+          disabled={
+            stealthMode
+          }
+          onClick={() =>
+            setStealthType('symbol')
+          }
+        >
+          <strong>
+            記号を隠す
+          </strong>
 
-                          delete next[target];
+          <span>
+            記号を最大3つまで非表示
+          </span>
+        </button>
+      </div>
+    )}
 
-                          return next;
-                        }
-                      );
+    <button
+      type="button"
+      className={
+        stealthMode
+          ? 'stealth-button active'
+          : 'stealth-button'
+      }
+      disabled={
+        !stealthMode &&
+        stealthType === 'character' &&
+        yorkStealthUsed >=
+          yorkStealthCount &&
+        lastStealthTargetIndex === null
+      }
+      onClick={() => {
+        // --------------------------------
+        // ステルス中
+        // --------------------------------
+        if (stealthMode) {
+          setStealthMode(false);
+          setStealthTargetIndex(null);
+          setSelectedHiddenSymbolIndexes([]);
+          return;
+        }
 
-                      setYorkStealthUsed(
-                        (used) =>
-                          Math.max(
-                            0,
-                            used - 1
-                          )
-                      );
+        // --------------------------------
+        // 直前の記号ステルスをやり直す
+        // --------------------------------
+        if (
+          stealthType === 'symbol' &&
+          lastHiddenSymbolIndexes.length > 0
+        ) {
+          setYorkStealthUsed(
+            (used) =>
+              Math.max(
+                0,
+                used - 1
+              )
+          );
 
-                      setStealthTargetIndex(
-                        null
-                      );
+          setLastHiddenSymbolIndexes([]);
 
-                      setLastStealthTargetIndex(
-                        null
-                      );
+          setSelectedHiddenSymbolIndexes([]);
 
-                      setStealthMode(true);
+          setStealthTargetIndex(null);
 
-                      return;
-                    }
+          setStealthMode(true);
 
-                    // -------------------------
-                    // 新しいステルスを開始
-                    // -------------------------
-                    setStealthTargetIndex(
-                      null
-                    );
+          setMessage('');
 
-                    setStealthMode(true);
-                  }}
-                >
-                  {stealthMode
-                    ? 'ステルスモード解除'
-                    : lastStealthTargetIndex !== null
-                      ? 'ステルスモードをやり直す'
-                      : 'ステルスモードを使う'}
-                </button>
+          return;
+        }
 
-                {stealthMode && (
-                  <p className="stealth-help">
-                    他のプレイヤーのマスを1つ選んで、
-                    好きな文字を入力してください。
-                  </p>
-                )}
-              </div>
-            )}
+        // --------------------------------
+        // 直前の文字ステルスをやり直す
+        // --------------------------------
+        if (
+          stealthType === 'character' &&
+          lastStealthTargetIndex !== null
+        ) {
+          const target =
+            lastStealthTargetIndex;
+
+          setYorkStealthValues(
+            (prev) => {
+              const next = {
+                ...prev,
+              };
+
+              delete next[target];
+
+              return next;
+            }
+          );
+
+          setYorkStealthUsed(
+            (used) =>
+              Math.max(
+                0,
+                used - 1
+              )
+          );
+
+          setStealthTargetIndex(
+            null
+          );
+
+          setLastStealthTargetIndex(
+            null
+          );
+
+          setStealthMode(true);
+
+          setMessage('');
+
+          return;
+        }
+
+        // --------------------------------
+        // 新しいステルス
+        // --------------------------------
+        if (
+          yorkStealthUsed >=
+          yorkStealthCount
+        ) {
+          setMessage(
+            'ステルスの使用回数を使い切っています。'
+          );
+
+          return;
+        }
+
+        setStealthTargetIndex(
+          null
+        );
+
+        setSelectedHiddenSymbolIndexes([]);
+
+        setStealthMode(true);
+
+        setMessage('');
+      }}
+    >
+      {stealthMode
+        ? 'ステルスモード解除'
+        : (
+          stealthType === 'symbol' &&
+          lastHiddenSymbolIndexes.length > 0
+        )
+          ? '記号ステルスをやり直す'
+          : (
+            stealthType === 'character' &&
+            lastStealthTargetIndex !== null
+          )
+            ? '文字ステルスをやり直す'
+            : 'ステルスモードを使う'}
+    </button>
+
+    {stealthMode &&
+      stealthType === 'character' && (
+        <p className="stealth-help">
+          他のプレイヤーのマスを1つ選んで、
+          好きな文字を入力してください。
+        </p>
+      )}
+
+    {stealthMode &&
+      stealthType === 'symbol' && (
+        <>
+          <p className="stealth-help">
+            隠したい記号を最大3つまで
+            クリックしてください。
+          </p>
+
+          <p className="stealth-selected-count">
+            選択中：
+            {selectedHiddenSymbolIndexes.length}
+            {' / 3'}
+          </p>
+
+          {selectedHiddenSymbolIndexes.length > 0 && (
+            <button
+              type="button"
+              className="stealth-confirm-button"
+              onClick={
+                confirmSymbolStealth
+              }
+            >
+              この記号を隠す
+            </button>
+          )}
+        </>
+      )}
+  </div>
+)}
 
             <button
               className="start-button wide"
@@ -3717,6 +4095,10 @@ const styles = `
       padding: 20px 10px 40px;
     }
 
+    .stealth-type-grid {
+      grid-template-columns: 1fr;
+    }
+
     .setup-card,
     .game-card {
       padding: 18px;
@@ -3827,6 +4209,98 @@ const styles = `
     border-color: #c65c5c !important;
     background: #fff5f5 !important;
     color: #a13f3f !important;
+  }
+
+  .stealth-type-grid {
+    display: grid;
+    grid-template-columns:
+      repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    margin: 15px 0;
+  }
+
+  .stealth-type-button {
+    min-height: 70px;
+    border-radius: 10px;
+    border: 1px solid #d7a1a1;
+    background: #fff;
+    color: #914444;
+    padding: 10px;
+    font-weight: 800;
+  }
+
+  .stealth-type-button strong,
+  .stealth-type-button span {
+    display: block;
+  }
+
+  .stealth-type-button strong {
+    margin-bottom: 4px;
+  }
+
+  .stealth-type-button span {
+    font-size: 12px;
+    color: #aa7777;
+    font-weight: 500;
+  }
+
+  .stealth-type-button.selected {
+    background: #fff0f0;
+    border-color: #c65c5c;
+    box-shadow:
+      inset 0 0 0 1px
+      rgba(198,92,92,0.1);
+  }
+
+  .stealth-selected-count {
+    margin: 8px 0;
+    color: #a34c4c;
+    font-weight: 900;
+    text-align: center;
+  }
+
+  .stealth-confirm-button {
+    min-height: 44px;
+    padding: 0 20px;
+    border-radius: 9px;
+    border: 1px solid #b84d4d;
+    background:
+      linear-gradient(
+        180deg,
+        #d76b6b,
+        #b84d4d
+      );
+    color: #fff;
+    font-weight: 900;
+  }
+
+  .stealth-symbol {
+    cursor: pointer;
+    transition:
+      transform 0.12s,
+      background 0.12s,
+      border-color 0.12s;
+  }
+
+  .stealth-symbol:hover {
+    transform: translateY(-2px);
+    background: #fff4f4;
+    border-color: #c65c5c;
+  }
+
+  .stealth-symbol.selected {
+    background: #ffe5e5;
+    border-color: #c34f4f;
+    color: #bd4e4e;
+    box-shadow:
+      0 0 0 2px
+      rgba(195,79,79,0.12);
+  }
+
+  .hidden-symbol-cell {
+    background: #fff0f0;
+    border-color: #d69a9a;
+    color: #b84d4d;
   }
 
   .stealth-cell {
