@@ -2,8 +2,17 @@
 
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { useSearchParams, useRouter } from 'next/navigation';
+import {
+  Suspense,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
+import {
+  useSearchParams,
+  useRouter,
+} from 'next/navigation';
 import io from 'socket.io-client';
 
 let socket;
@@ -23,7 +32,7 @@ function getPlayerName(me) {
   );
 }
 
-export default function HawkPage() {
+function HawkGamePage() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -36,20 +45,30 @@ export default function HawkPage() {
 
   const [phase, setPhase] = useState('loading');
 
-  const [intervalValue, setIntervalValue] = useState(10);
-  const [intervalInput, setIntervalInput] = useState('10');
+  const [intervalValue, setIntervalValue] =
+    useState(10);
+
+  const [intervalInput, setIntervalInput] =
+    useState('10');
 
   const [round, setRound] = useState(0);
-  const [scoreCard, setScoreCard] = useState(null);
+  const [scoreCard, setScoreCard] =
+    useState(null);
 
   const [myCards, setMyCards] = useState([]);
-  const [selectedCardId, setSelectedCardId] = useState(null);
+  const [selectedCardId, setSelectedCardId] =
+    useState(null);
 
-  const [playedCards, setPlayedCards] = useState([]);
+  const [playedCards, setPlayedCards] =
+    useState([]);
+
   const [scores, setScores] = useState([]);
 
-  const [roundResult, setRoundResult] = useState(null);
-  const [finalResult, setFinalResult] = useState(null);
+  const [roundResult, setRoundResult] =
+    useState(null);
+
+  const [finalResult, setFinalResult] =
+    useState(null);
 
   const [error, setError] = useState('');
 
@@ -101,12 +120,16 @@ export default function HawkPage() {
 
       if (!currentMe) {
         try {
-          const response = await fetch('/api/me', {
-            cache: 'no-store',
-          });
+          const response = await fetch(
+            '/api/me',
+            {
+              cache: 'no-store',
+            }
+          );
 
           if (response.ok) {
-            const data = await response.json();
+            const data =
+              await response.json();
 
             currentMe =
               data?.user ??
@@ -130,7 +153,8 @@ export default function HawkPage() {
         currentMe?.user_id ??
         null;
 
-      const name = getPlayerName(currentMe);
+      const name =
+        getPlayerName(currentMe);
 
       console.log('[hawk] JOIN', {
         roomId,
@@ -223,7 +247,8 @@ export default function HawkPage() {
       setPhase('setup');
 
       if (
-        typeof payload?.interval === 'number'
+        typeof payload?.interval ===
+        'number'
       ) {
         setIntervalValue(
           payload.interval
@@ -256,7 +281,9 @@ export default function HawkPage() {
       );
 
       setMyCards(
-        Array.isArray(payload?.myCards)
+        Array.isArray(
+          payload?.myCards
+        )
           ? payload.myCards
           : []
       );
@@ -423,17 +450,16 @@ export default function HawkPage() {
     // エラー
     // ========================================
 
-const onHawkError = (payload) => {
-  console.error(
-    '[hawk:error]',
-    payload,
-    JSON.stringify(payload, null, 2)
-  );
-
-  alert(
-    payload?.message ||
-    'ハゲタカのえじきでエラーが発生しました。'
-  );
+    const onHawkError = (payload) => {
+      console.error(
+        '[hawk:error]',
+        payload,
+        JSON.stringify(
+          payload,
+          null,
+          2
+        )
+      );
 
       setError(
         payload?.message ||
@@ -446,7 +472,12 @@ const onHawkError = (payload) => {
     // ========================================
 
     s.on('connect', onConnect);
-    s.on('disconnect', onDisconnect);
+
+    s.on(
+      'disconnect',
+      onDisconnect
+    );
+
     s.on(
       'connect_error',
       onConnectError
@@ -584,7 +615,6 @@ const onHawkError = (payload) => {
       return false;
     }
 
-    // まず userId で判定
     const myUserId =
       me?.id ??
       me?.userId ??
@@ -601,8 +631,6 @@ const onHawkError = (payload) => {
       );
     }
 
-    // userId が取得できない場合は
-    // 現在の socketId で判定
     if (
       socket?.id &&
       room.hostSocketId
@@ -613,7 +641,6 @@ const onHawkError = (payload) => {
       );
     }
 
-    // 最後に players 内の isHost を確認
     const players =
       Array.isArray(room.players)
         ? room.players
@@ -633,7 +660,9 @@ const onHawkError = (payload) => {
           if (
             myUserId != null &&
             player.userId != null &&
-            String(player.userId) ===
+            String(
+              player.userId
+            ) ===
               String(myUserId)
           ) {
             return true;
@@ -708,44 +737,44 @@ const onHawkError = (payload) => {
   // ========================================
 
   const handlePlayCard = (card) => {
-  if (!socket) {
-    return;
-  }
-
-  if (phase !== 'playing') {
-    return;
-  }
-
-  if (
-    selectedCardId !== null ||
-    hasSubmitted
-  ) {
-    return;
-  }
-
-  if (!card) {
-    return;
-  }
-
-  const userId =
-    me?.id ??
-    me?.userId ??
-    me?.user_id ??
-    null;
-
-  setSelectedCardId(
-    card.id
-  );
-
-  socket.emit(
-    'hawk:play-card',
-    {
-      roomId,
-      cardId: card.id,
-      userId,
+    if (!socket) {
+      return;
     }
-  );
-};
+
+    if (phase !== 'playing') {
+      return;
+    }
+
+    if (
+      selectedCardId !== null ||
+      hasSubmitted
+    ) {
+      return;
+    }
+
+    if (!card) {
+      return;
+    }
+
+    const userId =
+      me?.id ??
+      me?.userId ??
+      me?.user_id ??
+      null;
+
+    setSelectedCardId(
+      card.id
+    );
+
+    socket.emit(
+      'hawk:play-card',
+      {
+        roomId,
+        cardId: card.id,
+        userId,
+      }
+    );
+  };
 
   // ========================================
   // 次ラウンド
@@ -1306,3 +1335,32 @@ const onHawkError = (payload) => {
 
   return null;
 }
+
+// ========================================
+// Next.js の prerender 対策
+// useSearchParams() を使うコンポーネントを
+// Suspense で包む
+// ========================================
+
+export default function HawkPage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="min-h-screen bg-sky-50 flex items-center justify-center px-4">
+          <div className="w-full max-w-md bg-white rounded-2xl shadow p-6 text-center">
+            <p className="font-extrabold text-sky-900">
+              ハゲタカのえじき
+            </p>
+
+            <p className="text-sm text-slate-500 mt-2">
+              読み込み中…
+            </p>
+          </div>
+        </main>
+      }
+    >
+      <HawkGamePage />
+    </Suspense>
+  );
+}
+
