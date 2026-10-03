@@ -112,6 +112,7 @@ const FREE_GAMES = [
     minPlayers: 2,
     maxPlayers: 4,
     available: true,
+    rulePath: '/free/hawk/rules',
   },
   {
     id: 'extra-poker',
@@ -120,6 +121,7 @@ const FREE_GAMES = [
     minPlayers: 2,
     maxPlayers: 4,
     available: true,
+    rulePath: '/free/extra-poker/rules',
   },
 ];
 
@@ -1477,7 +1479,7 @@ const onFreeGameStart = (payload) => {
             </div>
           </div>
 
-          {/* ゲーム選択 */}
+                   {/* ゲーム選択 */}
 
           <div className="space-y-2">
             <div>
@@ -1493,70 +1495,69 @@ const onFreeGameStart = (payload) => {
             </div>
 
             <div className="space-y-2">
-              {FREE_GAMES.map(
-                (game) => {
-                  const canPlay =
-                    players.length >=
-                    game.minPlayers;
+              {FREE_GAMES.map((game) => {
+                const canPlay =
+                  players.length >= game.minPlayers;
 
-                  const selected =
-                    freeSelectedGame ===
-                    game.id;
+                const selected =
+                  freeSelectedGame === game.id;
 
-                  return (
-                    <button
-                      key={
-                        game.id
-                      }
-                      onClick={() =>
-                        handleSelectFreeGame(
-                          game
-                        )
-                      }
-                      disabled={
-                        !isHost ||
-                        !canPlay
-                      }
-                      className={`w-full text-left rounded-xl border-2 p-3 transition ${
-                        selected
-                          ? 'border-sky-500 bg-sky-50'
-                          : 'border-slate-200 bg-white'
-                      } ${
-                        !isHost ||
-                        !canPlay
-                          ? 'opacity-50'
-                          : ''
-                      }`}
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="font-extrabold text-sm">
-                          {game.name}
-                        </span>
+                return (
+                  <div
+                    key={game.id}
+                    className={`w-full rounded-xl border-2 p-3 transition ${
+                      selected
+                        ? 'border-sky-500 bg-sky-50'
+                        : 'border-slate-200 bg-white'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          handleSelectFreeGame(game)
+                        }
+                        disabled={
+                          !isHost || !canPlay
+                        }
+                        className="flex-1 min-w-0 text-left disabled:opacity-50"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="font-bold text-slate-900">
+                            {game.name}
+                          </p>
 
-                        {selected && (
-                          <span className="text-xs font-bold text-sky-600">
-                            選択中
-                          </span>
-                        )}
-                      </div>
+                          {selected && (
+                            <span className="shrink-0 text-xs font-bold text-sky-600">
+                              選択中
+                            </span>
+                          )}
+                        </div>
 
-                      <p className="text-[11px] text-slate-500 mt-1">
-                        {game.description}
-                      </p>
+                        <p className="mt-1 text-sm text-slate-600">
+                          {game.description}
+                        </p>
 
-                      <p className="text-[10px] text-slate-400 mt-1">
-                        {game.minPlayers}～
-                        {game.maxPlayers}人
-                        {!canPlay &&
-                          `（あと${
-                            game.minPlayers -
-                            players.length
-                          }人必要）`}
-                      </p>
-                    </button>
-                  );
-                }
-              )}
+                        <p className="mt-1 text-xs text-slate-500">
+                          {game.minPlayers}～{game.maxPlayers}人
+                          {!canPlay &&
+                            `（現在${players.length}人）`}
+                        </p>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() =>
+                          router.push(game.rulePath)
+                        }
+                        className="shrink-0 text-xs font-bold text-sky-600 underline hover:text-sky-800"
+                      >
+                        ルールを見る
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
 
