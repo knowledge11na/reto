@@ -4157,6 +4157,130 @@ const action =
       ''
   );
 
+/*
+ * 回答フェーズの回答送信は
+ * 通常の「手番」とは別処理。
+ */
+if (
+  action ===
+  'submit-answer'
+) {
+  if (
+    game.phase !==
+    'answering'
+  ) {
+    socket.emit(
+      'extra-poker:error',
+      {
+        message:
+          '現在は回答入力の時間ではありません。',
+      }
+    );
+
+    return;
+  }
+
+  if (
+    !game.answerLocked[
+      playerSocketId
+    ]
+  ) {
+    socket.emit(
+      'extra-poker:error',
+      {
+        message:
+          'あなたには回答権がありません。',
+      }
+    );
+
+    return;
+  }
+
+  if (
+    game.answerSubmitted[
+      playerSocketId
+    ]
+  ) {
+    socket.emit(
+      'extra-poker:error',
+      {
+        message:
+          'すでに回答しています。',
+      }
+    );
+
+    return;
+  }
+
+  const submittedAnswer =
+    String(
+      payload?.answer ??
+        ''
+    ).trim();
+
+  if (
+    !submittedAnswer
+  ) {
+    socket.emit(
+      'extra-poker:error',
+      {
+        message:
+          'キャラクター名を入力してください。',
+      }
+    );
+
+    return;
+  }
+
+  game.answers[
+    playerSocketId
+  ] =
+    submittedAnswer;
+
+  game.answerSubmitted[
+    playerSocketId
+  ] = true;
+
+  /*
+   * 全回答者が回答したか。
+   */
+  const answerCandidates =
+    extraPokerGetAnswerCandidates(
+      game
+    );
+
+  const allSubmitted =
+    answerCandidates.every(
+      (candidate) =>
+        game.answerSubmitted[
+          candidate.socketId
+        ] === true
+    );
+
+  /*
+   * まだ回答していない人がいる。
+   */
+  if (
+    !allSubmitted
+  ) {
+    extraPokerBroadcastState(
+      game
+    );
+
+    return;
+  }
+
+  /*
+   * 全員回答済み。
+   *
+   * ここで初めて正解判定。
+   */
+  await extraPokerFinishCycle(
+    game
+  );
+
+  return;
+}
 
 if (
   !extraPokerCanAct(
@@ -6447,18 +6571,20 @@ async function extraPokerEndTurn(
     winners.size > 0;
 
   const revealedCharacterName =
-  game.character
-    ? String(
-        game.character.name ?? ''
-      )
-    : '';
+    hasWinner &&
+    game.character
+      ? String(
+          game.character.name ?? ''
+        )
+      : '';
 
-const revealedDescription =
-  game.character
-    ? String(
-        game.character.description ?? ''
-      )
-    : '';
+  const revealedDescription =
+    hasWinner &&
+    game.character
+      ? String(
+          game.character.description ?? ''
+        )
+      : '';
 
   console.log(
     '[extra-poker] 正解キャラクター:',
@@ -6480,30 +6606,30 @@ const revealedDescription =
       game
     );
 
- game.result = {
-  reason,
+  game.result = {
+    reason,
 
-  winnerSocketIds:
-    [...winners],
+    winnerSocketIds:
+      [...winners],
 
-  pot:
-    potBefore,
+    pot:
+      potBefore,
 
-  answers:
-    publicAnswers,
+    answers:
+      publicAnswers,
 
-  /*
-   * 正解者がいなくても
-   * 正解キャラクターを公開する。
-   */
-  characterName:
-    revealedCharacterName,
+    characterName:
+      hasWinner
+        ? revealedCharacterName
+        : null,
 
-  description:
-    revealedDescription,
+    description:
+      hasWinner
+        ? revealedDescription
+        : null,
 
-  hasWinner,
-};
+    hasWinner,
+  };
 
   if (
     hasWinner
@@ -6531,40 +6657,40 @@ const revealedDescription =
     }
 
     const payload = {
-  reason,
+      reason,
 
-  /*
-   * 正解者が0人でも
-   * 正解キャラクターを表示する。
-   */
-  characterName:
-    revealedCharacterName,
+      characterName:
+        hasWinner
+          ? revealedCharacterName
+          : null,
 
-  description:
-    revealedDescription,
+      description:
+        hasWinner
+          ? revealedDescription
+          : null,
 
-  answers:
-    publicAnswers,
+      answers:
+        publicAnswers,
 
-  winnerSocketIds:
-    [...winners],
+      winnerSocketIds:
+        [...winners],
 
-  pot:
-    potBefore,
+      pot:
+        potBefore,
 
-  players:
-    extraPokerPublicPlayers(
-      game
-    ),
+      players:
+        extraPokerPublicPlayers(
+          game
+        ),
 
-  round:
-    game.round,
+      round:
+        game.round,
 
-  turnNumber:
-    game.turnNumber,
+      turnNumber:
+        game.turnNumber,
 
-  hasWinner,
-};
+      hasWinner,
+    };
 
     targetSocket.emit(
       'extra-poker:turn-result',
@@ -8313,7 +8439,21 @@ io.on(
             return;
           }
 
+          if (
+            game.answerSubmitted[
+              playerSocketId
+            ]
+          ) {
+            socket.emit(
+              'extra-poker:error',
+              {
+                message:
+                  'すでに回答を送信しています。',
+              }
+            );
 
+            return;
+          }
 
           const answer =
             String(
@@ -8454,293 +8594,221 @@ io.on(
           );
 
 
-       // ======================================================
-// ANSWER
-// ======================================================
+        // ======================================================
+        // ANSWER
+        // ======================================================
 
-if (
-  action ===
-  'answer'
-) {
-  /*
-   * 回答を選択する。
-   *
-   * すでに一度「回答」を選択していても、
-   * 他のプレイヤーがより高い額で回答した場合は
-   * もう一度「回答」を押して現在の最高額まで
-   * 追加ベットできる。
-   *
-   * 例:
-   *
-   * A 100で回答
-   * B 200で回答
-   *
-   * Aは
-   * 200で回答
-   * または
-   * フォールド
-   *
-   * の2択になる。
-   */
+        if (
+          action ===
+          'answer'
+        ) {
+          /*
+           * 回答を選択するだけ。
+           *
+           * ここではまだ回答内容を入力しない。
+           */
+          if (
+            game.answerLocked[
+              playerSocketId
+            ]
+          ) {
+            socket.emit(
+              'extra-poker:error',
+              {
+                message:
+                  'すでに回答を選択しています。',
+              }
+            );
 
-  if (
-    game.answerLost[
-      playerSocketId
-    ]
-  ) {
-    socket.emit(
-      'extra-poker:error',
-      {
-        message:
-          'すでに回答権を失っています。',
-      }
-    );
+            return;
+          }
 
-    return;
-  }
+          if (
+            !Number.isInteger(
+              requestedBet
+            ) ||
+            requestedBet % 100 !== 0
+          ) {
+            socket.emit(
+              'extra-poker:error',
+              {
+                message:
+                  'ベットは100刻みです。',
+              }
+            );
 
-  /*
-   * すでに回答権を持っている場合でも、
-   * 現在の最高額に追いつくための
-   * 再回答は許可する。
-   *
-   * ただし、現在の最高額にすでに
-   * 追いついている場合は、
-   * 同じ回答権を何度も押す必要はない。
-   */
-  if (
-    game.answerLocked[
-      playerSocketId
-    ] &&
-    currentContribution >=
-      game.currentBet
-  ) {
-    socket.emit(
-      'extra-poker:error',
-      {
-        message:
-          'すでに現在の最高額まで回答しています。回答内容を入力してください。',
-      }
-    );
+            return;
+          }
 
-    return;
-  }
+          if (
+            requestedBet <
+            game.currentBet
+          ) {
+            socket.emit(
+              'extra-poker:error',
+              {
+                message:
+                  `回答するには現在の最高額${game.currentBet}以上を賭ける必要があります。`,
+              }
+            );
 
-  if (
-    !Number.isInteger(
-      requestedBet
-    ) ||
-    requestedBet % 100 !== 0
-  ) {
-    socket.emit(
-      'extra-poker:error',
-      {
-        message:
-          'ベットは100刻みです。',
-      }
-    );
+            return;
+          }
 
-    return;
-  }
+          if (
+            requestedBet >
+            game.settings.maxBet
+          ) {
+            socket.emit(
+              'extra-poker:error',
+              {
+                message:
+                  `ベット上限は${game.settings.maxBet}です。`,
+              }
+            );
 
-  /*
-   * 回答する場合は
-   * 現在の最高額以上が必要。
-   */
-  if (
-    requestedBet <
-    game.currentBet
-  ) {
-    socket.emit(
-      'extra-poker:error',
-      {
-        message:
-          `回答するには現在の最高額${game.currentBet}以上を賭ける必要があります。`,
-      }
-    );
+            return;
+          }
 
-    return;
-  }
+          const need =
+            Math.max(
+              0,
+              requestedBet -
+                currentContribution
+            );
 
-  if (
-    requestedBet >
-    game.settings.maxBet
-  ) {
-    socket.emit(
-      'extra-poker:error',
-      {
-        message:
-          `ベット上限は${game.settings.maxBet}です。`,
-      }
-    );
+          if (
+            need >
+            chips
+          ) {
+            socket.emit(
+              'extra-poker:error',
+              {
+                message:
+                  '持っているチップを超えて賭けることはできません。',
+              }
+            );
 
-    return;
-  }
+            return;
+          }
 
-  /*
-   * 自分がすでに入れている額との差額だけ追加する。
-   *
-   * Aが100入れていて、
-   * 現在の最高額が200なら、
-   *
-   * 200 - 100 = 100
-   *
-   * だけ追加する。
-   */
-  const need =
-    Math.max(
-      0,
-      requestedBet -
-        currentContribution
-    );
+          if (
+            need > 0
+          ) {
+            const success =
+              extraPokerPutToPot(
+                game,
+                playerSocketId,
+                need
+              );
 
-  if (
-    need >
-    chips
-  ) {
-    socket.emit(
-      'extra-poker:error',
-      {
-        message:
-          '持っているチップを超えて賭けることはできません。',
-      }
-    );
+            if (
+              !success
+            ) {
+              socket.emit(
+                'extra-poker:error',
+                {
+                  message:
+                    'ベット処理に失敗しました。',
+                }
+              );
 
-    return;
-  }
+              return;
+            }
+          }
 
-  if (
-    need > 0
-  ) {
-    const success =
-      extraPokerPutToPot(
-        game,
-        playerSocketId,
-        need
-      );
+          /*
+           * 回答権を予約。
+           */
+          game.answerLocked[
+            playerSocketId
+          ] = true;
 
-    if (
-      !success
-    ) {
-      socket.emit(
-        'extra-poker:error',
-        {
-          message:
-            'ベット処理に失敗しました。',
+          game.answerSubmitted[
+            playerSocketId
+          ] = false;
+
+          game.answers[
+            playerSocketId
+          ] = '';
+
+          /*
+           * 回答を選択したことで
+           * 最高額が上がった場合は
+           * 新しい最高額にする。
+           */
+          if (
+            requestedBet >
+            game.currentBet
+          ) {
+            game.currentBet =
+              requestedBet;
+
+            /*
+             * 回答によっても
+             * 最高額が上がった場合は、
+             * レイズと同じく
+             * 他のプレイヤーが
+             * もう一度対応する必要がある。
+             */
+            for (
+              const socketId of
+                game.cycleActors
+            ) {
+              game.cycleActed[
+                socketId
+              ] =
+                socketId ===
+                playerSocketId;
+            }
+          } else {
+            game.cycleActed[
+              playerSocketId
+            ] = true;
+          }
+
+          game.lastAction = {
+            playerId:
+              playerSocketId,
+
+            playerName:
+              player.name ||
+              'プレイヤー',
+
+            type:
+              'answer',
+
+            amount:
+              requestedBet,
+          };
+
+          const canAdvance =
+            extraPokerAdvanceActor(
+              game
+            );
+
+          if (
+            extraPokerCycleComplete(
+              game
+            )
+          ) {
+            await extraPokerFinishCycle(
+              game
+            );
+
+            return;
+          }
+
+          if (
+            canAdvance
+          ) {
+            extraPokerBroadcastState(
+              game
+            );
+          }
+
+          return;
         }
-      );
-
-      return;
-    }
-  }
-
-  /*
-   * 回答権を確保。
-   */
-  game.answerLocked[
-    playerSocketId
-  ] = true;
-
-  /*
-   * まだ回答内容そのものは
-   * 送信していない。
-   */
-  game.answerSubmitted[
-    playerSocketId
-  ] = false;
-
-  game.answers[
-    playerSocketId
-  ] = '';
-
-  /*
-   * 回答によって最高額が上がった場合。
-   *
-   * 他プレイヤーはその額に
-   * 追いつく必要がある。
-   */
-  if (
-    requestedBet >
-    game.currentBet
-  ) {
-    game.currentBet =
-      requestedBet;
-
-    /*
-     * 今回の回答額を基準に
-     * 他プレイヤーを再度行動可能にする。
-     *
-     * 回答した本人だけは行動済み。
-     */
-    for (
-      const socketId of
-        game.cycleActors
-    ) {
-      game.cycleActed[
-        socketId
-      ] =
-        socketId ===
-        playerSocketId;
-    }
-  } else {
-    /*
-     * 現在の最高額に
-     * 追いついただけの場合。
-     */
-    game.cycleActed[
-      playerSocketId
-    ] = true;
-  }
-
-  game.lastAction = {
-    playerId:
-      playerSocketId,
-
-    playerName:
-      player.name ||
-      'プレイヤー',
-
-    type:
-      'answer',
-
-    amount:
-      requestedBet,
-  };
-
-  /*
-   * 次のプレイヤーへ。
-   */
-  const canAdvance =
-    extraPokerAdvanceActor(
-      game
-    );
-
-  /*
-   * 全員が現在の最高額まで
-   * 対応したら回答フェーズへ。
-   */
-  if (
-    extraPokerCycleComplete(
-      game
-    )
-  ) {
-    await extraPokerFinishCycle(
-      game
-    );
-
-    return;
-  }
-
-  if (
-    canAdvance
-  ) {
-    extraPokerBroadcastState(
-      game
-    );
-  }
-
-  return;
-}
 
 
         // ======================================================

@@ -105,16 +105,16 @@ function TeamCardMini({ member }) {
 // ========================================
 
 const FREE_GAMES = [
-{
-  id: 'hawk',
-  name: 'ハゲタカのえじき',
-  description: '同じカードを使って競り合うゲーム',
-  minPlayers: 2,
-  maxPlayers: 4,
-  available: true,
-},
   {
-    id: 'viver-search',
+    id: 'hawk',
+    name: 'ミス・フライデーのえじき',
+    description: '同じカードを使って競り合うゲーム',
+    minPlayers: 2,
+    maxPlayers: 4,
+    available: true,
+  },
+  {
+    id: 'extra-poker',
     name: 'エクストラポーカー',
     description: '知識と判断力で競う対戦ゲーム',
     minPlayers: 2,
@@ -414,10 +414,7 @@ export default function RateMatchPage() {
     };
 
 const onFreeGameStart = (payload) => {
-  console.log(
-    '[free:game-start]',
-    payload
-  );
+  console.log('[free:game-start]', payload);
 
   const gameId = payload?.gameId;
   const roomId = payload?.roomId;
@@ -426,20 +423,39 @@ const onFreeGameStart = (payload) => {
     `ゲーム開始: ${gameId || '不明'}`
   );
 
+  if (!roomId) {
+    console.error(
+      '[free:game-start] roomIdがありません',
+      payload
+    );
+
+    setFreeError(
+      'ゲーム開始に必要な部屋情報がありません。'
+    );
+
+    return;
+  }
+
+  // ミス・フライデーのえじき
   if (gameId === 'hawk') {
     router.push(
-      `/free/hawk?room=${encodeURIComponent(roomId || '')}`
+      `/free/hawk?room=${encodeURIComponent(roomId)}`
     );
     return;
   }
 
-  setFreeView('game');
+  // エクストラポーカー
+  if (gameId === 'extra-poker') {
+    router.push(
+      `/free/extra-poker?room=${encodeURIComponent(roomId)}`
+    );
+    return;
+  }
 
-  setFreeSelectedGame(
-    gameId || null
+  setFreeError(
+    `未対応のゲームです: ${gameId || '不明'}`
   );
 };
-
     // ======================================
     // イベント登録
     // ======================================

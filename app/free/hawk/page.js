@@ -810,7 +810,7 @@ function HawkGamePage() {
       <main className="min-h-screen bg-sky-50 flex items-center justify-center px-4">
         <div className="w-full max-w-md bg-white rounded-2xl shadow p-6 text-center">
           <p className="font-extrabold text-sky-900">
-            ハゲタカのえじき
+            ミス・フライデーのえじき
           </p>
 
           <p className="text-sm text-slate-500 mt-2">
@@ -830,7 +830,7 @@ function HawkGamePage() {
       <main className="min-h-screen bg-sky-50 flex items-center justify-center px-4">
         <div className="w-full max-w-md bg-white rounded-2xl shadow p-6 text-center space-y-4">
           <h1 className="text-xl font-extrabold text-sky-900">
-            ハゲタカのえじき
+            ミス・フライデーのえじき
           </h1>
 
           <p className="text-sm text-red-600 font-bold">
@@ -869,7 +869,7 @@ function HawkGamePage() {
 
           <div className="bg-white rounded-2xl shadow p-5 text-center">
             <p className="text-xs text-slate-500">
-              ハゲタカのえじき
+              ミス・フライデーのえじき
             </p>
 
             <h1 className="text-2xl font-black text-sky-900 mt-1">
@@ -1006,7 +1006,7 @@ function HawkGamePage() {
 
           <div className="bg-white rounded-2xl shadow p-4 text-center">
             <p className="text-xs text-slate-500">
-              ハゲタカのえじき
+              ミス・フライデーのえじき
             </p>
 
             <div className="flex items-center justify-between mt-2">
@@ -1230,7 +1230,7 @@ function HawkGamePage() {
 
           <div className="bg-white rounded-2xl shadow p-5 text-center">
             <p className="text-xs text-slate-500">
-              ハゲタカのえじき
+              ミス・フライデーのえじき
             </p>
 
             <h1 className="text-3xl font-black text-sky-900 mt-1">
@@ -1349,7 +1349,7 @@ export default function HawkPage() {
         <main className="min-h-screen bg-sky-50 flex items-center justify-center px-4">
           <div className="w-full max-w-md bg-white rounded-2xl shadow p-6 text-center">
             <p className="font-extrabold text-sky-900">
-              ハゲタカのえじき
+              ミス・フライデーのえじき
             </p>
 
             <p className="text-sm text-slate-500 mt-2">
