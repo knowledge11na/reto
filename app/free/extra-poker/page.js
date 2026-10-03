@@ -3,6 +3,7 @@
 'use client';
 
 import {
+  Suspense,
   useEffect,
   useMemo,
   useRef,
@@ -278,7 +279,7 @@ function getCharacterName(result) {
    MAIN
 ========================================================= */
 
-export default function ExtraPokerPage() {
+function ExtraPokerPageContent() {
   const searchParams =
     useSearchParams();
 
@@ -3470,3 +3471,29 @@ const actionButtonStyle = {
 
   cursor: 'pointer',
 };
+
+export default function ExtraPokerPage() {
+  return (
+    <Suspense
+      fallback={
+        <main
+          style={{
+            minHeight: '100vh',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background:
+              'linear-gradient(180deg,#f7f4ed 0%,#e5dfd2 100%)',
+            color: '#222',
+            fontFamily:
+              'system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif',
+          }}
+        >
+          読み込み中……
+        </main>
+      }
+    >
+      <ExtraPokerPageContent />
+    </Suspense>
+  );
+}
