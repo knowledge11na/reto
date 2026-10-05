@@ -24,9 +24,6 @@ const REVEAL_TYPES = {
 
 const SOLO_BEST_KEY = 'extraCharacterSoloBestScore';
 
-const AUCTION_REVEAL_TIME = 15;
-const AUCTION_ANSWER_TIME = 60;
-
 const REVEAL_TYPE_LABELS = {
   [REVEAL_TYPES.RANDOM]: 'ランダムでめくる',
   [REVEAL_TYPES.SELECT]: '自分で指定してめくる',
@@ -206,7 +203,7 @@ export default function ExtraCharacterPage() {
   const [revealedChars, setRevealedChars] = useState([]);
 
   const [answer, setAnswer] = useState('');
-const [soloAnswerUsed, setSoloAnswerUsed] = useState(false);
+  const [soloAnswerUsed, setSoloAnswerUsed] = useState(false);
   const [message, setMessage] = useState('');
   const [answerResult, setAnswerResult] = useState(null);
 
@@ -232,6 +229,12 @@ const [soloAnswerUsed, setSoloAnswerUsed] = useState(false);
     '8P',
   ]);
 
+  const [soloResults, setSoloResults] =
+    useState([]);
+
+  const [battleResults, setBattleResults] =
+    useState([]);
+
   const [players, setPlayers] = useState([]);
   const [currentPlayerIndex, setCurrentPlayerIndex] = useState(0);
 
@@ -253,6 +256,9 @@ const [soloAnswerUsed, setSoloAnswerUsed] = useState(false);
 
   const [auctionAnswer, setAuctionAnswer] = useState('');
   const [auctionMessage, setAuctionMessage] = useState('');
+
+  const [finishedCharacter, setFinishedCharacter] =
+    useState(null);
 
   // ============================================================
   // 協力モード
@@ -422,6 +428,7 @@ const [soloAnswerUsed, setSoloAnswerUsed] = useState(false);
     setRevealedChars([]);
 
     setAnswer('');
+    setSoloAnswerUsed(false);
     setMessage('');
     setAnswerResult(null);
 
@@ -438,11 +445,17 @@ const [soloAnswerUsed, setSoloAnswerUsed] = useState(false);
     setAuctionOrder([]);
     setAuctionTurnIndex(0);
     setAuctionRoundNumber(1);
+    setAuctionRevealCount(0);
     setAuctionPhase('input');
     setAuctionBidInputs([]);
     setAuctionInputPlayerIndex(0);
     setAuctionAnswer('');
     setAuctionMessage('');
+
+    setFinishedCharacter(null);
+
+  setSoloResults([]);
+  setBattleResults([]);
 
     // 協力モード
     setCoopRevealOwners([]);
@@ -502,6 +515,7 @@ const [soloAnswerUsed, setSoloAnswerUsed] = useState(false);
     );
 
     setAnswer('');
+    setSoloAnswerUsed(false);
     setMessage('');
     setAnswerResult(null);
     setScore(0);
@@ -559,6 +573,7 @@ const [soloAnswerUsed, setSoloAnswerUsed] = useState(false);
       return;
     }
 
+    // オークションには時間制限を設定しない
     stopTimer();
 
     const newPlayers = buildPlayers();
@@ -590,6 +605,7 @@ const [soloAnswerUsed, setSoloAnswerUsed] = useState(false);
     setAuctionOrder([]);
     setAuctionTurnIndex(0);
     setAuctionRoundNumber(1);
+    setAuctionRevealCount(0);
 
     setAuctionPhase('input');
 
@@ -827,6 +843,7 @@ const [soloAnswerUsed, setSoloAnswerUsed] = useState(false);
 
     return true;
   }
+
   function toggleCoopIndex(index) {
     if (
       coopRevealOwners[index] !== -1
@@ -1168,55 +1185,8 @@ const [soloAnswerUsed, setSoloAnswerUsed] = useState(false);
     );
   }
 
-  function startAuctionRevealTimer() {
-    startTimer(
-      AUCTION_REVEAL_TIME,
-      'auction-reveal',
-      () => {
-        const player =
-          auctionOrder[
-            auctionTurnIndex
-          ];
-
-        setAuctionMessage(
-          `${
-            players[player?.playerIndex]?.name ||
-            `${(player?.playerIndex ?? 0) + 1}P`
-          }：15秒以内にめくれなかったため、回答権を失います。`
-        );
-
-        setTimeout(() => {
-          nextAuctionPlayer();
-        }, 700);
-      }
-    );
-  }
-
-  function startAuctionAnswerTimer() {
-    startTimer(
-      AUCTION_ANSWER_TIME,
-      'auction-answer',
-      () => {
-        const player =
-          auctionOrder[
-            auctionTurnIndex
-          ];
-
-        setAuctionMessage(
-          `${
-            players[player?.playerIndex]?.name ||
-            `${(player?.playerIndex ?? 0) + 1}P`
-          }：回答時間切れ！`
-        );
-
-        setTimeout(() => {
-          nextAuctionPlayer();
-        }, 700);
-      }
-    );
-  }
-
   function nextAuctionPlayer() {
+    // オークションにはタイマーを使用しない
     stopTimer();
 
     setAuctionAnswer('');
@@ -1325,236 +1295,289 @@ const [soloAnswerUsed, setSoloAnswerUsed] = useState(false);
     );
   }
 
-  function handleSoloAnswer() {
-    if (
-      !currentCharacter ||
-      !answer.trim()
-    ) {
-      return;
-    }
-
-
-    // 回答権を使用済みにする
-    setSoloAnswerUsed(true);
-
-    const correct =
-      isAnswerCorrect(
-        answer,
-        currentCharacter.name
-      );
-
-    if (!correct) {
-      // 不正解でも回答権は消費する
-      stopTimer();
-
-      setAnswerResult('wrong');
-
-      setMessage(
-        '不正解！次の文字をめくくって、もう一度回答できます。'
-      );
-
-      setAnswer('');
-
-      return;
-    }
-
-    // 正解
-    stopTimer();
-
-    const points =
-      getUnrevealedCount(
-        revealedChars
-      );
-
-    setAnswerResult('correct');
-
-    setMessage(
-      `正解！ ${points}点獲得！`
-    );
-
-    setScore(
-      (prev) => prev + points
-    );
-
-    setTimeout(() => {
-      if (round >= maxRounds) {
-        const finalScore =
-          score + points;
-
-        setScore(finalScore);
-
-        if (
-          finalScore >
-          soloBestScore
-        ) {
-          setSoloBestScore(
-            finalScore
-          );
-
-          if (
-            typeof window !==
-            'undefined'
-          ) {
-            window.localStorage.setItem(
-              SOLO_BEST_KEY,
-              String(finalScore)
-            );
-          }
-        }
-
-        setFinished(true);
-
-        return;
-      }
-
-      const nextCharacter =
-        chooseCharacter();
-
-      setRound(
-        (prev) => prev + 1
-      );
-
-      setCurrentCharacter(
-        nextCharacter
-      );
-
-      setRevealedChars(
-        createInitialRevealState(
-          nextCharacter.description,
-          symbolsOpen
-        )
-      );
-
-      setAnswer('');
-      setMessage('');
-      setAnswerResult(null);
-      setSelectedIndexes([]);
-
-      // 新しい問題なので回答権をリセット
-      setSoloAnswerUsed(false);
-    }, 900);
+ function handleSoloAnswer() {
+  if (
+    !currentCharacter ||
+    !answer.trim()
+  ) {
+    return;
   }
 
-  function handleLetterBattleAnswer() {
-    if (
-      !currentCharacter ||
-      !players[currentPlayerIndex]
-    ) {
-      return;
-    }
+  setSoloAnswerUsed(true);
 
-    const player =
-      players[currentPlayerIndex];
-
-    if (!answer.trim()) {
-      setMessage(
-        '答えを入力してください。'
-      );
-
-      return;
-    }
-
-    const isCorrect =
-      isAnswerCorrect(
-        answer,
-        currentCharacter.name
-      );
-
-    stopTimer();
-
-    if (!isCorrect) {
-      setAnswerResult('wrong');
-
-      setMessage(
-        `${player.name || `${currentPlayerIndex + 1}P`}：不正解！`
-      );
-
-      setTimeout(() => {
-        setAnswer('');
-        setAnswerResult(null);
-        nextBattlePlayer();
-      }, 700);
-
-      return;
-    }
-
-    const points =
-      getUnrevealedCount(
-        revealedChars
-      );
-
-    setAnswerResult('correct');
-
-    setMessage(
-      `${player.name || `${currentPlayerIndex + 1}P`}：正解！ +${points}点`
+  const correct =
+    isAnswerCorrect(
+      answer,
+      currentCharacter.name
     );
 
-    setPlayers((prev) =>
-      prev.map(
-        (p, index) =>
-          index ===
-          currentPlayerIndex
-            ? {
-                ...p,
-                score:
-                  p.score +
-                  points,
-              }
-            : p
+  if (!correct) {
+    stopTimer();
+
+    setAnswerResult('wrong');
+
+    setMessage(
+      '不正解！次の文字をめくって、もう一度回答できます。'
+    );
+
+    setAnswer('');
+
+    return;
+  }
+
+  stopTimer();
+
+  const points =
+    getUnrevealedCount(
+      revealedChars
+    );
+
+  const resultData = {
+    round,
+    character: currentCharacter,
+    revealedChars:
+      revealedChars.map(
+        (item) => ({
+          ...item,
+        })
+      ),
+    revealedCount:
+      getRevealedCount(
+        revealedChars
+      ),
+    points,
+    answer: answer.trim(),
+    result: 'correct',
+  };
+
+  setSoloResults(
+    (prev) => [
+      ...prev,
+      resultData,
+    ]
+  );
+
+  setAnswerResult('correct');
+
+  setMessage(
+    `正解！ ${points}点獲得！`
+  );
+
+  setScore(
+    (prev) => prev + points
+  );
+
+  setTimeout(() => {
+    if (round >= maxRounds) {
+      const finalScore =
+        score + points;
+
+      setScore(finalScore);
+
+      if (
+        finalScore >
+        soloBestScore
+      ) {
+        setSoloBestScore(
+          finalScore
+        );
+
+        if (
+          typeof window !==
+          'undefined'
+        ) {
+          window.localStorage.setItem(
+            SOLO_BEST_KEY,
+            String(finalScore)
+          );
+        }
+      }
+
+      setFinished(true);
+
+      return;
+    }
+
+    const nextCharacter =
+      chooseCharacter();
+
+    if (!nextCharacter) {
+      setFinished(true);
+      return;
+    }
+
+    setRound(
+      (prev) => prev + 1
+    );
+
+    setCurrentCharacter(
+      nextCharacter
+    );
+
+    setRevealedChars(
+      createInitialRevealState(
+        nextCharacter.description,
+        symbolsOpen
       )
     );
 
+    setAnswer('');
+    setMessage('');
+    setAnswerResult(null);
+    setSelectedIndexes([]);
+
+    setSoloAnswerUsed(false);
+  }, 900);
+}
+
+function handleLetterBattleAnswer() {
+  if (
+    !currentCharacter ||
+    !players[currentPlayerIndex]
+  ) {
+    return;
+  }
+
+  const player =
+    players[currentPlayerIndex];
+
+  if (!answer.trim()) {
+    setMessage(
+      '答えを入力してください。'
+    );
+
+    return;
+  }
+
+  const isCorrect =
+    isAnswerCorrect(
+      answer,
+      currentCharacter.name
+    );
+
+  stopTimer();
+
+  if (!isCorrect) {
+    setAnswerResult('wrong');
+
+    setMessage(
+      `${player.name || `${currentPlayerIndex + 1}P`}：不正解！`
+    );
+
     setTimeout(() => {
       setAnswer('');
       setAnswerResult(null);
+      nextBattlePlayer();
+    }, 700);
 
-      if (round >= maxRounds) {
-        stopTimer();
-        setFinished(true);
-
-        return;
-      }
-
-      const nextCharacter =
-        chooseCharacter();
-
-      if (!nextCharacter) {
-        setFinished(true);
-        return;
-      }
-
-      setRound(
-        (prev) => prev + 1
-      );
-
-      setCurrentCharacter(
-        nextCharacter
-      );
-
-      setRevealedChars(
-        createInitialRevealState(
-          nextCharacter.description,
-          symbolsOpen
-        )
-      );
-
-      setAnswer('');
-      setMessage('');
-      setAnswerResult(null);
-      setSelectedIndexes([]);
-      setBattleRevealDone(false);
-
-      const nextPlayer =
-        (currentPlayerIndex + 1) %
-        players.length;
-
-      setCurrentPlayerIndex(
-        nextPlayer
-      );
-
-      setBattleHandoff(true);
-    }, 900);
+    return;
   }
+
+  const points =
+    getUnrevealedCount(
+      revealedChars
+    );
+
+  const resultData = {
+    round,
+    character: currentCharacter,
+    revealedChars:
+      revealedChars.map(
+        (item) => ({
+          ...item,
+        })
+      ),
+    revealedCount:
+      getRevealedCount(
+        revealedChars
+      ),
+    points,
+    playerName:
+      player.name ||
+      `${currentPlayerIndex + 1}P`,
+    answer: answer.trim(),
+    result: 'correct',
+  };
+
+  setBattleResults(
+    (prev) => [
+      ...prev,
+      resultData,
+    ]
+  );
+
+  setAnswerResult('correct');
+
+  setMessage(
+    `${player.name || `${currentPlayerIndex + 1}P`}：正解！ +${points}点`
+  );
+
+  setPlayers((prev) =>
+    prev.map(
+      (p, index) =>
+        index ===
+        currentPlayerIndex
+          ? {
+              ...p,
+              score:
+                p.score +
+                points,
+            }
+          : p
+    )
+  );
+
+  setTimeout(() => {
+    setAnswer('');
+    setAnswerResult(null);
+
+    if (round >= maxRounds) {
+      stopTimer();
+      setFinished(true);
+
+      return;
+    }
+
+    const nextCharacter =
+      chooseCharacter();
+
+    if (!nextCharacter) {
+      setFinished(true);
+      return;
+    }
+
+    setRound(
+      (prev) => prev + 1
+    );
+
+    setCurrentCharacter(
+      nextCharacter
+    );
+
+    setRevealedChars(
+      createInitialRevealState(
+        nextCharacter.description,
+        symbolsOpen
+      )
+    );
+
+    setAnswer('');
+    setMessage('');
+    setAnswerResult(null);
+    setSelectedIndexes([]);
+    setBattleRevealDone(false);
+
+    const nextPlayer =
+      (currentPlayerIndex + 1) %
+      players.length;
+
+    setCurrentPlayerIndex(
+      nextPlayer
+    );
+
+    setBattleHandoff(true);
+  }, 900);
+}
 
   function skipSolo() {
     if (!currentCharacter) {
@@ -1589,69 +1612,101 @@ const [soloAnswerUsed, setSoloAnswerUsed] = useState(false);
     startSoloAnswerTimer();
   }
 
-  function surrenderSolo() {
-    stopTimer();
+function surrenderSolo() {
+  stopTimer();
 
-    if (!currentCharacter) {
+  if (!currentCharacter) {
+    return;
+  }
+
+  const resultData = {
+    round,
+    character: currentCharacter,
+    revealedChars:
+      revealedChars.map(
+        (item) => ({
+          ...item,
+        })
+      ),
+    revealedCount:
+      getRevealedCount(
+        revealedChars
+      ),
+    points: 0,
+    answer: '',
+    result: 'surrender',
+  };
+
+  setSoloResults(
+    (prev) => [
+      ...prev,
+      resultData,
+    ]
+  );
+
+  setAnswerResult('wrong');
+
+  setMessage(
+    `降参！正解は「${currentCharacter.name}」でした。`
+  );
+
+  setTimeout(() => {
+    if (round >= maxRounds) {
+      if (
+        score >
+        soloBestScore
+      ) {
+        setSoloBestScore(
+          score
+        );
+
+        if (
+          typeof window !==
+          'undefined'
+        ) {
+          window.localStorage.setItem(
+            SOLO_BEST_KEY,
+            String(score)
+          );
+        }
+      }
+
+      setFinished(true);
+
       return;
     }
 
-    setAnswerResult('wrong');
+    const nextCharacter =
+      chooseCharacter();
 
-    setMessage(
-      `降参！正解は「${currentCharacter.name}」でした。`
+    if (!nextCharacter) {
+      setFinished(true);
+      return;
+    }
+
+    setRound(
+      (prev) => prev + 1
     );
 
-    setTimeout(() => {
-      if (round >= maxRounds) {
-        if (
-          score >
-          soloBestScore
-        ) {
-          setSoloBestScore(
-            score
-          );
+    setCurrentCharacter(
+      nextCharacter
+    );
 
-          if (
-            typeof window !==
-            'undefined'
-          ) {
-            window.localStorage.setItem(
-              SOLO_BEST_KEY,
-              String(score)
-            );
-          }
-        }
+    setRevealedChars(
+      createInitialRevealState(
+        nextCharacter.description,
+        symbolsOpen
+      )
+    );
 
-        setFinished(true);
+    setAnswer('');
+    setMessage('');
+    setAnswerResult(null);
+    setSelectedIndexes([]);
 
-        return;
-      }
-
-      const nextCharacter =
-        chooseCharacter();
-
-      setRound(
-        (prev) => prev + 1
-      );
-
-      setCurrentCharacter(
-        nextCharacter
-      );
-
-      setRevealedChars(
-        createInitialRevealState(
-          nextCharacter.description,
-          symbolsOpen
-        )
-      );
-
-      setAnswer('');
-      setMessage('');
-      setAnswerResult(null);
-      setSelectedIndexes([]);
-    }, 1400);
-  }
+    setSoloAnswerUsed(false);
+  }, 1400);
+}
 
   function skipBattle() {
     stopTimer();
@@ -1668,60 +1723,103 @@ const [soloAnswerUsed, setSoloAnswerUsed] = useState(false);
     }, 500);
   }
 
-  function surrenderBattle() {
-    stopTimer();
+function surrenderBattle() {
+  stopTimer();
 
-    if (!currentCharacter) {
+  if (!currentCharacter) {
+    return;
+  }
+
+  const resultData = {
+    round,
+    character: currentCharacter,
+    revealedChars:
+      revealedChars.map(
+        (item) => ({
+          ...item,
+        })
+      ),
+    revealedCount:
+      getRevealedCount(
+        revealedChars
+      ),
+    points: 0,
+    playerName: null,
+    answer: '',
+    result: 'surrender',
+  };
+
+  setBattleResults(
+    (prev) => [
+      ...prev,
+      resultData,
+    ]
+  );
+
+  setAnswerResult('wrong');
+
+  setMessage(
+    `降参！正解は「${currentCharacter.name}」でした。`
+  );
+
+  setTimeout(() => {
+    if (
+      round >=
+      maxRounds
+    ) {
+      setFinishedCharacter(
+        currentCharacter
+      );
+
+      setFinished(true);
+
       return;
     }
 
-    setAnswerResult('wrong');
+    const nextCharacter =
+      chooseCharacter();
 
-    setMessage(
-      `降参！正解は「${currentCharacter.name}」でした。`
+    if (!nextCharacter) {
+      setFinishedCharacter(
+        currentCharacter
+      );
+
+      setFinished(true);
+
+      return;
+    }
+
+    setRound(
+      (prev) => prev + 1
     );
 
-    setTimeout(() => {
-      if (round >= maxRounds) {
-        setFinished(true);
-        return;
-      }
+    setCurrentCharacter(
+      nextCharacter
+    );
 
-      const nextCharacter =
-        chooseCharacter();
+    setRevealedChars(
+      createInitialRevealState(
+        nextCharacter.description,
+        symbolsOpen
+      )
+    );
 
-      setRound(
-        (prev) => prev + 1
-      );
+    setAnswer('');
+    setMessage('');
+    setAnswerResult(null);
+    setSelectedIndexes([]);
 
-      setCurrentCharacter(
-        nextCharacter
-      );
+    const nextPlayer =
+      (currentPlayerIndex + 1) %
+      players.length;
 
-      setRevealedChars(
-        createInitialRevealState(
-          nextCharacter.description,
-          symbolsOpen
-        )
-      );
+    setCurrentPlayerIndex(
+      nextPlayer
+    );
 
-      setAnswer('');
-      setMessage('');
-      setAnswerResult(null);
-      setSelectedIndexes([]);
-
-      const nextPlayer =
-        (currentPlayerIndex + 1) %
-        players.length;
-
-      setCurrentPlayerIndex(
-        nextPlayer
-      );
-
-      setBattleHandoff(true);
-    }, 1400);
-  }
-
+    setBattleHandoff(true);
+  }, 1400);
+}
   // ============================================================
   // オークション
   // ============================================================
@@ -1880,6 +1978,8 @@ const [soloAnswerUsed, setSoloAnswerUsed] = useState(false);
         0
       );
 
+      setAuctionBids([]);
+
       setAuctionMessage(
         `同額のため全員回答権なし。現在${currentRevealed}文字公開された状態で再オークションです。`
       );
@@ -1905,6 +2005,7 @@ const [soloAnswerUsed, setSoloAnswerUsed] = useState(false);
       return;
     }
 
+    // オークションには時間制限を設定しない
     stopTimer();
 
     const player =
@@ -1928,13 +2029,6 @@ const [soloAnswerUsed, setSoloAnswerUsed] = useState(false);
         `${player.playerIndex + 1}P`
       }のめくり開始！`
     );
-
-    if (player.bid <= 0) {
-      startAuctionAnswerTimer();
-      return;
-    }
-
-    startAuctionRevealTimer();
   }
 
   function handleAuctionAnswer() {
@@ -1963,97 +2057,149 @@ const [soloAnswerUsed, setSoloAnswerUsed] = useState(false);
         currentCharacter.name
       );
 
-    if (correct) {
-      const points =
-        getUnrevealedCount(
-          revealedChars
-        );
+if (correct) {
+  const points =
+    getUnrevealedCount(
+      revealedChars
+    );
 
-      setPlayers((prev) =>
-        prev.map(
-          (player, index) =>
-            index ===
-            currentAuctionPlayer
-              ? {
-                  ...player,
-                  score:
-                    player.score +
-                    points,
-                }
-              : player
-        )
+  const resultData = {
+    round,
+    character: currentCharacter,
+    revealedChars:
+      revealedChars.map(
+        (item) => ({
+          ...item,
+        })
+      ),
+    revealedCount:
+      getRevealedCount(
+        revealedChars
+      ),
+    points,
+    playerName:
+      players[
+        currentAuctionPlayer
+      ]?.name ||
+      `${currentAuctionPlayer + 1}P`,
+    answer:
+      auctionAnswer.trim(),
+    result: 'correct',
+  };
+
+  setBattleResults(
+    (prev) => [
+      ...prev,
+      resultData,
+    ]
+  );
+
+  setPlayers((prev) =>
+    prev.map(
+      (player, index) =>
+        index ===
+        currentAuctionPlayer
+          ? {
+              ...player,
+              score:
+                player.score +
+                points,
+            }
+          : player
+    )
+  );
+
+  setAuctionMessage(
+    `${
+      players[
+        currentAuctionPlayer
+      ]?.name ||
+      `${currentAuctionPlayer + 1}P`
+    } 正解！ ${points}点獲得！`
+  );
+
+  setAuctionPhase(
+    'correct'
+  );
+
+  setTimeout(() => {
+    // 最終ラウンドなら、
+    // この問題のキャラクターを結果画面に保存する
+    if (
+      round >=
+      maxRounds
+    ) {
+      setFinishedCharacter(
+        currentCharacter
       );
 
-      setAuctionMessage(
-        `${
-          players[
-            currentAuctionPlayer
-          ]?.name ||
-          `${currentAuctionPlayer + 1}P`
-        } 正解！ ${points}点獲得！`
+      setFinished(
+        true
       );
-
-      setAuctionPhase(
-        'correct'
-      );
-
-      setTimeout(() => {
-        if (
-          round >= maxRounds
-        ) {
-          setFinished(true);
-          return;
-        }
-
-        const nextCharacter =
-          chooseCharacter();
-
-        setRound(
-          (prev) =>
-            prev + 1
-        );
-
-        setCurrentCharacter(
-          nextCharacter
-        );
-
-        setRevealedChars(
-          createInitialRevealState(
-            nextCharacter.description,
-            symbolsOpen
-          )
-        );
-
-        setAuctionBids([]);
-        setAuctionOrder([]);
-        setAuctionTurnIndex(0);
-        setAuctionRoundNumber(1);
-        setAuctionRevealCount(0);
-        setAuctionPhase(
-          'input'
-        );
-
-        setAuctionBidInputs(
-          Array.from(
-            {
-              length:
-                playerCount,
-            },
-            () => ''
-          )
-        );
-
-        setAuctionInputPlayerIndex(
-          0
-        );
-
-        setAuctionAnswer('');
-        setAuctionMessage('');
-      }, 1000);
 
       return;
     }
 
+    const nextCharacter =
+      chooseCharacter();
+
+    if (!nextCharacter) {
+      setFinishedCharacter(
+        currentCharacter
+      );
+
+      setFinished(
+        true
+      );
+
+      return;
+    }
+
+    setRound(
+      (prev) =>
+        prev + 1
+    );
+
+    setCurrentCharacter(
+      nextCharacter
+    );
+
+    setRevealedChars(
+      createInitialRevealState(
+        nextCharacter.description,
+        symbolsOpen
+      )
+    );
+
+    setAuctionBids([]);
+    setAuctionOrder([]);
+    setAuctionTurnIndex(0);
+    setAuctionRoundNumber(1);
+    setAuctionRevealCount(0);
+    setAuctionPhase(
+      'input'
+    );
+
+    setAuctionBidInputs(
+      Array.from(
+        {
+          length:
+            playerCount,
+        },
+        () => ''
+      )
+    );
+
+    setAuctionInputPlayerIndex(
+      0
+    );
+
+    setAuctionAnswer('');
+    setAuctionMessage('');
+  }, 1000);
+
+  return;
+}
     const nextTurn =
       auctionTurnIndex + 1;
 
@@ -2167,12 +2313,22 @@ const [soloAnswerUsed, setSoloAnswerUsed] = useState(false);
                     BATTLE_TYPES.AUCTION &&
                   auctionPhase ===
                     'answer' &&
-                  auctionRevealCount <
-                    (
-                      auctionOrder[
-                        auctionTurnIndex
-                      ]?.bid ?? 0
-                    )
+ auctionRevealCount <
+  Math.max(
+    0,
+    (
+      auctionOrder[
+        auctionTurnIndex
+      ]?.bid ?? 0
+    ) -
+      (
+        auctionTurnIndex > 0
+          ? auctionOrder[
+              auctionTurnIndex - 1
+            ]?.bid ?? 0
+          : 0
+      )
+  )
                 )
               ) &&
               toggleIndex(
@@ -2618,6 +2774,7 @@ const [soloAnswerUsed, setSoloAnswerUsed] = useState(false);
                   <span>
                     入札は「現在の公開数から追加で何文字めくるか」です。
                     入力中は他プレイヤーの数字は見えません。
+                    オークションには時間制限がありません。
                   </span>
                 ) : (
                   <span>
@@ -3243,78 +3400,80 @@ const [soloAnswerUsed, setSoloAnswerUsed] = useState(false);
     );
   }
 
-  function renderCoopFinished() {
-    if (
-      !currentCharacter
-    ) {
-      return null;
-    }
+function renderCoopFinished() {
+  if (!currentCharacter) {
+    return null;
+  }
 
-    const allCorrect =
-      coopResults.length ===
-        players.length &&
-      coopResults.every(
-        (result) =>
-          result.correct
-      );
+  const allCorrect =
+    coopResults.length > 0 &&
+    coopResults.every(
+      (result) => result.correct
+    );
 
-    const correctPlayers =
-      coopResults.filter(
-        (result) =>
-          result.correct
-      );
+  const correctPlayers =
+    coopResults.filter(
+      (result) => result.correct
+    );
 
-    return (
-      <main className="page">
-        <div className="game-container coop-result-container">
-          <div className="coop-result-header">
-            <div className="finish-label">
-              COOPERATIVE GAME SET
+  return (    <main className="page">
+      <div className="game-container coop-result-container">
+        <div className="coop-result-header">
+          <div className="finish-label">
+            COOPERATIVE GAME SET
+          </div>
+
+          {allCorrect ? (
+            <>
+              <h1 className="coop-all-correct">
+                全員正解！
+              </h1>
+
+              <p>
+                全員でキャラクターを見事に当てました！
+              </p>
+            </>
+          ) : (
+            <>
+              <h1>
+                協力ゲーム終了
+              </h1>
+
+              {correctPlayers.length > 0 ? (
+                <p className="coop-correct-names">
+                  正解者：
+                  <strong>
+                    {correctPlayers
+                      .map(
+                        (result) =>
+                          result.playerName
+                      )
+                      .join('、')}
+                  </strong>
+                </p>
+              ) : (
+                <p className="coop-correct-names">
+                  正解者なし
+                </p>
+              )}
+            </>
+          )}
+
+          <div className="coop-answer-correct">
+            正解は
+            <strong>
+              「{currentCharacter.name}」
+            </strong>
+            でした。
+          </div>
+
+          <div className="coop-result-description">
+            <div className="coop-result-description-label">
+              キャラクター説明
             </div>
 
-            {allCorrect ? (
-              <>
-                <h1 className="coop-all-correct">
-                  全員正解！
-                </h1>
-
-                <p>
-                  全員でキャラクターを見事に当てました！
-                </p>
-              </>
-            ) : (
-              <>
-                <h1>
-                  協力ゲーム終了
-                </h1>
-
-                {correctPlayers.length >
-                0 ? (
-                  <p className="coop-correct-names">
-                    正解者：
-                    <strong>
-                      {correctPlayers
-                        .map(
-                          (result) =>
-                            result.playerName
-                        )
-                        .join('、')}
-                    </strong>
-                  </p>
-                ) : (
-                  <p className="coop-correct-names">
-                    正解者なし
-                  </p>
-                )}
-              </>
-            )}
-
-            <div className="coop-answer-correct">
-              正解は
-              <strong>
-                「{currentCharacter.name}」
-              </strong>
-              でした。
+            <div className="coop-result-description-text">
+              {currentCharacter.description}
             </div>
           </div>
 
@@ -3391,245 +3550,812 @@ const [soloAnswerUsed, setSoloAnswerUsed] = useState(false);
             もう一度遊ぶ
           </button>
         </div>
-      </main>
-    );
-  }
-
+      </div>
+    </main>
+  );
+}
   // ============================================================
   // ソロ
   // ============================================================
 
-  function renderSoloGame() {
-    if (!currentCharacter) {
-      return null;
-    }
+function renderSoloGame() {
+  if (!currentCharacter) {
+    return null;
+  }
 
-    const unrevealed =
-      getUnrevealedCount(
-        revealedChars
-      );
+  const unrevealed =
+    getUnrevealedCount(
+      revealedChars
+    );
 
-    const revealed =
-      getRevealedCount(
-        revealedChars
-      );
+  const revealed =
+    getRevealedCount(
+      revealedChars
+    );
 
-    const bestScore =
-      Math.max(
-        soloBestScore,
-        score
-      );
+  const bestScore =
+    Math.max(
+      soloBestScore,
+      score
+    );
 
-    return (
-      <main className="page">
-        <div className="game-container">
-          <div className="game-top">
-            <button
-              className="small-button"
-              onClick={
-                resetAll
-              }
-            >
-              設定に戻る
-            </button>
+  return (
+    <main className="page">
+      <div className="game-container">
+        <div className="game-top">
+          <button
+            className="small-button"
+            onClick={
+              resetAll
+            }
+          >
+            設定に戻る
+          </button>
 
-            <div>
-              {round} / {maxRounds}問
-            </div>
-
-            {renderTimer()}
-
-            <div className="score-display">
-              SCORE {score}
-
-              <span className="best-score">
-                BEST {bestScore}
-              </span>
-            </div>
+          <div>
+            {round} / {maxRounds}問
           </div>
 
           {renderTimer()}
 
-          <div className="description-card">
-            <div className="description-title">
-              このキャラクターは誰？
+          <div className="score-display">
+            SCORE {score}
+
+            <span className="best-score">
+              BEST {bestScore}
+            </span>
+          </div>
+        </div>
+
+        {!finished && renderTimer()}
+
+        {!finished && (
+          <>
+            <div className="description-card">
+              <div className="description-title">
+                このキャラクターは誰？
+              </div>
+
+              <div className="description-text">
+                {displayDescription()}
+              </div>
             </div>
 
-            <div className="description-text">
-              {displayDescription()}
+            <div className="counter">
+              公開：
+              {revealed}文字　
+
+              <strong>
+                未公開：
+                {unrevealed}文字
+              </strong>
             </div>
-          </div>
 
-          <div className="counter">
-            公開：
-            {revealed}文字　
+            <div className="reveal-controls">
+              <button
+                className="reveal-button"
+                onClick={
+                  handleSoloReveal
+                }
+                disabled={
+                  unrevealed === 0
+                }
+              >
+                文字をめくる
+              </button>
 
-            <strong>
-              未公開：
-              {unrevealed}文字
-            </strong>
-          </div>
+              {revealType ===
+                REVEAL_TYPES.SELECT && (
+                <div className="select-help">
+                  めくりたい付箋を1つクリックしてください。
+                  <br />
+                  選択した付箋は赤く光ります。
+                </div>
+              )}
+            </div>
 
-          <div className="reveal-controls">
-            <button
-              className="reveal-button"
-              onClick={
-                handleSoloReveal
-              }
-              disabled={
-                unrevealed === 0
-              }
+            <div className="game-actions">
+              <button
+                className="secondary-action"
+                onClick={
+                  skipSolo
+                }
+                disabled={
+                  unrevealed === 0
+                }
+              >
+                スキップ
+              </button>
+
+              <button
+                className="danger-action"
+                onClick={
+                  surrenderSolo
+                }
+              >
+                降参
+              </button>
+            </div>
+
+            <form
+              className="answer-area"
+              onSubmit={(event) => {
+                event.preventDefault();
+                handleSoloAnswer();
+              }}
             >
-              文字をめくる
-            </button>
+              <input
+                value={answer}
+                onChange={(event) =>
+                  setAnswer(
+                    event.target.value
+                  )
+                }
+                placeholder="キャラクター名を入力"
+                autoComplete="off"
+              />
 
-            {revealType ===
-              REVEAL_TYPES.SELECT && (
-              <div className="select-help">
-                めくりたい付箋を1つクリックしてください。
-                <br />
-                選択した付箋は赤く光ります。
+              <button
+                type="submit"
+                disabled={
+                  soloAnswerUsed
+                }
+              >
+                {soloAnswerUsed
+                  ? '次の文字をめくってください'
+                  : '回答する'}
+              </button>
+            </form>
+
+            {message && (
+              <div
+                className={
+                  answerResult ===
+                  'correct'
+                    ? 'result correct'
+                    : answerResult ===
+                      'wrong'
+                    ? 'result wrong'
+                    : 'result'
+                }
+              >
+                {message}
               </div>
             )}
-          </div>
+          </>
+        )}
 
-          <div className="game-actions">
-            <button
-              className="secondary-action"
-              onClick={
-                skipSolo
-              }
-              disabled={
-                unrevealed === 0
-              }
-            >
-              スキップ
-            </button>
+        {finished && (
+          <div className="finish-overlay">
+            <div className="finish-card solo-finish-card">
+              <div className="finish-label">
+                GAME SET
+              </div>
 
-            <button
-              className="danger-action"
-              onClick={
-                surrenderSolo
-              }
-            >
-              降参
-            </button>
-          </div>
+              <h2>
+                最終スコア
+              </h2>
 
-          <form
-            className="answer-area"
-            onSubmit={(event) => {
-              event.preventDefault();
-              handleSoloAnswer();
-            }}
-          >
-            <input
-              value={answer}
-              onChange={(event) =>
-                setAnswer(
-                  event.target
-                    .value
-                )
-              }
-              placeholder="キャラクター名を入力"
-              autoComplete="off"
-            />
+              <div className="final-score">
+                {score}
+              </div>
 
-<button
-  type="submit"
-  disabled={soloAnswerUsed}
->
-  {soloAnswerUsed
-    ? '次の文字をめくってください'
-    : '回答する'}
-</button>
-          </form>
+              <div className="final-best-score">
+                自己ベスト：
+                {soloBestScore}
+              </div>
 
-          {message && (
-            <div
-              className={
-                answerResult ===
-                'correct'
-                  ? 'result correct'
-                  : answerResult ===
-                    'wrong'
-                  ? 'result wrong'
-                  : 'result'
-              }
-            >
-              {message}
+              <div className="solo-result-list">
+                {soloResults.map(
+                  (result, index) => (
+                    <section
+                      key={`${result.round}-${result.character?.name}-${index}`}
+                      className="solo-result-card"
+                    >
+                      <div className="solo-result-header">
+                        第
+                        {result.round}
+                        問
+                      </div>
+
+                      <div className="solo-result-character">
+                        {result.character?.name}
+                      </div>
+
+                      <div className="solo-result-label">
+                        回答時の盤面
+                      </div>
+
+                      <div className="battle-final-board">
+                        <div className="description-text">
+                          {result.revealedChars?.map(
+                            (item) => (
+                              <span
+                                key={
+                                  item.index
+                                }
+                                className={
+                                  item.revealed
+                                    ? 'revealed-char'
+                                    : 'coop-result-hidden'
+                                }
+                              >
+                                {item.revealed
+                                  ? item.char
+                                  : '　'}
+                              </span>
+                            )
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="solo-result-label">
+                        結果
+                      </div>
+
+                      {result.result ===
+                      'correct' ? (
+                        <div className="solo-result-correct">
+                          {result.revealedCount}
+                          文字公開時点で正解
+                          <strong>
+                            +{result.points}点
+                          </strong>
+                        </div>
+                      ) : (
+                        <div className="solo-result-surrender">
+                          {result.revealedCount}
+                          文字公開時点で降参
+                        </div>
+                      )}
+
+                      <div className="solo-result-label">
+                        キャラクター説明
+                      </div>
+
+                      <div className="solo-result-description">
+                        {
+                          result.character?.description
+                        }
+                      </div>
+                    </section>
+                  )
+                )}
+              </div>
+
+              <button
+                className="start-button"
+                onClick={
+                  resetAll
+                }
+              >
+                もう一度遊ぶ
+              </button>
             </div>
+          </div>
+        )}
+      </div>
+    </main>
+  );
+}
+  // ============================================================
+  // 通常対戦
+  // ============================================================
+function renderBattleLetter() {
+  if (!currentCharacter) {
+    return null;
+  }
+
+  if (battleHandoff) {
+    return renderHandoff({
+      playerIndex:
+        currentPlayerIndex,
+      title:
+        '端末を渡してください',
+      description:
+        'このプレイヤーが確認したらゲームを開始してください。',
+      buttonText:
+        'ゲーム開始',
+      onStart:
+        beginBattleTurn,
+    });
+  }
+
+  const unrevealed =
+    getUnrevealedCount(
+      revealedChars
+    );
+
+  const revealed =
+    getRevealedCount(
+      revealedChars
+    );
+
+  return (
+    <main className="page">
+      <div className="game-container">
+        <div className="game-top">
+          <button
+            className="small-button"
+            onClick={
+              resetAll
+            }
+          >
+            設定に戻る
+          </button>
+
+          <div>
+            {round} / {maxRounds}問
+          </div>
+        </div>
+
+        <div className="battle-scoreboard">
+          {players.map(
+            (player, index) => (
+              <div
+                key={
+                  player.id
+                }
+                className={
+                  index ===
+                  currentPlayerIndex
+                    ? 'player-score active'
+                    : 'player-score'
+                }
+              >
+                <span>
+                  {player.name}
+                </span>
+
+                <strong>
+                  {player.score}
+                </strong>
+              </div>
+            )
           )}
+        </div>
 
-          {finished && (
-            <div className="finish-overlay">
-              <div className="finish-card">
-                <div className="finish-label">
-                  GAME SET
-                </div>
+        <div className="turn-display">
+          {
+            players[
+              currentPlayerIndex
+            ]?.name
+          }
+          のターン
+        </div>
 
-                <h2>
-                  最終スコア
-                </h2>
+        {!finished &&
+          renderTimer()}
 
-                <div className="final-score">
-                  {score}
-                </div>
+        {!finished && (
+          <>
+            <div className="description-card">
+              <div className="description-title">
+                このキャラクターは誰？
+              </div>
 
-                <div className="final-best-score">
-                  自己ベスト：
-                  {soloBestScore}
-                </div>
-
-                <button
-                  className="start-button"
-                  onClick={
-                    resetAll
-                  }
-                >
-                  もう一度遊ぶ
-                </button>
+              <div className="description-text">
+                {displayDescription()}
               </div>
             </div>
-          )}
+
+            <div className="counter">
+              公開：
+              {revealed}文字　
+
+              <strong>
+                未公開：
+                {unrevealed}文字
+              </strong>
+            </div>
+
+            <div className="reveal-controls">
+              <button
+                className="reveal-button"
+                onClick={
+                  handleBattleReveal
+                }
+                disabled={
+                  unrevealed === 0
+                }
+              >
+                文字をめくる
+              </button>
+
+              {revealType ===
+                REVEAL_TYPES.SELECT && (
+                <div className="select-help">
+                  めくりたい付箋を1つクリックしてください。
+                  <br />
+                  選択した付箋は赤く光ります。
+                </div>
+              )}
+            </div>
+
+            <div className="game-actions">
+              <button
+                className="secondary-action"
+                onClick={
+                  skipBattle
+                }
+              >
+                スキップ
+              </button>
+
+              <button
+                className="danger-action"
+                onClick={
+                  surrenderBattle
+                }
+              >
+                降参
+              </button>
+            </div>
+
+            <form
+              className="answer-area"
+              onSubmit={(event) => {
+                event.preventDefault();
+
+                handleLetterBattleAnswer();
+              }}
+            >
+              <input
+                value={answer}
+                onChange={(event) =>
+                  setAnswer(
+                    event.target.value
+                  )
+                }
+                placeholder="キャラクター名を入力"
+                autoComplete="off"
+              />
+
+              <button type="submit">
+                回答する
+              </button>
+            </form>
+          </>
+        )}
+
+        {message && (
+          <div
+            className={
+              answerResult ===
+              'correct'
+                ? 'result correct'
+                : answerResult ===
+                  'wrong'
+                ? 'result wrong'
+                : 'result'
+            }
+          >
+            {message}
+          </div>
+        )}
+
+        {finished && (
+          <div className="battle-finished-content">
+            <div className="finish-label">
+              GAME SET
+            </div>
+
+            <h2 className="battle-finished-title">
+              最終結果
+            </h2>
+
+            <div className="battle-final">
+              {players
+                .slice()
+                .sort(
+                  (a, b) =>
+                    b.score -
+                    a.score
+                )
+                .map(
+                  (player) => (
+                    <div
+                      key={
+                        player.id
+                      }
+                      className="final-player"
+                    >
+                      <span>
+                        {
+                          player.name
+                        }
+                      </span>
+
+                      <strong>
+                        {
+                          player.score
+                        }
+                        点
+                      </strong>
+                    </div>
+                  )
+                )}
+            </div>
+
+            <div className="battle-history">
+              {battleResults.map(
+                (result, index) => (
+                  <section
+                    key={`${result.round}-${result.character?.name}-${index}`}
+                    className="battle-history-card"
+                  >
+                    <div className="battle-history-round">
+                      第
+                      {result.round}
+                      問
+                    </div>
+
+                    <div className="battle-history-character">
+                      {
+                        result.character?.name
+                      }
+                    </div>
+
+                    <div className="battle-history-label">
+                      回答時の盤面
+                    </div>
+
+                    <div className="battle-final-board">
+                      <div className="description-text">
+                        {result.revealedChars?.map(
+                          (item) => (
+                            <span
+                              key={
+                                item.index
+                              }
+                              className={
+                                item.revealed
+                                  ? 'revealed-char'
+                                  : 'coop-result-hidden'
+                              }
+                            >
+                              {item.revealed
+                                ? item.char
+                                : '　'}
+                            </span>
+                          )
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="battle-history-label">
+                      結果
+                    </div>
+
+                    {result.result ===
+                    'correct' ? (
+                      <div className="battle-history-result">
+                        {
+                          result.playerName
+                        }
+                        が
+                        {result.revealedCount}
+                        文字公開時点で正解
+                        <strong>
+                          +{result.points}点
+                        </strong>
+                      </div>
+                    ) : (
+                      <div className="battle-history-surrender">
+                        {result.revealedCount}
+                        文字公開時点で降参
+                      </div>
+                    )}
+
+                    <div className="battle-history-label">
+                      キャラクター説明
+                    </div>
+
+                    <div className="battle-final-description">
+                      {
+                        result.character?.description
+                      }
+                    </div>
+                  </section>
+                )
+              )}
+            </div>
+
+            <button
+              className="start-button battle-replay-button"
+              onClick={
+                resetAll
+              }
+            >
+              もう一度遊ぶ
+            </button>
+          </div>
+        )}
+      </div>
+    </main>
+  );
+}
+
+  // ============================================================
+  // オークション
+  // ============================================================
+
+function renderAuctionGame() {
+  if (!currentCharacter) {
+    return null;
+  }
+
+  const resultCharacter =
+    finishedCharacter ||
+    currentCharacter;
+
+  const revealed =
+    getRevealedCount(
+      revealedChars
+    );
+
+  const unrevealed =
+    getUnrevealedCount(
+      revealedChars
+    );
+
+  const total =
+    currentCharacter.description
+      .length;
+
+  if (
+    finished
+  ) {
+    return (
+      <main className="page">
+        <div className="game-container">
+
+          <div className="finish-label">
+            GAME SET
+          </div>
+
+          <h2 className="battle-finished-title">
+            最終結果
+          </h2>
+
+          <div className="battle-final">
+            {players
+              .slice()
+              .sort(
+                (a, b) =>
+                  b.score -
+                  a.score
+              )
+              .map(
+                (player) => (
+                  <div
+                    key={
+                      player.id
+                    }
+                    className="final-player"
+                  >
+                    <span>
+                      {
+                        player.name
+                      }
+                    </span>
+
+                    <strong>
+                      {
+                        player.score
+                      }
+                      点
+                    </strong>
+                  </div>
+                )
+              )}
+          </div>
+<div className="battle-history">
+  {battleResults.map(
+    (result, index) => (
+      <section
+        key={`${result.round}-${result.character?.name}-${index}`}
+        className="battle-history-card"
+      >
+        <div className="battle-history-round">
+          第
+          {result.round}
+          問
+        </div>
+
+        <div className="battle-history-character">
+          {
+            result.character?.name
+          }
+        </div>
+
+        <div className="battle-history-label">
+          回答時の盤面
+        </div>
+
+        <div className="battle-final-board">
+          <div className="description-text">
+            {result.revealedChars?.map(
+              (item) => (
+                <span
+                  key={
+                    item.index
+                  }
+                  className={
+                    item.revealed
+                      ? 'revealed-char'
+                      : 'coop-result-hidden'
+                  }
+                >
+                  {item.revealed
+                    ? item.char
+                    : '　'}
+                </span>
+              )
+            )}
+          </div>
+        </div>
+
+        <div className="battle-history-label">
+          結果
+        </div>
+
+        {result.result ===
+        'correct' ? (
+          <div className="battle-history-result">
+            {
+              result.playerName
+            }
+            が
+            {result.revealedCount}
+            文字公開時点で正解
+            <strong>
+              +{result.points}点
+            </strong>
+          </div>
+        ) : (
+          <div className="battle-history-surrender">
+            {result.revealedCount}
+            文字公開時点で降参
+          </div>
+        )}
+
+        <div className="battle-history-label">
+          キャラクター説明
+        </div>
+
+        <div className="battle-final-description">
+          {
+            result.character?.description
+          }
+        </div>
+      </section>
+    )
+  )}
+</div>
+
+          <button
+            className="start-button battle-replay-button"
+            onClick={
+              resetAll
+            }
+          >
+            もう一度遊ぶ
+          </button>
+
         </div>
       </main>
     );
   }
 
-  // ============================================================
-  // 通常対戦
-  // ============================================================
-
-  function renderBattleLetter() {
-    if (!currentCharacter) {
-      return null;
-    }
-
-    if (battleHandoff) {
-      return renderHandoff({
-        playerIndex:
-          currentPlayerIndex,
-        title:
-          '端末を渡してください',
-        description:
-          'このプレイヤーが確認したらゲームを開始してください。',
-        buttonText:
-          'ゲーム開始',
-        onStart:
-          beginBattleTurn,
-      });
-    }
-
-    const unrevealed =
-      getUnrevealedCount(
-        revealedChars
-      );
-
-    const revealed =
-      getRevealedCount(
-        revealedChars
-      );
+  if (
+    auctionPhase ===
+    'input'
+  ) {
+    const inputPlayer =
+      players[
+        auctionInputPlayerIndex
+      ];
 
     return (
       <main className="page">
@@ -3651,17 +4377,12 @@ const [soloAnswerUsed, setSoloAnswerUsed] = useState(false);
 
           <div className="battle-scoreboard">
             {players.map(
-              (player, index) => (
+              (player) => (
                 <div
                   key={
                     player.id
                   }
-                  className={
-                    index ===
-                    currentPlayerIndex
-                      ? 'player-score active'
-                      : 'player-score'
-                  }
+                  className="player-score"
                 >
                   <span>
                     {player.name}
@@ -3675,18 +4396,33 @@ const [soloAnswerUsed, setSoloAnswerUsed] = useState(false);
             )}
           </div>
 
-          <div className="turn-display">
-            {
-              players[
-                currentPlayerIndex
-              ]?.name
-            }
-            のターン
+          <div className="auction-status">
+            <div className="auction-round">
+              第
+              {
+                auctionRoundNumber
+              }
+              回オークション
+            </div>
+
+            <div className="total-count">
+              この説明文は
+              <strong>
+                {total}
+              </strong>
+              文字
+            </div>
+
+            <div className="revealed-count">
+              現在公開：
+              <strong>
+                {revealed}
+              </strong>
+              文字
+            </div>
           </div>
 
-          {renderTimer()}
-
-          <div className="description-card">
+          <div className="description-card auction-description auction-bid-description">
             <div className="description-title">
               このキャラクターは誰？
             </div>
@@ -3696,145 +4432,85 @@ const [soloAnswerUsed, setSoloAnswerUsed] = useState(false);
             </div>
           </div>
 
-          <div className="counter">
-            公開：
-            {revealed}文字　
-
-            <strong>
-              未公開：
-              {unrevealed}文字
-            </strong>
-          </div>
-
-          <div className="reveal-controls">
-            <button
-              className="reveal-button"
-              onClick={
-                handleBattleReveal
-              }
-              disabled={
-                unrevealed === 0
-              }
-            >
-              文字をめくる
-            </button>
-
-            {revealType ===
-              REVEAL_TYPES.SELECT && (
-              <div className="select-help">
-                めくりたい付箋を1つクリックしてください。
-                <br />
-                選択した付箋は赤く光ります。
-              </div>
-            )}
-          </div>
-
-          <div className="game-actions">
-            <button
-              className="secondary-action"
-              onClick={
-                skipBattle
-              }
-            >
-              スキップ
-            </button>
-
-            <button
-              className="danger-action"
-              onClick={
-                surrenderBattle
-              }
-            >
-              降参
-            </button>
-          </div>
-
-          <form
-            className="answer-area"
-            onSubmit={(event) => {
-              event.preventDefault();
-              handleLetterBattleAnswer();
-            }}
-          >
-            <input
-              value={answer}
-              onChange={(event) =>
-                setAnswer(
-                  event.target
-                    .value
-                )
-              }
-              placeholder="キャラクター名を入力"
-              autoComplete="off"
-            />
-
-            <button type="submit">
-              回答する
-            </button>
-          </form>
-
-          {message && (
-            <div
-              className={
-                answerResult ===
-                'correct'
-                  ? 'result correct'
-                  : answerResult ===
-                    'wrong'
-                  ? 'result wrong'
-                  : 'result'
-              }
-            >
-              {message}
+          <div className="auction-private-card">
+            <div className="private-label">
+              端末を渡してください
             </div>
-          )}
 
-          {finished && (
-            <div className="finish-overlay">
-              <div className="finish-card">
-                <div className="finish-label">
-                  GAME SET
-                </div>
+            <div className="private-player">
+              {
+                inputPlayer?.name ||
+                `${auctionInputPlayerIndex + 1}P`
+              }
+            </div>
 
-                <h2>
-                  最終結果
-                </h2>
+            <p>
+              他のプレイヤーには数字を見せないでください。
+            </p>
 
-                <div className="battle-final">
-                  {players.map(
-                    (player) => (
-                      <div
-                        key={
-                          player.id
-                        }
-                        className="final-player"
-                      >
-                        <span>
-                          {
-                            player.name
-                          }
-                        </span>
+            <div className="private-rule">
+              現在
+              <strong>
+                {revealed}
+              </strong>
+              / {total}文字公開中
+              <br />
+              盤面を確認して、
+              <br />
+              <strong>
+                「あと何文字見れば答えられるか」
+              </strong>
+              を決めてください。
+            </div>
 
-                        <strong>
-                          {
-                            player.score
-                          }
-                          点
-                        </strong>
-                      </div>
-                    )
-                  )}
-                </div>
+            <div className="private-input-row">
+              <input
+                type="number"
+                min="0"
+                value={
+                  auctionBidInputs[
+                    auctionInputPlayerIndex
+                  ] ?? ''
+                }
+                onChange={(event) => {
+                  const next =
+                    [
+                      ...auctionBidInputs,
+                    ];
 
-                <button
-                  className="start-button"
-                  onClick={
-                    resetAll
-                  }
-                >
-                  もう一度遊ぶ
-                </button>
-              </div>
+                  next[
+                    auctionInputPlayerIndex
+                  ] =
+                    event.target.value;
+
+                  setAuctionBidInputs(
+                    next
+                  );
+                }}
+                autoFocus
+              />
+
+              <span>
+                枚追加
+              </span>
+            </div>
+
+            <button
+              className="start-button"
+              onClick={
+                submitOneAuctionBid
+              }
+            >
+              {auctionInputPlayerIndex <
+              playerCount - 1
+                ? '入力して次のプレイヤーへ'
+                : '入力を完了する'}
+            </button>
+          </div>
+
+          {auctionMessage && (
+            <div className="result">
+              {auctionMessage}
             </div>
           )}
         </div>
@@ -3842,570 +4518,571 @@ const [soloAnswerUsed, setSoloAnswerUsed] = useState(false);
     );
   }
 
-  // ============================================================
-  // オークション
-  // ============================================================
+  if (
+    auctionPhase ===
+    'revealBids'
+  ) {
+    return (
+      <main className="page">
+        <div className="game-container">
+          <div className="auction-status">
+            <div className="auction-round">
+              第
+              {
+                auctionRoundNumber
+              }
+              回オークション
+            </div>
 
-  function renderAuctionGame() {
-    if (!currentCharacter) {
+            <h1 className="auction-reveal-title">
+              入札結果公開
+            </h1>
+
+            <p>
+              数字の小さい順に回答します。
+              <br />
+              同じ数字のプレイヤーは今回の回答権を失います。
+            </p>
+          </div>
+
+          <div className="auction-results">
+            {auctionBids
+              .slice()
+              .sort(
+                (a, b) =>
+                  a.bid -
+                  b.bid
+              )
+              .map((bid) => {
+                const sameCount =
+                  auctionBids.filter(
+                    (item) =>
+                      item.bid ===
+                      bid.bid
+                  ).length;
+
+                const tied =
+                  sameCount >
+                  1;
+
+                return (
+                  <div
+                    key={
+                      bid.playerIndex
+                    }
+                    className={
+                      tied
+                        ? 'auction-result tied'
+                        : 'auction-result'
+                    }
+                  >
+                    <span>
+                      {
+                        players[
+                          bid.playerIndex
+                        ]?.name
+                      }
+                    </span>
+
+                    <strong>
+                      +{bid.bid}
+                      枚
+                    </strong>
+
+                    {tied && (
+                      <small>
+                        同額のため回答権なし
+                      </small>
+                    )}
+                  </div>
+                );
+              })}
+          </div>
+
+          <button
+            className="start-button"
+            onClick={
+              revealAuctionResults
+            }
+          >
+            回答順を確定する
+          </button>
+        </div>
+      </main>
+    );
+  }
+
+if (
+  auctionPhase ===
+  'handoff'
+) {
+  const player =
+    auctionOrder[
+      auctionTurnIndex
+    ];
+
+  if (!player) {
+    return null;
+  }
+
+  const previousPlayer =
+    auctionTurnIndex > 0
+      ? auctionOrder[
+          auctionTurnIndex - 1
+        ]
+      : null;
+
+  const additionalBid =
+    Math.max(
+      0,
+      player.bid -
+        (previousPlayer?.bid || 0)
+    );
+
+  return renderHandoff({
+    playerIndex:
+      player.playerIndex,
+    title:
+      '端末を渡してください',
+    description:
+      `このプレイヤーは「+${additionalBid}枚」で挑戦します。`,
+    buttonText:
+      '回答する',
+    onStart:
+      beginAuctionAnswer,
+  });
+}
+
+  if (
+    auctionPhase ===
+    'answer'
+  ) {
+    const player =
+      auctionOrder[
+        auctionTurnIndex
+      ];
+
+    if (!player) {
       return null;
     }
 
-    const revealed =
-      getRevealedCount(
-        revealedChars
+    const previousPlayer =
+      auctionTurnIndex > 0
+        ? auctionOrder[
+            auctionTurnIndex - 1
+          ]
+        : null;
+
+    const additionalBid =
+      Math.max(
+        0,
+        player.bid -
+          (previousPlayer?.bid || 0)
       );
 
-    const unrevealed =
-      getUnrevealedCount(
-        revealedChars
-      );
+    return (
+      <main className="page">
+        <div className="game-container">
 
-    const total =
-      currentCharacter.description
-        .length;
-
-    if (
-      auctionPhase ===
-      'input'
-    ) {
-      const inputPlayer =
-        players[
-          auctionInputPlayerIndex
-        ];
-
-      return (
-        <main className="page">
-          <div className="game-container">
-            <div className="game-top">
-              <button
-                className="small-button"
-                onClick={
-                  resetAll
-                }
-              >
-                設定に戻る
-              </button>
-
-              <div>
-                {round} / {maxRounds}問
-              </div>
-            </div>
-
-            <div className="battle-scoreboard">
-              {players.map(
-                (player) => (
-                  <div
-                    key={
-                      player.id
-                    }
-                    className="player-score"
-                  >
-                    <span>
-                      {player.name}
-                    </span>
-
-                    <strong>
-                      {player.score}
-                    </strong>
-                  </div>
-                )
-              )}
-            </div>
-
-            <div className="auction-status">
-              <div className="auction-round">
-                第
-                {
-                  auctionRoundNumber
-                }
-                回オークション
-              </div>
-
-              <div className="total-count">
-                この説明文は
-                <strong>
-                  {total}
-                </strong>
-                文字
-              </div>
-
-              <div className="revealed-count">
-                現在公開：
-                <strong>
-                  {revealed}
-                </strong>
-                文字
-              </div>
-            </div>
-
-            <div className="description-card auction-description auction-bid-description">
-              <div className="description-title">
-                このキャラクターは誰？
-              </div>
-
-              <div className="description-text">
-                {displayDescription()}
-              </div>
-            </div>
-
-            <div className="auction-private-card">
-              <div className="private-label">
-                端末を渡してください
-              </div>
-
-              <div className="private-player">
-                {
-                  inputPlayer?.name ||
-                  `${auctionInputPlayerIndex + 1}P`
-                }
-              </div>
-
-              <p>
-                他のプレイヤーには数字を見せないでください。
-              </p>
-
-              <div className="private-rule">
-                現在
-                <strong>
-                  {revealed}
-                </strong>
-                / {total}文字公開中
-                <br />
-                盤面を確認して、
-                <br />
-                <strong>
-                  「あと何文字見れば答えられるか」
-                </strong>
-                を決めてください。
-              </div>
-
-              <div className="private-input-row">
-                <input
-                  type="number"
-                  min="0"
-                  value={
-                    auctionBidInputs[
-                      auctionInputPlayerIndex
-                    ] ?? ''
-                  }
-                  onChange={(event) => {
-                    const next =
-                      [
-                        ...auctionBidInputs,
-                      ];
-
-                    next[
-                      auctionInputPlayerIndex
-                    ] =
-                      event.target.value;
-
-                    setAuctionBidInputs(
-                      next
-                    );
-                  }}
-                  autoFocus
-                />
-
-                <span>
-                  枚追加
-                </span>
-              </div>
-
-              <button
-                className="start-button"
-                onClick={
-                  submitOneAuctionBid
-                }
-              >
-                {auctionInputPlayerIndex <
-                playerCount - 1
-                  ? '入力して次のプレイヤーへ'
-                  : '入力を完了する'}
-              </button>
-            </div>
-
-            {auctionMessage && (
-              <div className="result">
-                {auctionMessage}
-              </div>
-            )}
-          </div>
-        </main>
-      );
-    }
-
-    if (
-      auctionPhase ===
-      'revealBids'
-    ) {
-      return (
-        <main className="page">
-          <div className="game-container">
-            <div className="auction-status">
-              <div className="auction-round">
-                第
-                {
-                  auctionRoundNumber
-                }
-                回オークション
-              </div>
-
-              <h1 className="auction-reveal-title">
-                入札結果公開
-              </h1>
-
-              <p>
-                数字の小さい順に回答します。
-                <br />
-                同じ数字のプレイヤーは今回の回答権を失います。
-              </p>
-            </div>
-
-            <div className="auction-results">
-              {auctionBids
-                .slice()
-                .sort(
-                  (a, b) =>
-                    a.bid -
-                    b.bid
-                )
-                .map((bid) => {
-                  const sameCount =
-                    auctionBids.filter(
-                      (item) =>
-                        item.bid ===
-                        bid.bid
-                    ).length;
-
-                  const tied =
-                    sameCount >
-                    1;
-
-                  return (
-                    <div
-                      key={
-                        bid.playerIndex
-                      }
-                      className={
-                        tied
-                          ? 'auction-result tied'
-                          : 'auction-result'
-                      }
-                    >
-                      <span>
-                        {
-                          players[
-                            bid.playerIndex
-                          ]?.name
-                        }
-                      </span>
-
-                      <strong>
-                        +{bid.bid}
-                        枚
-                      </strong>
-
-                      {tied && (
-                        <small>
-                          同額のため回答権なし
-                        </small>
-                      )}
-                    </div>
-                  );
-                })}
-            </div>
-
+          <div className="game-top">
             <button
-              className="start-button"
+              className="small-button"
               onClick={
-                revealAuctionResults
+                resetAll
               }
             >
-              回答順を確定する
+              設定に戻る
             </button>
+
+            <div>
+              {round} / {maxRounds}問
+            </div>
           </div>
-        </main>
-      );
-    }
 
-    if (
-      auctionPhase ===
-      'handoff'
-    ) {
-      const player =
-        auctionOrder[
-          auctionTurnIndex
-        ];
-
-      if (!player) {
-        return null;
-      }
-
-      return renderHandoff({
-        playerIndex:
-          player.playerIndex,
-        title:
-          '端末を渡してください',
-        description:
-          `このプレイヤーは「+${player.bid}枚」で挑戦します。`,
-        buttonText:
-          '回答する',
-        onStart:
-          beginAuctionAnswer,
-      });
-    }
-
-    if (
-      auctionPhase ===
-      'answer'
-    ) {
-      const player =
-        auctionOrder[
-          auctionTurnIndex
-        ];
-
-      return (
-        <main className="page">
-          <div className="game-container">
-            <div className="game-top">
-              <button
-                className="small-button"
-                onClick={
-                  resetAll
-                }
-              >
-                設定に戻る
-              </button>
-
-              <div>
-                {round} / {maxRounds}問
-              </div>
-            </div>
-
-            <div className="battle-scoreboard">
-              {players.map(
-                (item) => (
-                  <div
-                    key={
-                      item.id
-                    }
-                    className="player-score"
-                  >
-                    <span>
-                      {item.name}
-                    </span>
-
-                    <strong>
-                      {item.score}
-                    </strong>
-                  </div>
-                )
-              )}
-            </div>
-
-            <div className="auction-status">
-              <div className="auction-round">
-                第
-                {
-                  auctionRoundNumber
-                }
-                回オークション
-              </div>
-
-              <div className="auction-turn">
-                {
-                  players[
-                    player?.playerIndex
-                  ]?.name
-                }
-                の回答
-              </div>
-
-              <div className="revealed-count">
-                現在公開：
-                <strong>
-                  {
-                    getRevealedCount(
-                      revealedChars
-                    )
+          <div className="battle-scoreboard">
+            {players.map(
+              (item) => (
+                <div
+                  key={
+                    item.id
                   }
-                </strong>
-                文字
-              </div>
-            </div>
+                  className="player-score"
+                >
+                  <span>
+                    {item.name}
+                  </span>
 
-            <div className="description-card auction-description">
-              <div className="description-title">
-                説明文
-              </div>
-
-              <div className="description-text">
-                {displayDescription()}
-              </div>
-            </div>
-
-            <div className="reveal-controls">
-              <div className="auction-reveal-progress">
-                今回の追加公開：
-                {auctionRevealCount}枚
-                <br />
-                {player.bid}枚まで
-              </div>
-
-              {selectedIndexes.length >
-                0 &&
-                auctionRevealCount <
-                  player.bid && (
-                  <button
-                    className="reveal-button"
-                    onClick={() => {
-                      if (
-                        selectedIndexes.length !==
-                        1
-                      ) {
-                        return;
-                      }
-
-                      const remaining =
-                        player.bid -
-                        auctionRevealCount;
-
-                      if (
-                        remaining <=
-                        0
-                      ) {
-                        return;
-                      }
-
-                      stopTimer();
-
-                      const selectedIndex =
-                        selectedIndexes[0];
-
-                      setRevealedChars(
-                        (prev) =>
-                          revealIndexes(
-                            prev,
-                            [
-                              selectedIndex,
-                            ]
-                          )
-                      );
-
-                      const nextRevealCount =
-                        auctionRevealCount +
-                        1;
-
-                      setAuctionRevealCount(
-                        nextRevealCount
-                      );
-
-                      setSelectedIndexes(
-                        []
-                      );
-
-                      if (
-                        nextRevealCount >=
-                        player.bid
-                      ) {
-                        setAuctionMessage(
-                          `${
-                            players[
-                              player.playerIndex
-                            ]?.name ||
-                            `${player.playerIndex + 1}P`
-                          }の回答時間！`
-                        );
-
-                        startAuctionAnswerTimer();
-                      } else {
-                        setAuctionMessage(
-                          `あと${
-                            player.bid -
-                            nextRevealCount
-                          }枚。15秒以内に次の文字をめくってください。`
-                        );
-
-                        startAuctionRevealTimer();
-                      }
-                    }}
-                  >
-                    選択した文字をめくる
-                  </button>
-                )}
-
-              {auctionRevealCount >=
-                player.bid && (
-                <div className="select-help">
-                  入札した枚数まで公開しました
+                  <strong>
+                    {item.score}
+                  </strong>
                 </div>
-              )}
+              )
+            )}
+          </div>
+
+          <div className="auction-status">
+
+            <div className="auction-round">
+              第
+              {
+                auctionRoundNumber
+              }
+              回オークション
             </div>
 
-            <div className="auction-message">
-              {auctionMessage}
+            <div className="auction-turn">
+              {
+                players[
+                  player.playerIndex
+                ]?.name
+              }
+              の回答
             </div>
 
-            <form
-              className="answer-area"
-              onSubmit={(event) => {
-                event.preventDefault();
-                handleAuctionAnswer();
-              }}
-            >
-              <input
-                value={
-                  auctionAnswer
-                }
-                onChange={(event) =>
-                  setAuctionAnswer(
-                    event.target
-                      .value
+            <div className="revealed-count">
+              現在公開：
+              <strong>
+                {
+                  getRevealedCount(
+                    revealedChars
                   )
                 }
-                placeholder="キャラクター名を入力"
-                autoComplete="off"
-                autoFocus
-              />
+              </strong>
+              文字
+            </div>
 
-              <button type="submit">
-                回答する
-              </button>
-            </form>
+          </div>
 
-            <button
-              className="danger-action wide"
-              onClick={() => {
-                setAuctionAnswer('');
+          <div className="description-card auction-description">
 
-                const nextTurn =
-                  auctionTurnIndex +
-                  1;
+            <div className="description-title">
+              説明文
+            </div>
 
-                if (
-                  nextTurn <
-                  auctionOrder.length
-                ) {
-                  setAuctionTurnIndex(
-                    nextTurn
+            <div className="description-text">
+              {displayDescription()}
+            </div>
+
+          </div>
+
+          <div className="auction-reveal-progress">
+            今回の追加公開：
+            {auctionRevealCount}枚
+            <br />
+            あと
+            {Math.max(
+              0,
+              additionalBid -
+                auctionRevealCount
+            )}
+            枚
+          </div>
+
+          {selectedIndexes.length > 0 &&
+            auctionRevealCount <
+              additionalBid && (
+              <button
+                className="reveal-button"
+                onClick={() => {
+
+                  if (
+                    selectedIndexes.length !==
+                    1
+                  ) {
+                    return;
+                  }
+
+                  const remaining =
+                    additionalBid -
+                    auctionRevealCount;
+
+                  if (
+                    remaining <=
+                    0
+                  ) {
+                    return;
+                  }
+
+                  stopTimer();
+
+                  const selectedIndex =
+                    selectedIndexes[0];
+
+                  setRevealedChars(
+                    (prev) =>
+                      revealIndexes(
+                        prev,
+                        [
+                          selectedIndex,
+                        ]
+                      )
                   );
 
-                  setAuctionPhase(
-                    'handoff'
+                  const nextRevealCount =
+                    auctionRevealCount +
+                    1;
+
+                  setAuctionRevealCount(
+                    nextRevealCount
+                  );
+
+                  setSelectedIndexes(
+                    []
+                  );
+
+                  if (
+                    nextRevealCount >=
+                    additionalBid
+                  ) {
+                    setAuctionMessage(
+                      `${
+                        players[
+                          player.playerIndex
+                        ]?.name ||
+                        `${player.playerIndex + 1}P`
+                      }の回答時間！`
+                    );
+                  } else {
+                    setAuctionMessage(
+                      `あと${
+                        additionalBid -
+                        nextRevealCount
+                      }枚。次の文字をめくってください。`
+                    );
+                  }
+                }}
+              >
+                選択した文字をめくる
+              </button>
+            )}
+
+          {auctionRevealCount >=
+            additionalBid && (
+            <div className="select-help">
+              今回の追加公開分をめくりました
+            </div>
+          )}
+
+          <div className="auction-message">
+            {auctionMessage}
+          </div>
+
+          <form
+            className="answer-area"
+            onSubmit={(event) => {
+              event.preventDefault();
+
+              handleAuctionAnswer();
+            }}
+          >
+            <input
+              value={
+                auctionAnswer
+              }
+              onChange={(event) =>
+                setAuctionAnswer(
+                  event.target.value
+                )
+              }
+              placeholder="キャラクター名を入力"
+              autoComplete="off"
+              autoFocus
+            />
+
+            <button type="submit">
+              回答する
+            </button>
+          </form>
+
+          <button
+            className="danger-action wide"
+            onClick={() => {
+
+              setAuctionAnswer('');
+
+              const nextTurn =
+                auctionTurnIndex +
+                1;
+
+              if (
+                nextTurn <
+                auctionOrder.length
+              ) {
+                setAuctionTurnIndex(
+                  nextTurn
+                );
+
+                setAuctionRevealCount(
+                  0
+                );
+
+                setAuctionPhase(
+                  'handoff'
+                );
+
+                return;
+              }
+
+              const currentRevealed =
+                getRevealedCount(
+                  revealedChars
+                );
+
+              setAuctionRoundNumber(
+                (prev) =>
+                  prev + 1
+              );
+
+              setAuctionRevealCount(
+                0
+              );
+
+              setAuctionPhase(
+                'input'
+              );
+
+              setAuctionBidInputs(
+                Array.from(
+                  {
+                    length:
+                      playerCount,
+                  },
+                  () => ''
+                )
+              );
+
+              setAuctionInputPlayerIndex(
+                0
+              );
+
+              setAuctionBids(
+                []
+              );
+
+              setAuctionOrder(
+                []
+              );
+
+              setAuctionTurnIndex(
+                0
+              );
+
+              setAuctionMessage(
+                `スキップされました。現在${currentRevealed}文字公開された状態で再オークションです。`
+              );
+            }}
+          >
+            スキップ
+          </button>
+
+          <button
+            className="danger-action wide"
+            onClick={() => {
+
+              if (
+                !currentCharacter
+              ) {
+                return;
+              }
+
+              const resultData = {
+                round,
+                character:
+                  currentCharacter,
+                revealedChars:
+                  revealedChars.map(
+                    (item) => ({
+                      ...item,
+                    })
+                  ),
+                revealedCount:
+                  getRevealedCount(
+                    revealedChars
+                  ),
+                points: 0,
+                playerName: null,
+                answer: '',
+                result:
+                  'surrender',
+              };
+
+              setBattleResults(
+                (prev) => [
+                  ...prev,
+                  resultData,
+                ]
+              );
+
+              setAuctionMessage(
+                `降参！正解は「${currentCharacter.name}」でした。`
+              );
+
+              setAuctionPhase(
+                'correct'
+              );
+
+              setTimeout(() => {
+
+                if (
+                  round >=
+                  maxRounds
+                ) {
+                  setFinishedCharacter(
+                    currentCharacter
+                  );
+
+                  setFinished(
+                    true
                   );
 
                   return;
                 }
 
-                const currentRevealed =
-                  getRevealedCount(
-                    revealedChars
+                const nextCharacter =
+                  chooseCharacter();
+
+                if (!nextCharacter) {
+                  setFinishedCharacter(
+                    currentCharacter
                   );
 
-                setAuctionRoundNumber(
+                  setFinished(
+                    true
+                  );
+
+                  return;
+                }
+
+                setRound(
                   (prev) =>
                     prev + 1
+                );
+
+                setCurrentCharacter(
+                  nextCharacter
+                );
+
+                setRevealedChars(
+                  createInitialRevealState(
+                    nextCharacter.description,
+                    symbolsOpen
+                  )
+                );
+
+                setAuctionBids(
+                  []
+                );
+
+                setAuctionOrder(
+                  []
+                );
+
+                setAuctionTurnIndex(
+                  0
+                );
+
+                setAuctionRoundNumber(
+                  1
                 );
 
                 setAuctionRevealCount(
@@ -4430,198 +5107,149 @@ const [soloAnswerUsed, setSoloAnswerUsed] = useState(false);
                   0
                 );
 
-                setAuctionBids([]);
-                setAuctionOrder([]);
-                setAuctionTurnIndex(
-                  0
+                setAuctionAnswer(
+                  ''
                 );
 
                 setAuctionMessage(
-                  `スキップされました。現在${currentRevealed}文字公開された状態で再オークションです。`
-                );
-              }}
-            >
-              スキップ
-            </button>
-
-            <button
-              className="danger-action wide"
-              onClick={() => {
-                if (
-                  !currentCharacter
-                ) {
-                  return;
-                }
-
-                setAuctionMessage(
-                  `降参！正解は「${currentCharacter.name}」でした。`
+                  ''
                 );
 
-                setAuctionPhase(
-                  'correct'
-                );
+              }, 1400);
+            }}
+          >
+            降参
+          </button>
 
-                setTimeout(() => {
-                  if (
-                    round >=
-                    maxRounds
-                  ) {
-                    setFinished(
-                      true
-                    );
+        </div>
+      </main>
+    );
+  }
 
-                    return;
-                  }
+  if (
+    auctionPhase ===
+    'correct'
+  ) {
+    return (
+      <main className="page">
+        <div className="game-container">
 
-                  const nextCharacter =
-                    chooseCharacter();
-
-                  setRound(
-                    (prev) =>
-                      prev + 1
-                  );
-
-                  setCurrentCharacter(
-                    nextCharacter
-                  );
-
-                  setRevealedChars(
-                    createInitialRevealState(
-                      nextCharacter.description,
-                      symbolsOpen
-                    )
-                  );
-
-                  setAuctionBids(
-                    []
-                  );
-
-                  setAuctionOrder(
-                    []
-                  );
-
-                  setAuctionTurnIndex(
-                    0
-                  );
-
-                  setAuctionRoundNumber(
-                    (prev) =>
-                      prev + 1
-                  );
-
-                  setAuctionRevealCount(
-                    0
-                  );
-
-                  setAuctionPhase(
-                    'input'
-                  );
-
-                  setAuctionBidInputs(
-                    Array.from(
-                      {
-                        length:
-                          playerCount,
-                      },
-                      () => ''
-                    )
-                  );
-
-                  setAuctionInputPlayerIndex(
-                    0
-                  );
-
-                  setAuctionAnswer(
-                    ''
-                  );
-
-                  setAuctionMessage(
-                    ''
-                  );
-                }, 1400);
-              }}
-            >
-              降参
-            </button>
-          </div>
-        </main>
-      );
-    }
-
-    if (
-      auctionPhase ===
-      'correct'
-    ) {
-      return (
-        <main className="page">
-          <div className="game-container">
+          {!finished && (
             <div className="result correct auction-correct">
               {auctionMessage}
             </div>
+          )}
 
-            {finished && (
-              <div className="finish-overlay">
-                <div className="finish-card">
-                  <div className="finish-label">
-                    GAME SET
-                  </div>
-
-                  <h2>
-                    最終結果
-                  </h2>
-
-                  <div className="battle-final">
-                    {players
-                      .slice()
-                      .sort(
-                        (a, b) =>
-                          b.score -
-                          a.score
-                      )
-                      .map(
-                        (player) => (
-                          <div
-                            key={
-                              player.id
-                            }
-                            className="final-player"
-                          >
-                            <span>
-                              {
-                                player.name
-                              }
-                            </span>
-
-                            <strong>
-                              {
-                                player.score
-                              }
-                              点
-                            </strong>
-                          </div>
-                        )
-                      )}
-                  </div>
-
-                  <button
-                    className="start-button"
-                    onClick={
-                      resetAll
-                    }
-                  >
-                    もう一度遊ぶ
-                  </button>
-                </div>
+          {finished && (
+            <>
+              <div className="finish-label">
+                GAME SET
               </div>
-            )}
-          </div>
-        </main>
-      );
-    }
 
-    return null;
+              <h2 className="battle-finished-title">
+                最終結果
+              </h2>
+
+              <div className="battle-final">
+                {players
+                  .slice()
+                  .sort(
+                    (a, b) =>
+                      b.score -
+                      a.score
+                  )
+                  .map(
+                    (player) => (
+                      <div
+                        key={
+                          player.id
+                        }
+                        className="final-player"
+                      >
+                        <span>
+                          {
+                            player.name
+                          }
+                        </span>
+
+                        <strong>
+                          {
+                            player.score
+                          }
+                          点
+                        </strong>
+                      </div>
+                    )
+                  )}
+              </div>
+
+              <div className="battle-final-answer">
+
+                <div className="battle-final-answer-label">
+                  最後の問題
+                </div>
+
+                <div className="battle-final-board">
+                  <div className="description-text">
+                    {revealedChars.map(
+                      (item) => (
+                        <span
+                          key={
+                            item.index
+                          }
+                          className={
+                            item.revealed
+                              ? 'revealed-char'
+                              : 'coop-result-hidden'
+                          }
+                        >
+                          {item.revealed
+                            ? item.char
+                            : '　'}
+                        </span>
+                      )
+                    )}
+                  </div>
+                </div>
+
+                <div className="battle-final-answer-label">
+                  正解キャラクター
+                </div>
+
+                <div className="battle-final-character">
+                  {
+                    resultCharacter.name
+                  }
+                </div>
+
+                <div className="battle-final-answer-label">
+                  キャラクター説明
+                </div>
+
+                <div className="battle-final-description">
+                  {
+                    resultCharacter.description
+                  }
+                </div>
+
+              </div>
+
+              <button
+                className="start-button battle-replay-button"
+                onClick={
+                  resetAll
+                }
+              >
+                もう一度遊ぶ
+              </button>
+            </>
+          )}
+
+        </div>
+      </main>
+    );
   }
-
+}
   // ============================================================
   // ゲーム表示
   // ============================================================
@@ -5949,11 +6577,89 @@ const styles = `
     text-align: center;
   }
 
+  .solo-finish-card {
+    width: min(900px, 100%);
+    max-height: calc(100vh - 40px);
+    overflow-y: auto;
+    overflow-x: hidden;
+    box-sizing: border-box;
+    padding-bottom: 30px;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .solo-result-list {
+    display: grid;
+    gap: 20px;
+    margin-top: 30px;
+    text-align: left;
+  }
+
+  .solo-result-card {
+    background: #111;
+    border: 1px solid #333;
+    border-radius: 18px;
+    padding: 22px;
+  }
+
+  .solo-result-header {
+    color: #888;
+    font-size: 13px;
+    font-weight: 900;
+    margin-bottom: 8px;
+  }
+
+  .solo-result-character {
+    text-align: center;
+    font-size: 28px;
+    font-weight: 900;
+    margin-bottom: 20px;
+  }
+
+  .solo-result-label {
+    color: #888;
+    font-size: 13px;
+    font-weight: 900;
+    margin: 15px 0 8px;
+  }
+
+  .solo-result-description {
+    padding: 18px;
+    background: #080808;
+    border-radius: 12px;
+    color: #ddd;
+    line-height: 2;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  .solo-result-correct {
+    padding: 15px;
+    border-radius: 12px;
+    background: #1f422a;
+    border: 1px solid #386d47;
+    font-weight: 900;
+  }
+
+  .solo-result-correct strong {
+    margin-left: 12px;
+    font-size: 20px;
+  }
+
+  .solo-result-surrender {
+    padding: 15px;
+    border-radius: 12px;
+    background: #3a1111;
+    border: 1px solid #772222;
+    color: #ff9999;
+    font-weight: 900;
+  }
+
   .finish-label {
     color: #888;
     letter-spacing: 5px;
     font-size: 13px;
     margin-bottom: 15px;
+    text-align: center;
   }
 
   .finish-card h2 {
@@ -5970,6 +6676,78 @@ const styles = `
   .final-best-score {
     color: #999;
     margin-bottom: 10px;
+  }
+
+  /* =========================================================
+     対戦ゲーム終了画面
+     ========================================================= */
+
+  .battle-finished-content {
+    width: min(900px, 100%);
+    margin: 40px auto 0;
+    padding-bottom: 40px;
+  }
+
+  .battle-finished-title {
+    text-align: center;
+    font-size: 32px;
+    font-weight: 900;
+    margin: 0 0 25px;
+  }
+
+  .battle-final-answer {
+    margin-top: 35px;
+    padding: 25px;
+    background: #111;
+    border: 1px solid #333;
+    border-radius: 18px;
+  }
+
+  .battle-final-answer-label {
+    color: #888;
+    font-size: 13px;
+    font-weight: 900;
+    margin-bottom: 10px;
+  }
+
+  .battle-final-board {
+    background: #080808;
+    border: 1px solid #292929;
+    border-radius: 14px;
+    padding: 20px;
+    margin-bottom: 25px;
+    overflow-x: auto;
+  }
+
+  .battle-final-board .description-text {
+    font-size: clamp(17px, 2.5vw, 27px);
+    line-height: 2.2;
+  }
+
+  .battle-final-character {
+    text-align: center;
+    font-size: 30px;
+    font-weight: 900;
+    margin-bottom: 25px;
+  }
+
+  .battle-final-description {
+    padding: 20px;
+    background: #080808;
+    border-radius: 12px;
+    color: #ddd;
+    line-height: 2;
+    font-size: 16px;
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: none;
+    overflow: visible;
+  }
+
+  .battle-replay-button {
+    width: min(320px, 100%);
+    display: block;
+    margin: 30px auto 0;
   }
 
   @media (max-width: 700px) {
@@ -6071,6 +6849,19 @@ const styles = `
 
     .coop-result-board .description-text {
       font-size: 17px;
+    }
+
+    .battle-final-answer {
+      padding: 16px;
+    }
+
+    .battle-final-character {
+      font-size: 25px;
+    }
+
+    .battle-final-description {
+      font-size: 15px;
+      line-height: 1.9;
     }
   }
 `;
