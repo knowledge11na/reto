@@ -9852,3 +9852,2129 @@ socket.on(
     );
   }
 );
+
+
+// ============================================================
+// 看板たぬき
+// ============================================================
+//
+// 既存のHawk / Extra Poker等には触れない。
+// 看板たぬき専用のSocket.IO処理。
+// ゲーム固有の細かいデータや表示処理はpage.js側へ分離する。
+// ============================================================
+
+const saikoroGames =
+  new Map();
+
+
+// ============================================================
+// 看板たぬき：基本設定
+// ============================================================
+
+const SAIKORO_MAX_PLAYERS =
+  4;
+
+const SAIKORO_WIN_COUNT =
+  4;
+
+
+// ============================================================
+// 看板たぬき：初期ダイス
+// ============================================================
+
+const SAIKORO_INITIAL_DICE_A = [
+  {
+    id:
+      'berry1',
+    type:
+      'berry',
+    value:
+      1,
+  },
+  {
+    id:
+      'berry1',
+    type:
+      'berry',
+    value:
+      1,
+  },
+  {
+    id:
+      'berry1',
+    type:
+      'berry',
+    value:
+      1,
+  },
+  {
+    id:
+      'berry1',
+    type:
+      'berry',
+    value:
+      1,
+  },
+  {
+    id:
+      'berry1',
+    type:
+      'berry',
+    value:
+      1,
+  },
+  {
+    id:
+      'verse1',
+    type:
+      'verse',
+    value:
+      1,
+  },
+];
+
+
+const SAIKORO_INITIAL_DICE_B = [
+  {
+    id:
+      'berry1',
+    type:
+      'berry',
+    value:
+      1,
+  },
+  {
+    id:
+      'berry1',
+    type:
+      'berry',
+    value:
+      1,
+  },
+  {
+    id:
+      'berry1',
+    type:
+      'berry',
+    value:
+      1,
+  },
+  {
+    id:
+      'berry1',
+    type:
+      'berry',
+    value:
+      1,
+  },
+  {
+    id:
+      'berry1',
+    type:
+      'berry',
+    value:
+      1,
+  },
+  {
+    id:
+      'eternal1',
+    type:
+      'eternal',
+    value:
+      1,
+  },
+];
+
+
+// ============================================================
+// 看板たぬき：初期資源上限
+// ============================================================
+
+const SAIKORO_INITIAL_MAX_RESOURCES = {
+  berry:
+    12,
+
+  verse:
+    6,
+
+  eternal:
+    6,
+};
+
+
+// ============================================================
+// 看板たぬき：初期ベリー
+// ============================================================
+
+function saikoroInitialBerry(
+  playerNumber
+) {
+  const number =
+    Number(
+      playerNumber
+    );
+
+  if (
+    number === 1
+  ) {
+    return 3;
+  }
+
+  if (
+    number === 2
+  ) {
+    return 2;
+  }
+
+  if (
+    number === 3
+  ) {
+    return 1;
+  }
+
+  return 0;
+}
+
+
+// ============================================================
+// 看板たぬき：シャッフル
+// ============================================================
+
+function saikoroShuffle(
+  array
+) {
+  const result =
+    [
+      ...array,
+    ];
+
+  for (
+    let i =
+      result.length - 1;
+    i > 0;
+    i -= 1
+  ) {
+    const j =
+      Math.floor(
+        Math.random() *
+          (i + 1)
+      );
+
+    [
+      result[i],
+      result[j],
+    ] = [
+      result[j],
+      result[i],
+    ];
+  }
+
+  return result;
+}
+
+
+// ============================================================
+// 看板たぬき：部屋プレイヤー取得
+// ============================================================
+
+function saikoroGetPlayers(
+  game
+) {
+  const room =
+    freeRooms.get(
+      game.roomId
+    );
+
+  if (
+    !room
+  ) {
+    return [];
+  }
+
+  if (
+    room.players instanceof
+    Map
+  ) {
+    return Array.from(
+      room.players.values()
+    );
+  }
+
+  if (
+    Array.isArray(
+      room.players
+    )
+  ) {
+    return room.players;
+  }
+
+  return [];
+}
+
+
+// ============================================================
+// 看板たぬき：ゲームプレイヤー情報取得
+// ============================================================
+
+function saikoroGetGamePlayer(
+  game,
+  socketId
+) {
+  if (
+    !game ||
+    !socketId
+  ) {
+    return null;
+  }
+
+  return (
+    game.players?.[
+      socketId
+    ] ||
+    null
+  );
+}
+
+
+// ============================================================
+// 看板たぬき：資源を上限内で加算
+// ============================================================
+
+function saikoroAddResource(
+  player,
+  type,
+  amount
+) {
+  if (
+    !player ||
+    !player.resources ||
+    !player.maxResources
+  ) {
+    return 0;
+  }
+
+  if (
+    ![
+      'berry',
+      'verse',
+      'eternal',
+    ].includes(
+      type
+    )
+  ) {
+    return 0;
+  }
+
+  const add =
+    Math.max(
+      0,
+      Number(amount) || 0
+    );
+
+  const before =
+    Number(
+      player.resources[
+        type
+      ] ?? 0
+    );
+
+  const max =
+    Number(
+      player.maxResources[
+        type
+      ] ?? 0
+    );
+
+  const after =
+    Math.min(
+      max,
+      before + add
+    );
+
+  player.resources[
+    type
+  ] = after;
+
+  return (
+    after -
+    before
+  );
+}
+
+
+// ============================================================
+// 看板たぬき：ダイス1個を振る
+// ============================================================
+
+function saikoroRollOneDie(
+  faces
+) {
+  if (
+    !Array.isArray(
+      faces
+    ) ||
+    faces.length === 0
+  ) {
+    return null;
+  }
+
+  const index =
+    Math.floor(
+      Math.random() *
+        faces.length
+    );
+
+  const face =
+    faces[index];
+
+  return {
+    index,
+
+    face: {
+      ...face,
+    },
+  };
+}
+
+
+// ============================================================
+// 看板たぬき：1人分のダイスを振る
+// ============================================================
+
+function saikoroRollPlayerDice(
+  player
+) {
+  const result = {
+    a:
+      saikoroRollOneDie(
+        player.diceA
+      ),
+
+    b:
+      saikoroRollOneDie(
+        player.diceB
+      ),
+  };
+
+  return result;
+}
+
+
+// ============================================================
+// 看板たぬき：ダイス結果から資源を獲得
+// ============================================================
+
+function saikoroApplyDiceResult(
+  player,
+  result
+) {
+  if (
+    !player ||
+    !result
+  ) {
+    return;
+  }
+
+  const results = [
+    result.a,
+    result.b,
+  ];
+
+  for (
+    const item of results
+  ) {
+    if (
+      !item?.face
+    ) {
+      continue;
+    }
+
+    const type =
+      item.face.type;
+
+    const value =
+      Number(
+        item.face.value
+      ) || 0;
+
+    if (
+      type ===
+      'berry'
+    ) {
+      saikoroAddResource(
+        player,
+        'berry',
+        value
+      );
+    }
+
+    if (
+      type ===
+      'verse'
+    ) {
+      saikoroAddResource(
+        player,
+        'verse',
+        value
+      );
+    }
+
+    if (
+      type ===
+      'eternal'
+    ) {
+      saikoroAddResource(
+        player,
+        'eternal',
+        value
+      );
+    }
+  }
+}
+
+
+// ============================================================
+// 看板たぬき：公開用プレイヤー情報
+// ============================================================
+
+function saikoroPublicPlayer(
+  game,
+  player
+) {
+  if (
+    !player
+  ) {
+    return null;
+  }
+
+  const gamePlayer =
+    game.players?.[
+      player.socketId
+    ];
+
+  if (
+    !gamePlayer
+  ) {
+    return {
+      seat:
+        Number(
+          player.playerNumber
+        ) - 1,
+
+      id:
+        player.userId ??
+        null,
+
+      name:
+        player.name ||
+        'プレイヤー',
+
+      resources: {
+        berry:
+          0,
+
+        verse:
+          0,
+
+        eternal:
+          0,
+      },
+
+      maxResources: {
+        ...SAIKORO_INITIAL_MAX_RESOURCES,
+      },
+
+      diceA: [
+        ...SAIKORO_INITIAL_DICE_A,
+      ],
+
+      diceB: [
+        ...SAIKORO_INITIAL_DICE_B,
+      ],
+
+      cards: [],
+
+      extraCharacterInfo: [],
+
+      vivreCardInfo: [],
+
+      extraCharacterCount:
+        0,
+
+      vivreCardCount:
+        0,
+    };
+  }
+
+  return {
+    seat:
+      Number(
+        player.playerNumber
+      ) - 1,
+
+    id:
+      player.userId ??
+      null,
+
+    name:
+      player.name ||
+      'プレイヤー',
+
+    resources: {
+      berry:
+        Number(
+          gamePlayer.resources
+            ?.berry ?? 0
+        ),
+
+      verse:
+        Number(
+          gamePlayer.resources
+            ?.verse ?? 0
+        ),
+
+      eternal:
+        Number(
+          gamePlayer.resources
+            ?.eternal ?? 0
+        ),
+    },
+
+    maxResources: {
+      ...gamePlayer.maxResources,
+    },
+
+    diceA:
+      gamePlayer.diceA.map(
+        (face) => ({
+          ...face,
+        })
+      ),
+
+    diceB:
+      gamePlayer.diceB.map(
+        (face) => ({
+          ...face,
+        })
+      ),
+
+    cards:
+      gamePlayer.cards.map(
+        (card) => ({
+          ...card,
+        })
+      ),
+
+    extraCharacterInfo:
+      [
+        ...gamePlayer.extraCharacterInfo,
+      ],
+
+    vivreCardInfo:
+      [
+        ...gamePlayer.vivreCardInfo,
+      ],
+
+    extraCharacterCount:
+      Number(
+        gamePlayer.extraCharacterCount ??
+          0
+      ),
+
+    vivreCardCount:
+      Number(
+        gamePlayer.vivreCardCount ??
+          0
+      ),
+  };
+}
+
+
+// ============================================================
+// 看板たぬき：現在の状態を作る
+// ============================================================
+
+function saikoroBuildState(
+  game
+) {
+  const players =
+    saikoroGetPlayers(
+      game
+    );
+
+  return {
+    roomId:
+      game.roomId,
+
+    phase:
+      game.phase,
+
+    turnPlayer:
+      Number(
+        game.turnPlayer ??
+          0
+      ),
+
+    round:
+      Number(
+        game.round ??
+          1
+      ),
+
+    players:
+      players.map(
+        (player) =>
+          saikoroPublicPlayer(
+            game,
+            player
+          )
+      ),
+
+    diceResults:
+      game.diceResults || {},
+
+    actionUsed:
+      game.actionUsed || {},
+
+    extraActionUsed:
+      game.extraActionUsed ||
+      {},
+
+    answerTarget:
+      game.answerTarget ||
+      null,
+
+    message:
+      game.message ||
+      '',
+  };
+}
+
+
+// ============================================================
+// 看板たぬき：状態を全員へ送信
+// ============================================================
+
+function saikoroBroadcastState(
+  game
+) {
+  const players =
+    saikoroGetPlayers(
+      game
+    );
+
+  if (
+    !players.length
+  ) {
+    return;
+  }
+
+  const state =
+    saikoroBuildState(
+      game
+    );
+
+  for (
+    const player of players
+  ) {
+    const targetSocket =
+      io.sockets.sockets.get(
+        player.socketId
+      );
+
+    if (
+      !targetSocket
+    ) {
+      continue;
+    }
+
+    targetSocket.emit(
+      'saikoro:state',
+      state
+    );
+  }
+}
+
+
+// ============================================================
+// 看板たぬき：エラー送信
+// ============================================================
+
+function saikoroError(
+  socket,
+  message
+) {
+  if (
+    !socket
+  ) {
+    return;
+  }
+
+  socket.emit(
+    'saikoro:error',
+    {
+      message,
+    }
+  );
+}
+
+
+// ============================================================
+// 看板たぬき：ゲーム開始
+// ============================================================
+
+function saikoroStartGame(
+  game
+) {
+  const room =
+    freeRooms.get(
+      game.roomId
+    );
+
+  if (
+    !room
+  ) {
+    return false;
+  }
+
+  const players =
+    saikoroGetPlayers(
+      game
+    );
+
+  if (
+    players.length !==
+    SAIKORO_MAX_PLAYERS
+  ) {
+    return false;
+  }
+
+  game.phase =
+    'dice';
+
+  game.round =
+    1;
+
+  game.turnPlayer =
+    0;
+
+  game.diceResults =
+    {};
+
+  game.actionUsed =
+    {};
+
+  game.extraActionUsed =
+    {};
+
+  game.answerTarget =
+    null;
+
+  game.message =
+    'プレイヤー1のダイスフェーズです。全員でダイスを振ります。';
+
+  game.players =
+    {};
+
+  for (
+    const player of players
+  ) {
+    const seat =
+      Number(
+        player.playerNumber
+      ) - 1;
+
+    game.players[
+      player.socketId
+    ] = {
+      socketId:
+        player.socketId,
+
+      userId:
+        player.userId ??
+        null,
+
+      name:
+        player.name ||
+        `プレイヤー${
+          seat + 1
+        }`,
+
+      seat,
+
+      resources: {
+        berry:
+          saikoroInitialBerry(
+            player.playerNumber
+          ),
+
+        verse:
+          0,
+
+        eternal:
+          0,
+      },
+
+      maxResources: {
+        ...SAIKORO_INITIAL_MAX_RESOURCES,
+      },
+
+      diceA:
+        SAIKORO_INITIAL_DICE_A.map(
+          (face) => ({
+            ...face,
+          })
+        ),
+
+      diceB:
+        SAIKORO_INITIAL_DICE_B.map(
+          (face) => ({
+            ...face,
+          })
+        ),
+
+      cards: [],
+
+      extraCharacterInfo: [],
+
+      vivreCardInfo: [],
+
+      extraCharacterCount:
+        0,
+
+      vivreCardCount:
+        0,
+    };
+  }
+
+  saikoroBroadcastState(
+    game
+  );
+
+  console.log(
+    `[saikoro] game started room=${game.roomId}`
+  );
+
+  return true;
+}
+
+
+// ============================================================
+// 看板たぬき：全員同時ダイス
+// ============================================================
+
+function saikoroRollAllPlayers(
+  game
+) {
+  const players =
+    saikoroGetPlayers(
+      game
+    );
+
+  game.diceResults =
+    {};
+
+  for (
+    const player of players
+  ) {
+    const gamePlayer =
+      saikoroGetGamePlayer(
+        game,
+        player.socketId
+      );
+
+    if (
+      !gamePlayer
+    ) {
+      continue;
+    }
+
+    const result =
+      saikoroRollPlayerDice(
+        gamePlayer
+      );
+
+    game.diceResults[
+      player.socketId
+    ] = result;
+
+    saikoroApplyDiceResult(
+      gamePlayer,
+      result
+    );
+  }
+
+  game.phase =
+    'action';
+
+  game.actionUsed =
+    {};
+
+  game.extraActionUsed =
+    {};
+
+  game.answerTarget =
+    null;
+
+  game.message =
+    `プレイヤー${
+      Number(
+        game.turnPlayer
+      ) + 1
+    }のアクションです。`;
+
+  saikoroBroadcastState(
+    game
+  );
+}
+
+
+// ============================================================
+// 看板たぬき：次のターン
+// ============================================================
+
+function saikoroNextTurn(
+  game
+) {
+  const players =
+    saikoroGetPlayers(
+      game
+    );
+
+  if (
+    players.length ===
+    0
+  ) {
+    return;
+  }
+
+  const currentIndex =
+    Number(
+      game.turnPlayer ??
+        0
+    );
+
+  let nextIndex =
+    currentIndex + 1;
+
+  if (
+    nextIndex >=
+    SAIKORO_MAX_PLAYERS
+  ) {
+    nextIndex =
+      0;
+
+    game.round =
+      Number(
+        game.round ??
+          1
+      ) + 1;
+  }
+
+  game.turnPlayer =
+    nextIndex;
+
+  game.phase =
+    'dice';
+
+  game.diceResults =
+    {};
+
+  game.actionUsed =
+    {};
+
+  game.extraActionUsed =
+    {};
+
+  game.answerTarget =
+    null;
+
+  game.message =
+    `プレイヤー${
+      nextIndex + 1
+    }のダイスフェーズです。全員でダイスを振ります。`;
+
+  saikoroBroadcastState(
+    game
+  );
+}
+
+
+// ============================================================
+// 看板たぬき：Socket.IO
+// ============================================================
+
+io.on(
+  'connection',
+  (socket) => {
+
+    // ========================================================
+    // 部屋へ参加
+    // ========================================================
+
+    socket.on(
+      'saikoro:join',
+      (payload) => {
+        const safeRoomId =
+          String(
+            payload?.roomId ||
+              ''
+          )
+            .replace(
+              /\D/g,
+              ''
+            )
+            .slice(
+              0,
+              4
+            );
+
+        if (
+          safeRoomId.length !==
+          4
+        ) {
+          saikoroError(
+            socket,
+            '部屋IDが正しくありません。'
+          );
+
+          return;
+        }
+
+        const room =
+          freeRooms.get(
+            safeRoomId
+          );
+
+        if (
+          !room
+        ) {
+          saikoroError(
+            socket,
+            'フリーマッチ部屋が見つかりません。'
+          );
+
+          return;
+        }
+
+        const incomingUserId =
+          payload?.userId != null
+            ? String(
+                payload.userId
+              )
+            : '';
+
+        const incomingName =
+          String(
+            payload?.name ||
+              ''
+          ).trim();
+
+        const freePlayers =
+          room.players instanceof
+          Map
+            ? Array.from(
+                room.players.values()
+              )
+            : Array.isArray(
+                room.players
+              )
+              ? room.players
+              : [];
+
+        let playerIndex =
+          freePlayers.findIndex(
+            (item) =>
+              item.socketId ===
+              socket.id
+          );
+
+        if (
+          playerIndex < 0 &&
+          incomingUserId
+        ) {
+          playerIndex =
+            freePlayers.findIndex(
+              (item) =>
+                item.userId !=
+                  null &&
+                String(
+                  item.userId
+                ) ===
+                  incomingUserId
+            );
+        }
+
+        if (
+          playerIndex < 0 &&
+          incomingName
+        ) {
+          const sameName =
+            freePlayers.filter(
+              (item) =>
+                String(
+                  item.name ||
+                    ''
+                ).trim() ===
+                incomingName
+            );
+
+          if (
+            sameName.length ===
+            1
+          ) {
+            playerIndex =
+              freePlayers.findIndex(
+                (item) =>
+                  String(
+                    item.name ||
+                      ''
+                  ).trim() ===
+                  incomingName
+              );
+          }
+        }
+
+        if (
+          playerIndex < 0
+        ) {
+          saikoroError(
+            socket,
+            'この部屋の参加者ではありません。'
+          );
+
+          return;
+        }
+
+        const player =
+          freePlayers[
+            playerIndex
+          ];
+
+        const oldSocketId =
+          player.socketId;
+
+        /*
+         * 看板たぬきは4人専用。
+         */
+        if (
+          playerIndex >=
+          SAIKORO_MAX_PLAYERS
+        ) {
+          saikoroError(
+            socket,
+            '看板たぬきは4人専用です。'
+          );
+
+          return;
+        }
+
+        /*
+         * 古いSocketがあれば切り離す。
+         */
+        if (
+          oldSocketId &&
+          oldSocketId !==
+            socket.id
+        ) {
+          const oldSocket =
+            io.sockets.sockets.get(
+              oldSocketId
+            );
+
+          if (
+            oldSocket
+          ) {
+            oldSocket.leave(
+              `free:${safeRoomId}`
+            );
+          }
+        }
+
+        /*
+         * Socket IDを更新。
+         */
+        player.socketId =
+          socket.id;
+
+        /*
+         * ゲーム取得。
+         */
+        let game =
+          saikoroGames.get(
+            safeRoomId
+          );
+
+        if (
+          !game
+        ) {
+          game = {
+            roomId:
+              safeRoomId,
+
+            phase:
+              'waiting',
+
+            round:
+              0,
+
+            turnPlayer:
+              0,
+
+            players:
+              {},
+
+            diceResults:
+              {},
+
+            actionUsed:
+              {},
+
+            extraActionUsed:
+              {},
+
+            answerTarget:
+              null,
+
+            message:
+              '4人揃うまでお待ちください。',
+          };
+
+          saikoroGames.set(
+            safeRoomId,
+            game
+          );
+        }
+
+        /*
+         * 再接続時にゲーム内データを
+         * 新しいSocketへ移す。
+         */
+        if (
+          oldSocketId &&
+          oldSocketId !==
+            socket.id &&
+          game.players[
+            oldSocketId
+          ]
+        ) {
+          game.players[
+            socket.id
+          ] =
+            game.players[
+              oldSocketId
+            ];
+
+          game.players[
+            socket.id
+          ].socketId =
+            socket.id;
+
+          delete game.players[
+            oldSocketId
+          ];
+
+          if (
+            game.diceResults[
+              oldSocketId
+            ]
+          ) {
+            game.diceResults[
+              socket.id
+            ] =
+              game.diceResults[
+                oldSocketId
+              ];
+
+            delete game.diceResults[
+              oldSocketId
+            ];
+          }
+        }
+
+        /*
+         * ゲーム開始済みで新規参加は不可。
+         */
+        if (
+          game.phase !==
+            'waiting' &&
+          !game.players[
+            socket.id
+          ]
+        ) {
+          saikoroError(
+            socket,
+            'このゲームはすでに開始されています。'
+          );
+
+          return;
+        }
+
+        socket.join(
+          `free:${safeRoomId}`
+        );
+
+        console.log(
+          `[saikoro] join room=${safeRoomId} socket=${socket.id} name=${player.name}`
+        );
+
+        /*
+         * 4人揃っていなければ
+         * プレイヤー情報だけ作成。
+         */
+        if (
+          game.phase ===
+          'waiting'
+        ) {
+          const currentPlayers =
+            saikoroGetPlayers(
+              game
+            );
+
+          if (
+            currentPlayers.length <
+            SAIKORO_MAX_PLAYERS
+          ) {
+            game.message =
+              `4人揃うまでお待ちください。現在 ${currentPlayers.length}/${SAIKORO_MAX_PLAYERS}人`;
+          }
+
+          if (
+            currentPlayers.length ===
+            SAIKORO_MAX_PLAYERS
+          ) {
+            saikoroStartGame(
+              game
+            );
+
+            return;
+          }
+        }
+
+        saikoroBroadcastState(
+          game
+        );
+      }
+    );
+
+
+    // ========================================================
+    // ダイスを振る
+    // ========================================================
+
+    socket.on(
+      'saikoro:roll',
+      (payload) => {
+        const roomId =
+          String(
+            payload?.roomId ||
+              ''
+          )
+            .replace(
+              /\D/g,
+              ''
+            )
+            .slice(
+              0,
+              4
+            );
+
+        const game =
+          saikoroGames.get(
+            roomId
+          );
+
+        if (
+          !game
+        ) {
+          saikoroError(
+            socket,
+            '看板たぬきのゲームが見つかりません。'
+          );
+
+          return;
+        }
+
+        if (
+          game.phase !==
+          'dice'
+        ) {
+          saikoroError(
+            socket,
+            '現在はダイスを振るフェーズではありません。'
+          );
+
+          return;
+        }
+
+        if (
+          Number(
+            game.turnPlayer
+          ) !==
+          Number(
+            saikoroGetGamePlayer(
+              game,
+              socket.id
+            )?.seat
+          )
+        ) {
+          saikoroError(
+            socket,
+            'ダイスを開始できるのは手番プレイヤーです。'
+          );
+
+          return;
+        }
+
+        saikoroRollAllPlayers(
+          game
+        );
+      }
+    );
+
+
+    // ========================================================
+    // ダイス面購入
+    // ========================================================
+
+    socket.on(
+      'saikoro:buy-dice-face',
+      (payload) => {
+        const roomId =
+          String(
+            payload?.roomId ||
+              ''
+          )
+            .replace(
+              /\D/g,
+              ''
+            )
+            .slice(
+              0,
+              4
+            );
+
+        const game =
+          saikoroGames.get(
+            roomId
+          );
+
+        if (
+          !game
+        ) {
+          saikoroError(
+            socket,
+            '看板たぬきのゲームが見つかりません。'
+          );
+
+          return;
+        }
+
+        const gamePlayer =
+          saikoroGetGamePlayer(
+            game,
+            socket.id
+          );
+
+        if (
+          !gamePlayer
+        ) {
+          return;
+        }
+
+        if (
+          gamePlayer.seat !==
+          Number(
+            game.turnPlayer
+          )
+        ) {
+          saikoroError(
+            socket,
+            '自分のターンではありません。'
+          );
+
+          return;
+        }
+
+        if (
+          game.phase !==
+          'action'
+        ) {
+          saikoroError(
+            socket,
+            '現在はアクションフェーズではありません。'
+          );
+
+          return;
+        }
+
+        if (
+          game.actionUsed[
+            socket.id
+          ]
+        ) {
+          saikoroError(
+            socket,
+            'このターンのアクションはすでに使用しています。'
+          );
+
+          return;
+        }
+
+        /*
+         * 実際のダイス面情報・価格・
+         * ランダム処理は今後別ファイルへ移す。
+         *
+         * 現段階ではfaceIdを受け取って
+         * page.js側と通信できる土台だけ作る。
+         */
+        const faceId =
+          String(
+            payload?.faceId ||
+              ''
+          );
+
+        const die =
+          payload?.die ===
+          'B'
+            ? 'B'
+            : 'A';
+
+        const faceIndex =
+          Number(
+            payload?.faceIndex
+          );
+
+        if (
+          !faceId
+        ) {
+          saikoroError(
+            socket,
+            'ダイスフェイスが指定されていません。'
+          );
+
+          return;
+        }
+
+        if (
+          !Number.isInteger(
+            faceIndex
+          ) ||
+          faceIndex < 0 ||
+          faceIndex > 5
+        ) {
+          saikoroError(
+            socket,
+            '交換するダイス面が正しくありません。'
+          );
+
+          return;
+        }
+
+        /*
+         * ここではまだ購入価格の確定処理を
+         * 実装しない。
+         *
+         * ダイス面ショップの正式仕様を
+         * page.js側のモジュールと合わせて
+         * 次の段階で実装する。
+         */
+        game.actionUsed[
+          socket.id
+        ] = true;
+
+        game.message =
+          `プレイヤー${
+            gamePlayer.seat + 1
+          }がダイスフェイスを選択しました。`;
+
+        saikoroBroadcastState(
+          game
+        );
+      }
+    );
+
+
+    // ========================================================
+    // カード購入
+    // ========================================================
+
+    socket.on(
+      'saikoro:buy-card',
+      (payload) => {
+        const roomId =
+          String(
+            payload?.roomId ||
+              ''
+          )
+            .replace(
+              /\D/g,
+              ''
+            )
+            .slice(
+              0,
+              4
+            );
+
+        const game =
+          saikoroGames.get(
+            roomId
+          );
+
+        if (
+          !game
+        ) {
+          saikoroError(
+            socket,
+            '看板たぬきのゲームが見つかりません。'
+          );
+
+          return;
+        }
+
+        const gamePlayer =
+          saikoroGetGamePlayer(
+            game,
+            socket.id
+          );
+
+        if (
+          !gamePlayer
+        ) {
+          return;
+        }
+
+        if (
+          gamePlayer.seat !==
+          Number(
+            game.turnPlayer
+          )
+        ) {
+          saikoroError(
+            socket,
+            '自分のターンではありません。'
+          );
+
+          return;
+        }
+
+        if (
+          game.phase !==
+          'action'
+        ) {
+          saikoroError(
+            socket,
+            '現在はアクションフェーズではありません。'
+          );
+
+          return;
+        }
+
+        if (
+          game.actionUsed[
+            socket.id
+          ]
+        ) {
+          saikoroError(
+            socket,
+            'このターンのアクションはすでに使用しています。'
+          );
+
+          return;
+        }
+
+        const cardId =
+          String(
+            payload?.cardId ||
+              ''
+          );
+
+        if (
+          !cardId
+        ) {
+          saikoroError(
+            socket,
+            'カードが指定されていません。'
+          );
+
+          return;
+        }
+
+        /*
+         * カード価格・効果・残り枚数は
+         * 今後カード専用モジュールで処理する。
+         */
+        game.actionUsed[
+          socket.id
+        ] = true;
+
+        game.message =
+          `プレイヤー${
+            gamePlayer.seat + 1
+          }がカードを選択しました。`;
+
+        saikoroBroadcastState(
+          game
+        );
+      }
+    );
+
+
+    // ========================================================
+    // 追加アクション
+    // ========================================================
+
+    socket.on(
+      'saikoro:extra-action',
+      (payload) => {
+        const roomId =
+          String(
+            payload?.roomId ||
+              ''
+          )
+            .replace(
+              /\D/g,
+              ''
+            )
+            .slice(
+              0,
+              4
+            );
+
+        const game =
+          saikoroGames.get(
+            roomId
+          );
+
+        if (
+          !game
+        ) {
+          return;
+        }
+
+        const gamePlayer =
+          saikoroGetGamePlayer(
+            game,
+            socket.id
+          );
+
+        if (
+          !gamePlayer
+        ) {
+          return;
+        }
+
+        if (
+          gamePlayer.seat !==
+          Number(
+            game.turnPlayer
+          )
+        ) {
+          saikoroError(
+            socket,
+            '自分のターンではありません。'
+          );
+
+          return;
+        }
+
+        if (
+          game.phase !==
+          'action'
+        ) {
+          saikoroError(
+            socket,
+            '現在はアクションフェーズではありません。'
+          );
+
+          return;
+        }
+
+        if (
+          game.extraActionUsed[
+            socket.id
+          ]
+        ) {
+          saikoroError(
+            socket,
+            '追加アクションはすでに使用しています。'
+          );
+
+          return;
+        }
+
+        /*
+         * ヴァース2を消費。
+         */
+        if (
+          Number(
+            gamePlayer.resources
+              ?.verse ?? 0
+          ) < 2
+        ) {
+          saikoroError(
+            socket,
+            '追加アクションにはヴァースが2個必要です。'
+          );
+
+          return;
+        }
+
+        gamePlayer.resources.verse -=
+          2;
+
+        game.extraActionUsed[
+          socket.id
+        ] = true;
+
+        game.actionUsed[
+          socket.id
+        ] = false;
+
+        game.message =
+          `プレイヤー${
+            gamePlayer.seat + 1
+          }が追加アクションを使用しました。`;
+
+        saikoroBroadcastState(
+          game
+        );
+      }
+    );
+
+
+    // ========================================================
+    // 購入終了 → 回答フェーズ
+    // ========================================================
+
+    socket.on(
+      'saikoro:finish-action',
+      (payload) => {
+        const roomId =
+          String(
+            payload?.roomId ||
+              ''
+          )
+            .replace(
+              /\D/g,
+              ''
+            )
+            .slice(
+              0,
+              4
+            );
+
+        const game =
+          saikoroGames.get(
+            roomId
+          );
+
+        if (
+          !game
+        ) {
+          return;
+        }
+
+        const gamePlayer =
+          saikoroGetGamePlayer(
+            game,
+            socket.id
+          );
+
+        if (
+          !gamePlayer
+        ) {
+          return;
+        }
+
+        if (
+          gamePlayer.seat !==
+          Number(
+            game.turnPlayer
+          )
+        ) {
+          saikoroError(
+            socket,
+            '自分のターンではありません。'
+          );
+
+          return;
+        }
+
+        if (
+          game.phase !==
+          'action'
+        ) {
+          saikoroError(
+            socket,
+            '現在はアクションフェーズではありません。'
+          );
+
+          return;
+        }
+
+        game.phase =
+          'answer';
+
+        game.answerTarget =
+          null;
+
+        game.message =
+          `プレイヤー${
+            gamePlayer.seat + 1
+          }の回答フェーズです。`;
+
+        saikoroBroadcastState(
+          game
+        );
+      }
+    );
+
+
+    // ========================================================
+    // 回答
+    // ========================================================
+
+    socket.on(
+      'saikoro:answer',
+      (payload) => {
+        const roomId =
+          String(
+            payload?.roomId ||
+              ''
+          )
+            .replace(
+              /\D/g,
+              ''
+            )
+            .slice(
+              0,
+              4
+            );
+
+        const game =
+          saikoroGames.get(
+            roomId
+          );
+
+        if (
+          !game
+        ) {
+          return;
+        }
+
+        const gamePlayer =
+          saikoroGetGamePlayer(
+            game,
+            socket.id
+          );
+
+        if (
+          !gamePlayer
+        ) {
+          return;
+        }
+
+        if (
+          gamePlayer.seat !==
+          Number(
+            game.turnPlayer
+          )
+        ) {
+          saikoroError(
+            socket,
+            '自分のターンではありません。'
+          );
+
+          return;
+        }
+
+        if (
+          game.phase !==
+          'answer'
+        ) {
+          saikoroError(
+            socket,
+            '現在は回答フェーズではありません。'
+          );
+
+          return;
+        }
+
+        const target =
+          payload?.target ===
+          'vivre'
+            ? 'vivre'
+            : 'extra';
+
+        const answer =
+          String(
+            payload?.answer ||
+              ''
+          ).trim();
+
+        /*
+         * 正式な回答判定は
+         * extra-character / vivre-search
+         * の既存処理を参考に
+         * 専用モジュールへ移す。
+         *
+         * 現段階では回答値を保存して
+         * 次の実装につなげる。
+         */
+        game.answerTarget = {
+          socketId:
+            socket.id,
+
+          target,
+
+          answer,
+        };
+
+        game.message =
+          `プレイヤー${
+            gamePlayer.seat + 1
+          }が回答しました。`;
+
+        saikoroBroadcastState(
+          game
+        );
+      }
+    );
+
+
+    // ========================================================
+    // 切断
+    // ========================================================
+
+    socket.on(
+      'disconnect',
+      () => {
+        const game =
+          Array.from(
+            saikoroGames.values()
+          ).find(
+            (item) =>
+              item.players?.[
+                socket.id
+              ]
+          );
+
+        if (
+          !game
+        ) {
+          return;
+        }
+
+        /*
+         * ゲーム中はゲームデータを消さない。
+         * 再接続時にuserId/nameから
+         * 新しいSocketへ移せるようにする。
+         */
+        console.log(
+          `[saikoro] disconnect room=${game.roomId} socket=${socket.id}`
+        );
+      }
+    );
+  }
+);
