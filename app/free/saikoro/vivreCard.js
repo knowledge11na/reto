@@ -73,14 +73,14 @@ export const VIVRE_INFO_LABELS = {
 export const VIVRE_INFO_COSTS = {
 
     [VIVRE_INFO_TYPES.NAME_LENGTH]: {
-        berry: 8,
+        berry: 6,
         verse: 0,
         eternal: 0
     },
 
     [VIVRE_INFO_TYPES.FAVORITE_FOOD]: {
         berry: 0,
-        verse: 3,
+        verse: 2,
         eternal: 0
     },
 
@@ -93,19 +93,19 @@ export const VIVRE_INFO_COSTS = {
     [VIVRE_INFO_TYPES.AGE]: {
         berry: 0,
         verse: 0,
-        eternal: 4
+        eternal: 2
     },
 
     [VIVRE_INFO_TYPES.BLOOD]: {
         berry: 0,
         verse: 0,
-        eternal: 2
+        eternal: 1
     },
 
     [VIVRE_INFO_TYPES.ORIGIN]: {
         berry: 0,
-        verse: 2,
-        eternal: 2
+        verse: 1,
+        eternal: 1
     },
 
     [VIVRE_INFO_TYPES.GENDER]: {
@@ -416,6 +416,12 @@ export function createVivreCardState(
 
     return {
 
+        // 元のプロフィールを保持する
+        // 看板たぬき側で好物・身長・年齢・血液型・出身・性別・家族
+        // を参照するために必要
+        profile:
+            profile || null,
+
         profileId:
             profile?.id || null,
 
@@ -436,7 +442,6 @@ export function createVivreCardState(
             getFamily(profile).length
     };
 }
-
 
 // ============================================================
 // 好物情報を1文字取得

@@ -42,9 +42,9 @@ function createExtraCharacterBoard(description) {
 
 const INITIAL_RESOURCES = [
   {
-    berry: 3,
-    verse: 0,
-    eternal: 0,
+    berry: 12,
+    verse: 6,
+    eternal: 6,
   },
   {
     berry: 2,
@@ -106,7 +106,7 @@ const VIVRE_INFO_FALLBACK = {
   age: {
     label: '年齢',
     cost: {
-      eternal: 4,
+      eternal: 2,
     },
   },
 
@@ -499,12 +499,19 @@ function getFamilyItems(profile) {
 function createInitialInfoState() {
   return {
     nameLength: null,
+
     favoriteFood: [],
+
     height: [],
+    heightLength: null,
+
     age: [],
+    ageLength: null,
+
     blood: null,
     origin: null,
     gender: null,
+
     family: [],
   };
 }
@@ -514,134 +521,271 @@ function getInfoDisplay(
   info
 ) {
   const profile =
-    getCardProfile(card);
+    getCardProfile(
+      card
+    );
 
-  if (!profile) {
+  if (
+    !profile
+  ) {
     return '---';
   }
 
-if (info === 'nameLength') {
-  const value =
-    card?.revealedInfo?.nameLength;
+  const revealedInfo =
+    card?.revealedInfo ||
+    {};
+
+  // ====================================================
+  // 名前の文字数
+  // ====================================================
 
   if (
-    value === null ||
-    value === undefined
+    info ===
+    'nameLength'
   ) {
-    return '？？？';
+    const value =
+      revealedInfo.nameLength;
+
+    if (
+      value === null ||
+      value === undefined
+    ) {
+      return '？？？';
+    }
+
+    return `${value}文字`;
   }
 
-  return `${value}文字`;
-}
+  // ====================================================
+  // 好物
+  // ====================================================
 
-  if (info === 'favoriteFood') {
+  if (
+    info ===
+    'favoriteFood'
+  ) {
+    const known =
+      Array.isArray(
+        revealedInfo.favoriteFood
+      )
+        ? revealedInfo.favoriteFood
+        : [];
+
+    if (
+      known.length === 0
+    ) {
+      return '？？？';
+    }
+
     const chars =
       getFavoriteFoodCharacters(
-        profile.favoriteFood
+        profile?.favoriteFood
       );
 
-    if (!chars.length) {
-      return '情報なし';
-    }
-
-    const indexes =
-      Array.isArray(
-        card?.revealedInfo?.favoriteFood
-      )
-        ? card.revealedInfo.favoriteFood
-        : [];
-
-    return chars
+    return known
       .map(
-        (char, index) =>
-          indexes.includes(index)
-            ? char
-            : '□'
+        (item) => {
+          // 新しい形式
+          if (
+            typeof item ===
+              'object' &&
+            item !== null
+          ) {
+            return String(
+              item.value ||
+                ''
+            );
+          }
+
+          // 現在の形式
+          // 「位置番号」から実際の文字へ変換
+          if (
+            Number.isInteger(
+              item
+            )
+          ) {
+            return String(
+              chars[item] ||
+                ''
+            );
+          }
+
+          return String(
+            item
+          );
+        }
       )
-      .join('');
+      .filter(
+        Boolean
+      )
+      .join(
+        ' / '
+      );
   }
 
-  if (info === 'height') {
+  // ====================================================
+  // 身長
+  // ====================================================
+
+  if (
+    info ===
+    'height'
+  ) {
     const chars =
       getDigitItems(
-        profile.height
+        profile?.height
       );
 
     const indexes =
       Array.isArray(
-        card?.revealedInfo?.height
+        revealedInfo.height
       )
-        ? card.revealedInfo.height
+        ? revealedInfo.height
         : [];
 
-    if (!chars.length) {
+    const lengthKnown =
+      revealedInfo.heightLength !==
+        null &&
+      revealedInfo.heightLength !==
+        undefined;
+
+    // 購入前
+    if (
+      !lengthKnown &&
+      indexes.length === 0
+    ) {
+      return '？？';
+    }
+
+    if (
+      !chars.length
+    ) {
       return '---';
     }
 
+    // 購入後
+    // 例：192 → ？9？
     return chars
       .map(
         (item) =>
-          indexes.includes(item.index)
+          indexes.includes(
+            item.index
+          )
             ? item.char
-            : '□'
+            : '？'
       )
       .join('');
   }
 
-  if (info === 'age') {
+  // ====================================================
+  // 年齢
+  // ====================================================
+
+  if (
+    info ===
+    'age'
+  ) {
     const chars =
       getDigitItems(
-        profile.age
+        profile?.age
       );
 
     const indexes =
       Array.isArray(
-        card?.revealedInfo?.age
+        revealedInfo.age
       )
-        ? card.revealedInfo.age
+        ? revealedInfo.age
         : [];
 
-    if (!chars.length) {
+    const lengthKnown =
+      revealedInfo.ageLength !==
+        null &&
+      revealedInfo.ageLength !==
+        undefined;
+
+    // 購入前
+    if (
+      !lengthKnown &&
+      indexes.length === 0
+    ) {
+      return '？？';
+    }
+
+    if (
+      !chars.length
+    ) {
       return '---';
     }
 
+    // 購入後
+    // 例：39 → 3？
     return chars
       .map(
         (item) =>
-          indexes.includes(item.index)
+          indexes.includes(
+            item.index
+          )
             ? item.char
-            : '□'
+            : '？'
       )
       .join('');
   }
 
-  if (info === 'blood') {
+  // ====================================================
+  // 血液型
+  // ====================================================
+
+  if (
+    info ===
+    'blood'
+  ) {
     return (
-      card?.revealedInfo?.blood ||
+      revealedInfo.blood ||
       '？？？'
     );
   }
 
-  if (info === 'origin') {
+  // ====================================================
+  // 出身
+  // ====================================================
+
+  if (
+    info ===
+    'origin'
+  ) {
     return (
-      card?.revealedInfo?.origin ||
+      revealedInfo.origin ||
       '？？？'
     );
   }
 
-  if (info === 'gender') {
+  // ====================================================
+  // 性別
+  // ====================================================
+
+  if (
+    info ===
+    'gender'
+  ) {
     return (
-      card?.revealedInfo?.gender ||
+      revealedInfo.gender ||
       '？？？'
     );
   }
 
-  if (info === 'family') {
+  // ====================================================
+  // 家族
+  // ====================================================
+
+  if (
+    info ===
+    'family'
+  ) {
     const values =
       Array.isArray(
-        card?.revealedInfo?.family
+        revealedInfo.family
       )
-        ? card.revealedInfo.family
+        ? revealedInfo.family
         : [];
 
     if (
@@ -650,27 +794,130 @@ if (info === 'nameLength') {
       return '？？？';
     }
 
-    return values.join(' / ');
+    return values
+      .map(
+        (item) => {
+          if (
+            typeof item ===
+              'object' &&
+            item !== null
+          ) {
+            return String(
+              item.value ||
+                ''
+            );
+          }
+
+          return String(
+            item
+          );
+        }
+      )
+      .filter(
+        Boolean
+      )
+      .join(
+        ' / '
+      );
   }
 
   return '？？？';
 }
 
 function getCardPublicSummary(
-  card
+  card,
+  playerInfo
 ) {
   if (!card) {
     return [];
   }
 
+  const info = {
+    ...(playerInfo || {}),
+  };
+
+  const playerCard = {
+    ...card,
+
+    revealedInfo: {
+      ...createInitialInfoState(),
+
+      nameLength:
+        info.nameLength ??
+        null,
+
+      favoriteFood:
+        Array.isArray(
+          info.favoriteFood
+        )
+          ? [
+              ...info.favoriteFood,
+            ]
+          : [],
+
+      height:
+        Array.isArray(
+          info.height
+        )
+          ? [
+              ...info.height,
+            ]
+          : [],
+
+      heightLength:
+        info.heightLength ??
+        null,
+
+      age:
+        Array.isArray(
+          info.age
+        )
+          ? [
+              ...info.age,
+            ]
+          : [],
+
+      ageLength:
+        info.ageLength ??
+        null,
+
+      blood:
+        info.blood ??
+        null,
+
+      origin:
+        info.origin ??
+        null,
+
+      gender:
+        info.gender ??
+        null,
+
+      family:
+        Array.isArray(
+          info.family
+        )
+          ? [
+              ...info.family,
+            ]
+          : [],
+    },
+  };
+
   return INFO_ORDER.map(
     (type) => ({
       type,
-      label: getInfoLabel(type),
-      value: getInfoDisplay(
-        card,
-        type
-      ),
+
+      label:
+        getInfoLabel(
+          type
+        ),
+
+      value:
+        getInfoDisplay(
+          playerCard,
+          type
+        ),
     })
   );
 }
@@ -678,113 +925,513 @@ function getCardPublicSummary(
 function ForgeFaceDisplay({
   face,
   faces,
+  choices,
 }) {
-  const list =
-    Array.isArray(faces)
-      ? faces
-      : face
-        ? [face]
-        : [];
+  const renderResource = (
+    item,
+    key
+  ) => {
+    if (!item) {
+      return null;
+    }
 
-  if (!list.length) {
-    return null;
-  }
+    if (
+      item.type === 'random'
+    ) {
+      return (
+        <div
+          key={key}
+          style={{
+            width: 58,
+            height: 58,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            borderRadius: 12,
+            background:
+              'linear-gradient(145deg, #514936, #282219)',
+            border:
+              '2px dashed rgba(255,210,120,0.7)',
+            color: '#ffe29b',
+            fontSize: 30,
+            fontWeight: 1000,
+          }}
+        >
+          ?
+        </div>
+      );
+    }
 
-  return (
-    <div
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        gap: 6,
-        flexWrap: 'wrap',
-      }}
-    >
-      {list.map(
-        (item, index) => {
-          if (
-            item.type === 'random'
-          ) {
-            return (
-              <div
-                key={index}
-                style={{
-                  width: 58,
-                  height: 58,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  borderRadius: 12,
-                  background:
-                    'linear-gradient(145deg, #514936, #282219)',
-                  border:
-                    '2px dashed rgba(255,210,120,0.7)',
-                  color: '#ffe29b',
-                  fontSize: 30,
-                  fontWeight: 1000,
-                }}
-              >
-                ?
-              </div>
-            );
+    return (
+      <div
+        key={key}
+        style={{
+          width: 62,
+          height: 68,
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: 2,
+          flexShrink: 0,
+        }}
+      >
+        <img
+          src={
+            RESOURCE_ICONS[
+              item.type
+            ]
           }
+          alt={
+            RESOURCE_NAMES[
+              item.type
+            ] ||
+            item.type
+          }
+          style={{
+            width: 44,
+            height: 44,
+            objectFit: 'contain',
+            display: 'block',
+            background:
+              'transparent',
+            mixBlendMode: 'multiply',
+          }}
+        />
 
-          return (
+        <strong
+          style={{
+            fontSize: 14,
+            fontWeight: 1000,
+            color: '#172033',
+            lineHeight: 1,
+          }}
+        >
+          ×{item.value}
+        </strong>
+      </div>
+    );
+  };
+
+  /*
+   * ============================================================
+   * 2択 OR
+   *
+   * 5ベリー
+   * ベリー3 OR ヴァース2
+   *
+   * ベリー3 OR 永久指針2
+   * ============================================================
+   */
+
+  const renderTwoChoice = (
+    choiceFaces
+  ) => {
+    if (
+      !Array.isArray(
+        choiceFaces
+      ) ||
+      choiceFaces.length !== 2
+    ) {
+      return null;
+    }
+
+    return (
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent:
+            'center',
+          gap: 4,
+        }}
+      >
+        {renderResource(
+          choiceFaces[0],
+          'two-choice-0'
+        )}
+
+        <strong
+          style={{
+            fontSize: 14,
+            fontWeight: 1000,
+            color: '#172033',
+            margin:
+              '0 2px',
+          }}
+        >
+          OR
+        </strong>
+
+        {renderResource(
+          choiceFaces[1],
+          'two-choice-1'
+        )}
+      </div>
+    );
+  };
+
+  /*
+   * ============================================================
+   * 3択 OR
+   *
+   * 4ベリー
+   * ベリー2 OR 永久指針1 OR ヴァース1
+   * ============================================================
+   */
+
+  const renderThreeChoice = (
+    choiceFaces
+  ) => {
+    if (
+      !Array.isArray(
+        choiceFaces
+      ) ||
+      choiceFaces.length !== 3
+    ) {
+      return null;
+    }
+
+    return (
+      <div
+        style={{
+          display: 'flex',
+          flexDirection:
+            'column',
+          alignItems:
+            'center',
+          justifyContent:
+            'center',
+        }}
+      >
+        <div
+          style={{
+            display: 'flex',
+            alignItems:
+              'center',
+            justifyContent:
+              'center',
+          }}
+        >
+          {renderResource(
+            choiceFaces[0],
+            'three-choice-top'
+          )}
+        </div>
+
+        <strong
+          style={{
+            fontSize: 13,
+            fontWeight: 1000,
+            color: '#172033',
+            lineHeight: 1,
+            margin:
+              '-2px 0 0',
+          }}
+        >
+          OR
+        </strong>
+
+        <div
+          style={{
+            display: 'flex',
+            alignItems:
+              'center',
+            justifyContent:
+              'center',
+          }}
+        >
+          {renderResource(
+            choiceFaces[1],
+            'three-choice-left'
+          )}
+
+          <strong
+            style={{
+              fontSize: 13,
+              fontWeight: 1000,
+              color: '#172033',
+              margin:
+                '0 1px',
+            }}
+          >
+            OR
+          </strong>
+
+          {renderResource(
+            choiceFaces[2],
+            'three-choice-right'
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  /*
+   * ============================================================
+   * choices 配列
+   * ============================================================
+   */
+
+  if (
+    Array.isArray(
+      choices
+    ) &&
+    choices.length > 0
+  ) {
+    return (
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent:
+            'center',
+          gap: 6,
+        }}
+      >
+        {choices.map(
+          (
+            choice,
+            index
+          ) => (
             <div
-              key={index}
+              key={`choice-${index}`}
               style={{
-                width: 68,
-                height: 68,
                 display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: 2,
-                background: 'transparent',
-                border: 'none',
-                boxShadow: 'none',
+                alignItems:
+                  'center',
               }}
             >
-              <img
-                src={
-                  RESOURCE_ICONS[
-                    item.type
-                  ]
-                }
-                alt={
-                  RESOURCE_NAMES[
-                    item.type
-                  ] ||
-                  item.type
-                }
-                style={{
-                  width: 48,
-                  height: 48,
-                  objectFit: 'contain',
-                  display: 'block',
-                  background: 'transparent',
-                  mixBlendMode: 'multiply',
-                }}
-              />
+              {index > 0 && (
+                <strong
+                  style={{
+                    fontSize: 15,
+                    fontWeight: 1000,
+                    color:
+                      '#172033',
+                    margin:
+                      '0 5px',
+                  }}
+                >
+                  OR
+                </strong>
+              )}
 
-<strong
-  style={{
-    fontSize: 15,
-    fontWeight: 1000,
-    color: '#172033',
-    textShadow: 'none',
-    lineHeight: 1,
-  }}
->
-  ×{item.value}
-</strong>
+              {Array.isArray(
+                choice
+              ) &&
+              choice.length ===
+                2
+                ? renderTwoChoice(
+                    choice
+                  )
+                : renderCombo(
+                    choice,
+                    `choice-${index}`
+                  )}
             </div>
-          );
-        }
-      )}
-    </div>
-  );
-}
+          )
+        )}
+      </div>
+    );
+  }
+
+  /*
+   * ============================================================
+   * choice: true
+   * 2択 / 3択を自動判定
+   * ============================================================
+   */
+
+  if (
+    face?.type ===
+      'choice' &&
+    Array.isArray(
+      face.faces
+    )
+  ) {
+    if (
+      face.faces.length ===
+      2
+    ) {
+      return renderTwoChoice(
+        face.faces
+      );
+    }
+
+    if (
+      face.faces.length ===
+      3
+    ) {
+      return renderThreeChoice(
+        face.faces
+      );
+    }
+  }
+
+  /*
+   * ============================================================
+   * combo
+   * ============================================================
+   */
+
+  const renderCombo = (
+    comboFaces,
+    keyPrefix
+  ) => {
+    if (
+      !Array.isArray(
+        comboFaces
+      ) ||
+      comboFaces.length === 0
+    ) {
+      return null;
+    }
+
+    return (
+      <div
+        key={keyPrefix}
+        style={{
+          display: 'flex',
+          alignItems:
+            'center',
+          justifyContent:
+            'center',
+          flexWrap: 'nowrap',
+        }}
+      >
+        {comboFaces.map(
+          (item, index) => (
+            <div
+              key={`${keyPrefix}-${index}`}
+              style={{
+                display: 'flex',
+                alignItems:
+                  'center',
+                justifyContent:
+                  'center',
+              }}
+            >
+              {index > 0 && (
+                <strong
+                  style={{
+                    fontSize: 18,
+                    fontWeight: 1000,
+                    color:
+                      '#172033',
+                    margin:
+                      '0 1px',
+                  }}
+                >
+                  +
+                </strong>
+              )}
+
+              {item?.type ===
+                'combo' ? (
+                renderCombo(
+                  item.faces,
+                  `${keyPrefix}-nested-${index}`
+                )
+              ) : (
+                renderResource(
+                  item,
+                  `${keyPrefix}-resource-${index}`
+                )
+              )}
+            </div>
+          )
+        )}
+      </div>
+    );
+  };
+
+  /*
+   * ============================================================
+   * face が combo
+   * ============================================================
+   */
+
+  if (
+    face?.type ===
+      'combo' &&
+    Array.isArray(
+      face.faces
+    )
+  ) {
+    return renderCombo(
+      face.faces,
+      'face-combo'
+    );
+  }
+
+  /*
+   * ============================================================
+   * faces 配列
+   * ============================================================
+   */
+
+  if (
+    Array.isArray(faces) &&
+    faces.length > 0
+  ) {
+    if (
+      faces.length === 1 &&
+      faces[0]?.type ===
+        'combo'
+    ) {
+      return renderCombo(
+        faces[0].faces,
+        'faces-combo'
+      );
+    }
+
+    /*
+     * choice情報が直接渡されていない場合でも、
+     * 2個なら OR として表示する。
+     *
+     * ただし通常の複数資源は
+     * 「＋」として扱うため、
+     * ここでは choice 用にしない。
+     */
+
+    return renderCombo(
+      faces,
+      'faces'
+    );
+  }
+
+  /*
+   * ============================================================
+   * 単一資源
+   * ============================================================
+   */
+
+  if (
+    face?.type &&
+    face?.value !==
+      undefined
+  ) {
+    return (
+      <div
+        style={{
+          display: 'flex',
+          alignItems:
+            'center',
+          justifyContent:
+            'center',
+        }}
+      >
+        {renderResource(
+          face,
+          'single'
+        )}
+      </div>
+    );
+  }
+
+  return null;
+} 
 
 function getResourceNameForFace(
   type
@@ -794,6 +1441,7 @@ function getResourceNameForFace(
     type
   );
 }
+
 
 function ForgeOfferCard({
   offer,
@@ -852,11 +1500,34 @@ function ForgeOfferCard({
           styles.diceTempleFaceArea
         }
       >
-        <ForgeFaceDisplay
-          faces={
-            offer.faces
-          }
-        />
+        {Array.isArray(
+          offer.choices
+        ) &&
+        offer.choices.length > 0 ? (
+          <ForgeFaceDisplay
+            choices={
+              offer.choices
+            }
+          />
+        ) : offer.choice ? (
+          <ForgeFaceDisplay
+            face={{
+              type: 'choice',
+              faces:
+                Array.isArray(
+                  offer.faces
+                )
+                  ? offer.faces
+                  : [],
+            }}
+          />
+        ) : (
+          <ForgeFaceDisplay
+            faces={
+              offer.faces
+            }
+          />
+        )}
       </div>
 
       <div
@@ -931,6 +1602,8 @@ const [extraCharacterBoard, setExtraCharacterBoard] =
 
   const [answer, setAnswer] =
     useState('');
+
+const [answerMode, setAnswerMode] = useState(null);
 
   const [selectedInfo, setSelectedInfo] =
     useState(null);
@@ -1012,221 +1685,228 @@ const [extraCharacterBoard, setExtraCharacterBoard] =
     });
 
 
-  const FORGE_OFFERS = [
-    {
-      id: 'berry2_a',
-      cost: {
-        berry: 2,
-      },
-      faces: [
-        {
-          type: 'berry',
-          value: 3,
-        },
-      ],
+const FORGE_OFFERS = [
+  {
+    id: 'berry2_a',
+    cost: {
+      berry: 2,
     },
+    faces: [
+      {
+        type: 'berry',
+        value: 3,
+      },
+    ],
+  },
 
-    {
-      id: 'berry2_b',
-      cost: {
-        berry: 2,
-      },
-      faces: [
-        {
-          type: 'eternal',
-          value: 1,
-        },
-      ],
+  {
+    id: 'berry2_b',
+    cost: {
+      berry: 2,
     },
+    faces: [
+      {
+        type: 'eternal',
+        value: 1,
+      },
+    ],
+  },
 
-    {
-      id: 'berry3_a',
-      cost: {
-        berry: 3,
-      },
-      faces: [
-        {
-          type: 'berry',
-          value: 4,
-        },
-      ],
+  {
+    id: 'berry3_a',
+    cost: {
+      berry: 3,
     },
+    faces: [
+      {
+        type: 'berry',
+        value: 4,
+      },
+    ],
+  },
 
-    {
-      id: 'berry3_b',
-      cost: {
-        berry: 3,
-      },
-      faces: [
-        {
-          type: 'verse',
-          value: 1,
-        },
-      ],
+  {
+    id: 'berry3_b',
+    cost: {
+      berry: 3,
     },
+    faces: [
+      {
+        type: 'verse',
+        value: 1,
+      },
+    ],
+  },
 
-    {
-      id: 'berry4_a',
-      cost: {
-        berry: 4,
-      },
-      faces: [
-        {
-          type: 'berry',
-          value: 6,
-        },
-      ],
+  {
+    id: 'berry4_a',
+    cost: {
+      berry: 4,
     },
+    faces: [
+      {
+        type: 'berry',
+        value: 6,
+      },
+    ],
+  },
 
-    {
-      id: 'berry4_b',
-      cost: {
-        berry: 4,
-      },
-      faces: [
-        {
-          type: 'berry',
-          value: 2,
-        },
-        {
-          type: 'eternal',
-          value: 1,
-        },
-      ],
+  {
+    id: 'berry4_b',
+    cost: {
+      berry: 4,
     },
+    faces: [
+      {
+        type: 'berry',
+        value: 2,
+      },
+      {
+        type: 'eternal',
+        value: 1,
+      },
+    ],
+  },
 
-    {
-      id: 'berry4_c',
-      cost: {
-        berry: 4,
-      },
-      faces: [
-        {
-          type: 'berry',
-          value: 2,
-        },
-        {
-          type: 'random',
-          value: '?',
-        },
-      ],
+  {
+    id: 'berry4_c',
+    cost: {
+      berry: 4,
     },
+    choice: true,
+    faces: [
+      {
+        type: 'berry',
+        value: 2,
+      },
+      {
+        type: 'eternal',
+        value: 1,
+      },
+      {
+        type: 'verse',
+        value: 1,
+      },
+    ],
+  },
 
-    {
-      id: 'berry4_d',
-      cost: {
-        berry: 4,
-      },
-      faces: [
-        {
-          type: 'berry',
-          value: 2,
-        },
-        {
-          type: 'verse',
-          value: 1,
-        },
-      ],
+  {
+    id: 'berry4_d',
+    cost: {
+      berry: 4,
     },
+    faces: [
+      {
+        type: 'berry',
+        value: 2,
+      },
+      {
+        type: 'verse',
+        value: 1,
+      },
+    ],
+  },
 
+{
+  id: 'berry5_a',
+  cost: {
+    berry: 5,
+  },
+  choice: true,
+  faces: [
     {
-      id: 'berry5_a',
-      cost: {
-        berry: 5,
-      },
-      faces: [
-        {
-          type: 'berry',
-          value: 3,
-        },
-        {
-          type: 'verse',
-          value: 2,
-        },
-      ],
+      type: 'berry',
+      value: 3,
     },
+    {
+      type: 'verse',
+      value: 2,
+    },
+  ],
+},
 
+{
+  id: 'berry5_b',
+  cost: {
+    berry: 5,
+  },
+  choice: true,
+  faces: [
     {
-      id: 'berry5_b',
-      cost: {
-        berry: 5,
-      },
-      faces: [
-        {
-          type: 'berry',
-          value: 3,
-        },
-        {
-          type: 'eternal',
-          value: 2,
-        },
-      ],
+      type: 'berry',
+      value: 3,
     },
+    {
+      type: 'eternal',
+      value: 2,
+    },
+  ],
+},
 
-    {
-      id: 'berry6_a',
-      cost: {
-        berry: 6,
-      },
-      faces: [
-        {
-          type: 'eternal',
-          value: 2,
-        },
-      ],
+  {
+    id: 'berry6_a',
+    cost: {
+      berry: 6,
     },
+    faces: [
+      {
+        type: 'eternal',
+        value: 2,
+      },
+    ],
+  },
 
-    {
-      id: 'berry8_a',
-      cost: {
-        berry: 8,
-      },
-      faces: [
-        {
-          type: 'verse',
-          value: 2,
-        },
-      ],
+  {
+    id: 'berry8_a',
+    cost: {
+      berry: 8,
     },
+    faces: [
+      {
+        type: 'verse',
+        value: 2,
+      },
+    ],
+  },
 
-    {
-      id: 'berry12_a',
-      cost: {
-        berry: 12,
-      },
-      faces: [
-        {
-          type: 'verse',
-          value: 2,
-        },
-        {
-          type: 'eternal',
-          value: 2,
-        },
-      ],
+  {
+    id: 'berry12_a',
+    cost: {
+      berry: 12,
     },
+    faces: [
+      {
+        type: 'verse',
+        value: 2,
+      },
+      {
+        type: 'eternal',
+        value: 2,
+      },
+    ],
+  },
 
-    {
-      id: 'berry12_b',
-      cost: {
-        berry: 12,
-      },
-      faces: [
-        {
-          type: 'eternal',
-          value: 1,
-        },
-        {
-          type: 'verse',
-          value: 1,
-        },
-        {
-          type: 'berry',
-          value: 1,
-        },
-      ],
+  {
+    id: 'berry12_b',
+    cost: {
+      berry: 12,
     },
-  ];
+    faces: [
+      {
+        type: 'eternal',
+        value: 1,
+      },
+      {
+        type: 'verse',
+        value: 1,
+      },
+      {
+        type: 'berry',
+        value: 1,
+      },
+    ],
+  },
+];
 
 const CARD_OFFERS = [
   {
@@ -1307,7 +1987,7 @@ const CARD_OFFERS = [
     image: '/saikoro/news.png',
     cost: { eternal: 4 },
     description:
-      '毎ターン、好きな資源を1つもらう。',
+      '自分のターン開始時、好きな資源を1つもらう。',
   },
   {
     id: 'tact',
@@ -1343,6 +2023,25 @@ const [selectedCard, setSelectedCard] =
 
 const [showCardConfirm, setShowCardConfirm] =
   useState(false);
+
+const [cardEffectUsed, setCardEffectUsed] =
+  useState({
+    yomiyomi: false,
+    daiaru: false,
+    jikijiki: false,
+  });
+
+const [cardEffectMessage, setCardEffectMessage] =
+  useState('');
+
+const [showCardEffectPanel, setShowCardEffectPanel] =
+  useState(false);
+
+const [cardEffectTarget, setCardEffectTarget] =
+  useState(null);
+
+const [cardEffectSelecting, setCardEffectSelecting] =
+  useState(null);
 
   const getForgeOffer =
     (id) =>
@@ -1565,25 +2264,51 @@ const [showCardConfirm, setShowCardConfirm] =
 
           let newFace;
 
-          if (
-            selectedForgeOffer.faces
-              .length === 1
-          ) {
-            newFace = {
-              ...selectedForgeOffer.faces[0],
-            };
-          } else {
-            newFace = {
-              type: 'combo',
+if (
+  selectedForgeOffer.choice
+) {
+  newFace = {
+    type: 'choice',
+    faces: Array.isArray(
+      selectedForgeOffer.faces
+    )
+      ? selectedForgeOffer.faces.map(
+          (face) => ({
+            ...face,
+          })
+        )
+      : [],
+    choices: Array.isArray(
+      selectedForgeOffer.choices
+    )
+      ? selectedForgeOffer.choices.map(
+          (choice) =>
+            choice.map(
+              (face) => ({
+                ...face,
+              })
+            )
+        )
+      : [],
+  };
+} else if (
+  selectedForgeOffer.faces.length === 1
+) {
+  newFace = {
+    ...selectedForgeOffer.faces[0],
+  };
+} else {
+  newFace = {
+    type: 'combo',
 
-              faces:
-                selectedForgeOffer.faces.map(
-                  (face) => ({
-                    ...face,
-                  })
-                ),
-            };
-          }
+    faces:
+      selectedForgeOffer.faces.map(
+        (face) => ({
+          ...face,
+        })
+      ),
+  };
+}
 
           updatedPlayer[diceKey][
             index
@@ -1698,6 +2423,33 @@ const [showCardConfirm, setShowCardConfirm] =
             selectedCard.description,
         });
 
+if (
+  selectedCard.id ===
+  'dorudoru'
+) {
+  updatedPlayer.maxResources = {
+    ...updatedPlayer.maxResources,
+
+    berry:
+      Number(
+        updatedPlayer.maxResources?.berry ||
+          0
+      ) + 4,
+
+    verse:
+      Number(
+        updatedPlayer.maxResources?.verse ||
+          0
+      ) + 3,
+
+    eternal:
+      Number(
+        updatedPlayer.maxResources?.eternal ||
+          0
+      ) + 3,
+  };
+}
+
         next[0] =
           updatedPlayer;
 
@@ -1738,23 +2490,30 @@ const [showCardConfirm, setShowCardConfirm] =
   const currentPlayer =
     players[turnPlayer];
 
-  const isMyTurn =
-    turnPlayer === 0 &&
-    phase === 'action';
+const isMyTurn =
+  turnPlayer === 0 &&
+  (
+    phase === 'action' ||
+    phase === 'answer'
+  );
 
   const currentCardProfile =
     getCardProfile(
       currentVivreCard
     );
 
-  const infoSummary =
-    useMemo(
-      () =>
-        getCardPublicSummary(
-          currentVivreCard
-        ),
-      [currentVivreCard]
-    );
+const infoSummary =
+  useMemo(
+    () =>
+      getCardPublicSummary(
+        currentVivreCard,
+        myPlayer?.vivreCardInfo
+      ),
+    [
+      currentVivreCard,
+      myPlayer?.vivreCardInfo,
+    ]
+  );
 
   const getExtraCharacterHiddenIndexes = () => {
     return extraCharacterBoard
@@ -1773,9 +2532,9 @@ const [showCardConfirm, setShowCardConfirm] =
           eternal: 0,
         };
 
-      case 'berry10':
+      case 'berry7':
         return {
-          berry: 10,
+          berry: 7,
           verse: 0,
           eternal: 0,
         };
@@ -2323,255 +3082,9 @@ const [showCardConfirm, setShowCardConfirm] =
     );
   }
 
-  function rollAllDice() {
-    if (
-      phase !== 'dice' ||
-      diceRolling
-    ) {
-      return;
-    }
-
-    setDiceRolling(true);
-    setShowDiceResults(false);
-    setDiceResult(null);
-    setAllDiceResults({});
-
-    setMessage(
-      '全員のサイコロを振っています……'
-    );
-
-    setTimeout(() => {
-      const results = {};
-
-      setPlayers(
-        (prev) =>
-          prev.map(
-            (player) => {
-              const a =
-                rollDice(
-                  player.diceA
-                );
-
-              const b =
-                rollDice(
-                  player.diceB
-                );
-
-              results[
-                player.seat
-              ] = {
-                a,
-                b,
-              };
-
-              let next = {
-                ...player,
-
-                diceResult: {
-                  a,
-                  b,
-                },
-              };
-
-              if (a) {
-                next =
-                  addResource(
-                    next,
-                    a.type,
-                    a.value
-                  );
-              }
-
-              if (b) {
-                next =
-                  addResource(
-                    next,
-                    b.type,
-                    b.value
-                  );
-              }
-
-              return next;
-            }
-          )
-      );
-
-      setAllDiceResults(
-        results
-      );
-
-      setDiceResult(
-        results[0]
-      );
-
-      setDiceRolling(false);
-
-      setShowDiceResults(
-        true
-      );
-
-      setMessage(
-        '全員のサイコロ結果が出ました！'
-      );
-
-      setTimeout(() => {
-        setShowDiceResults(false);
-
-        setPhase(
-          'action'
-        );
-
-        setTurnPlayer(
-          0
-        );
-
-        setActionUsed(
-          false
-        );
-
-        setAnswerUsed(
-          false
-        );
-
-        setSelectedInfo(
-          null
-        );
-
-        setMessage(
-          '全員のダイス結果が確定しました。あなたのターンです。'
-        );
-      }, 2600);
-    }, 1500);
-  }
 
 
-  function startNextRound() {
-    const nextRound =
-      round + 1;
-
-    setRound(
-      nextRound
-    );
-
-    setTurnPlayer(
-      0
-    );
-
-    setPhase(
-      'dice'
-    );
-
-    setActionUsed(
-      false
-    );
-
-    setAnswerUsed(
-      false
-    );
-
-    setAnswer('');
-
-    setLastAnswer(
-      null
-    );
-
-    setMessage(
-      `ラウンド${nextRound}開始！全員がダイスを振ります。`
-    );
-
-    setDiceResult(
-      null
-    );
-
-    setDiceRolling(
-      false
-    );
-
-    setShowDiceResults(
-      false
-    );
-
-    setAllDiceResults(
-      {}
-    );
-  }
-
-
-
-function getDiceFrontRotation(faceIndex) {
-  switch (Number(faceIndex)) {
-    case 1:
-      // 裏面
-      return {
-        x: 0,
-        y: 180,
-        z: 0,
-      };
-
-    case 2:
-      // 右面
-      return {
-        x: 0,
-        y: -90,
-        z: 0,
-      };
-
-    case 3:
-      // 左面
-      return {
-        x: 0,
-        y: 90,
-        z: 0,
-      };
-
-    case 4:
-      // 上面
-      return {
-        x: -90,
-        y: 0,
-        z: 0,
-      };
-
-    case 5:
-      // 下面
-      return {
-        x: 90,
-        y: 0,
-        z: 0,
-      };
-
-    case 0:
-    default:
-      // 正面
-      return {
-        x: 0,
-        y: 0,
-        z: 0,
-      };
-  }
-}
-
-function getDiceFinalRotation(faceIndex) {
-  const target =
-    getDiceFrontRotation(
-      faceIndex
-    );
-
-  return {
-    x:
-      target.x +
-      720,
-
-    y:
-      target.y +
-      720,
-
-    z:
-      target.z,
-  };
-}
-
-function handleRollButton() {
+function rollAllDice() {
   if (
     phase !== 'dice' ||
     diceRolling
@@ -2580,15 +3093,12 @@ function handleRollButton() {
   }
 
   setDiceRolling(true);
-
   setShowDiceResults(false);
-
   setDiceResult(null);
-
   setAllDiceResults({});
 
   setMessage(
-    '🎲 ダイスを振っています……'
+    '🎲 全員のサイコロを振っています……'
   );
 
   let tick = 0;
@@ -2610,28 +3120,22 @@ function handleRollButton() {
           x:
             tick * 55 +
             Math.random() * 40,
-
           y:
             tick * 65 +
             Math.random() * 40,
-
           z:
-            Math.random() * 40 -
-            20,
+            Math.random() * 40 - 20,
         },
 
         b: {
           x:
             tick * 60 +
             Math.random() * 40,
-
           y:
             -tick * 70 +
             Math.random() * 40,
-
           z:
-            Math.random() * 40 -
-            20,
+            Math.random() * 40 - 20,
         },
       });
     }, 90);
@@ -2715,6 +3219,14 @@ function handleRollButton() {
       const myResult =
         results[0];
 
+      console.log(
+        '🎲 実際の出目',
+        {
+          A: myResult?.a,
+          B: myResult?.b,
+        }
+      );
+
       setAllDiceResults(
         results
       );
@@ -2724,58 +3236,48 @@ function handleRollButton() {
       );
 
       /*
-       * 実際に出た面を正面に向ける。
+       * 実際に出た面を
+       * 3Dサイコロの正面に表示する。
        *
-       * Aの出目
-       */
-      const rotationA =
-        getDiceFinalRotation(
-          myResult?.a?.index
-        );
-
-      /*
-       * Bの出目
-       */
-      const rotationB =
-        getDiceFinalRotation(
-          myResult?.b?.index
-        );
-
-      /*
-       * ここで最終位置を指定。
-       * 720度以上回転させてから
-       * 出目の面が真正面に来る。
+       * Dice3D側で
+       * result.index を使って
+       * 面を入れ替えるため、
+       * 回転は0に戻す。
        */
       setDice3DRotation({
-        a: rotationA,
-        b: rotationB,
+        a: {
+          x: 0,
+          y: 0,
+          z: 0,
+        },
+
+        b: {
+          x: 0,
+          y: 0,
+          z: 0,
+        },
       });
+
+      setDiceRolling(false);
 
       setMessage(
         '🎲 全員のサイコロ結果が出ました！'
       );
 
-      /*
-       * すぐにrollingをfalseにすると
-       * 最終位置へのアニメーションが
-       * きれいに出ないことがあるため、
-       * 少し待ってから解除する。
-       */
       setTimeout(() => {
-        setDiceRolling(false);
         setShowDiceResults(true);
       }, 750);
 
       /*
-       * 結果表示を少し見せてから
-       * 次のアクションフェーズへ。
+       * 結果表示後、
+       * そのままアクションフェーズへ進む。
+       *
+       * turnPlayerはここでは変更しない。
        */
       setTimeout(() => {
         setShowDiceResults(false);
 
         setPhase('action');
-
-        setTurnPlayer(0);
 
         setActionUsed(false);
 
@@ -2784,11 +3286,515 @@ function handleRollButton() {
         setSelectedInfo(null);
 
         setMessage(
-          '全員のダイス結果が確定しました。あなたのターンです。'
+          `${players[turnPlayer]?.name || 'プレイヤー1'}のターンです。`
         );
       }, 3200);
     }, 1200);
 }
+
+const diceAutoTriggeredRef =
+  useRef(false);
+
+useEffect(() => {
+  if (
+    phase !== 'dice'
+  ) {
+    diceAutoTriggeredRef.current =
+      false;
+
+    return;
+  }
+
+  if (
+    diceAutoTriggeredRef.current ||
+    diceRolling
+  ) {
+    return;
+  }
+
+  diceAutoTriggeredRef.current =
+    true;
+
+  const timer =
+    setTimeout(() => {
+      rollAllDice();
+    }, 300);
+
+  return () => {
+    clearTimeout(timer);
+  };
+}, [
+  phase,
+  diceRolling,
+]);
+
+const applyStartTurnCardEffects = (
+  seat
+) => {
+  const player =
+    players[seat];
+
+  if (!player) {
+    return;
+  }
+
+  let nextPlayers =
+    players.map(
+      (item) => ({
+        ...item,
+
+        resources: {
+          ...item.resources,
+        },
+
+        maxResources: {
+          ...item.maxResources,
+        },
+
+        extraCharacterInfo:
+          Array.isArray(
+            item.extraCharacterInfo
+          )
+            ? [
+                ...item.extraCharacterInfo,
+              ]
+            : [],
+
+        vivreCardInfo: {
+          ...item.vivreCardInfo,
+        },
+
+        cards: Array.isArray(
+          item.cards
+        )
+          ? [...item.cards]
+          : [],
+      })
+    );
+
+  let changed = false;
+  const messages = [];
+
+  /*
+   * ニュース・クー
+   *
+   * 「好きな資源を1つ」
+   *
+   * 自分のターン開始時に
+   * どの資源をもらうか選択する。
+   */
+  if (
+    hasCard(
+      player,
+      'news'
+    )
+  ) {
+    const answer =
+      window.prompt(
+        'ニュース・クー\n\n' +
+        '獲得する資源を選択してください。\n\n' +
+        '1：ベリー\n' +
+        '2：ヴァース\n' +
+        '3：永久指針'
+      );
+
+    let resourceType =
+      null;
+
+    if (answer === '1') {
+      resourceType = 'berry';
+    }
+
+    if (answer === '2') {
+      resourceType = 'verse';
+    }
+
+    if (answer === '3') {
+      resourceType = 'eternal';
+    }
+
+    if (resourceType) {
+      const current =
+        Number(
+          nextPlayers[seat]
+            .resources?.[
+              resourceType
+            ] || 0
+        );
+
+      const max =
+        Number(
+          nextPlayers[seat]
+            .maxResources?.[
+              resourceType
+            ] || 0
+        );
+
+      if (current < max) {
+        nextPlayers[seat].resources[
+          resourceType
+        ] =
+          Math.min(
+            max,
+            current + 1
+          );
+
+        changed = true;
+
+        messages.push(
+          `ニュース・クーで${RESOURCE_NAMES[resourceType]}を1個獲得しました。`
+        );
+      }
+    }
+  }
+
+  /*
+   * バラバラの実
+   *
+   * 自分がまだ知らない
+   * エクストラキャラのマスを
+   * ランダムで3つ公開。
+   */
+  if (
+    hasCard(
+      player,
+      'barabara'
+    ) &&
+    extraCharacter &&
+    Array.isArray(
+      extraCharacterBoard
+    )
+  ) {
+    const knownIndexes =
+      new Set(
+        Array.isArray(
+          nextPlayers[seat]
+            .extraCharacterInfo
+        )
+          ? nextPlayers[seat]
+              .extraCharacterInfo
+          : []
+      );
+
+    const hiddenIndexes =
+      extraCharacterBoard
+        .filter(
+          (item) =>
+            !isExtraSymbol(
+              item.char
+            ) &&
+            !knownIndexes.has(
+              item.index
+            )
+        )
+        .map(
+          (item) =>
+            item.index
+        );
+
+    const revealCount =
+      Math.min(
+        3,
+        hiddenIndexes.length
+      );
+
+    for (
+      let i = 0;
+      i < revealCount;
+      i++
+    ) {
+      const randomIndex =
+        Math.floor(
+          Math.random() *
+            hiddenIndexes.length
+        );
+
+      const index =
+        hiddenIndexes.splice(
+          randomIndex,
+          1
+        )[0];
+
+      if (
+        !Number.isInteger(
+          index
+        )
+      ) {
+        continue;
+      }
+
+      nextPlayers[seat]
+        .extraCharacterInfo
+        .push(index);
+
+      changed = true;
+    }
+
+    if (
+      revealCount > 0
+    ) {
+      messages.push(
+        `バラバラの実でエクストラキャラの文字を${revealCount}マス公開しました。`
+      );
+    }
+  }
+
+  /*
+   * 食糧宝船
+   *
+   * ミニダイスは
+   * ゴールド3 ×1
+   * ゴールド2 ×1
+   * ゴールド1 ×3
+   *
+   * 今回は簡易的に1～3を抽選。
+   */
+  if (
+    hasCard(
+      player,
+      'takara'
+    )
+  ) {
+    const miniRoll =
+      Math.random();
+
+    let gold = 1;
+
+    if (
+      miniRoll < 1 / 5
+    ) {
+      gold = 3;
+    } else if (
+      miniRoll < 2 / 5
+    ) {
+      gold = 2;
+    }
+
+    const currentBerry =
+      Number(
+        nextPlayers[seat]
+          .resources?.berry ||
+          0
+      );
+
+    const maxBerry =
+      Number(
+        nextPlayers[seat]
+          .maxResources?.berry ||
+          0
+      );
+
+    nextPlayers[seat]
+      .resources
+      .berry =
+      Math.min(
+        maxBerry,
+        currentBerry + gold
+      );
+
+    changed = true;
+
+    messages.push(
+      `食糧宝船のミニダイスでベリーを${gold}個獲得しました。`
+    );
+  }
+
+  /*
+   * SMILE
+   *
+   * ターン開始時に10%判定。
+   *
+   * 実際のダイス結果ではなく、
+   * このターンに得た資源を3倍にするため、
+   * フラグとして保持する。
+   */
+  if (
+    hasCard(
+      player,
+      'smile'
+    )
+  ) {
+    if (
+      Math.random() < 0.1
+    ) {
+      messages.push(
+        'SMILE発動！このターンは獲得資源が3倍になります！'
+      );
+
+      nextPlayers[seat]
+        .smileActive = true;
+
+      changed = true;
+    } else {
+      nextPlayers[seat]
+        .smileActive = false;
+    }
+  } else {
+    nextPlayers[seat]
+      .smileActive = false;
+  }
+
+  if (changed) {
+    setPlayers(
+      nextPlayers
+    );
+  }
+
+  if (
+    messages.length > 0
+  ) {
+    setMessage(
+      messages.join('\n')
+    );
+  }
+
+  return nextPlayers;
+};
+
+
+function startNextRound() {
+  const nextRound =
+    round + 1;
+
+  setRound(
+    nextRound
+  );
+
+  setTurnPlayer(
+    0
+  );
+
+  setPhase(
+    'dice'
+  );
+
+  setActionUsed(
+    false
+  );
+
+  setAnswerUsed(
+    false
+  );
+
+  setAnswer('');
+
+  setLastAnswer(
+    null
+  );
+
+  setMessage(
+    `ラウンド${nextRound}開始！全員がダイスを振ります。`
+  );
+
+  setDiceResult(
+    null
+  );
+
+  setDiceRolling(
+    false
+  );
+
+  setShowDiceResults(
+    false
+  );
+
+  setAllDiceResults(
+    {}
+  );
+
+  setCardEffectUsed({
+    yomiyomi: false,
+    daiaru: false,
+    jikijiki: false,
+  });
+
+  setCardEffectMessage('');
+
+  setTimeout(() => {
+    applyStartTurnCardEffects(0);
+  }, 50);
+}
+
+
+function getDiceFrontRotation(faceIndex) {
+  switch (Number(faceIndex)) {
+    // 面1：Front
+    case 0:
+      return {
+        x: 0,
+        y: 0,
+        z: 0,
+      };
+
+    // 面2：Back
+    case 1:
+      return {
+        x: 0,
+        y: 180,
+        z: 0,
+      };
+
+    // 面3：Right
+    case 2:
+      return {
+        x: 0,
+        y: -90,
+        z: 0,
+      };
+
+    // 面4：Left
+    case 3:
+      return {
+        x: 0,
+        y: 90,
+        z: 0,
+      };
+
+    // 面5：Top
+    case 4:
+      return {
+        x: -90,
+        y: 0,
+        z: 0,
+      };
+
+    // 面6：Bottom
+    case 5:
+      return {
+        x: 90,
+        y: 0,
+        z: 0,
+      };
+
+    default:
+      return {
+        x: 0,
+        y: 0,
+        z: 0,
+      };
+  }
+}
+
+function getDiceFinalRotation(faceIndex) {
+  const target =
+    getDiceFrontRotation(
+      faceIndex
+    );
+
+  return {
+    x:
+      target.x +
+      360 * 3,
+
+    y:
+      target.y +
+      360 * 2,
+
+    z:
+      target.z,
+  };
+}
+
 
   function canBuyInfo(
     player,
@@ -2809,59 +3815,62 @@ function handleRollButton() {
     );
   }
 
-  function revealFavoriteFood(
-    card
-  ) {
-    const profile =
-      getCardProfile(card);
+function revealFavoriteFood(
+  card
+) {
+  const profile =
+    getCardProfile(
+      card
+    );
 
-    const chars =
-      getFavoriteFoodCharacters(
-        profile?.favoriteFood
-      );
+  const chars =
+    getFavoriteFoodCharacters(
+      profile?.favoriteFood
+    );
 
-    const already =
-      Array.isArray(
-        card?.revealedInfo?.favoriteFood
+  const already =
+    Array.isArray(
+      card?.revealedInfo?.favoriteFood
+    )
+      ? card.revealedInfo.favoriteFood
+      : [];
+
+  const remaining =
+    chars
+      .map(
+        (_, index) =>
+          index
       )
-        ? card.revealedInfo.favoriteFood
-        : [];
-
-    const remaining =
-      chars
-        .map(
-          (_, index) =>
-            index
-        )
-        .filter(
-          (index) =>
-            !already.includes(index)
-        );
-
-    if (
-      remaining.length === 0
-    ) {
-      return card;
-    }
-
-    const picked =
-      randomChoice(
-        remaining
+      .filter(
+        (index) =>
+          !already.includes(index)
       );
 
-    return {
-      ...card,
-
-      revealedInfo: {
-        ...card.revealedInfo,
-
-        favoriteFood: [
-          ...already,
-          picked,
-        ],
-      },
-    };
+  if (
+    remaining.length === 0
+  ) {
+    return card;
   }
+
+  const picked =
+    randomChoice(
+      remaining
+    );
+
+  return {
+    ...card,
+
+    revealedInfo: {
+      ...card.revealedInfo,
+
+      favoriteFood: [
+        ...already,
+        picked,
+      ],
+    },
+  };
+}
+
 
   function revealDigit(
     card,
@@ -3127,7 +4136,7 @@ function handleRollButton() {
     return card;
   }
 
- function handleBuyInfo(
+function handleBuyInfo(
   infoType
 ) {
   if (
@@ -3137,15 +4146,10 @@ function handleRollButton() {
     return;
   }
 
-  if (
-    actionUsed
-  ) {
-    setMessage(
-      'このターンのアクションはすでに使用しました。'
-    );
-
-    return;
-  }
+  // ====================================================
+  // ビブカ情報購入は通常アクションとは別枠
+  // 1ターンに何回でも購入可能
+  // ====================================================
 
   if (
     !canBuyInfo(
@@ -3173,33 +4177,190 @@ function handleRollButton() {
       infoType
     );
 
+  const nextRevealedInfo =
+    nextCard?.revealedInfo ||
+    {};
+
+  // ====================================================
+  // 情報がすでに完全に開示されている場合
+  // ====================================================
+
+  if (
+    nextCard ===
+    currentVivreCard
+  ) {
+    setMessage(
+      `「${getInfoLabel(
+        infoType
+      )}」はこれ以上情報を取得できません。`
+    );
+
+    return;
+  }
+
   updatePlayer(
     0,
-    (player) => ({
-      ...applyCost(
-        player,
-        cost
-      ),
+    (player) => {
+      const previousInfo =
+        player?.vivreCardInfo ||
+        {};
 
-      vivreCardInfo: {
-        ...(player.vivreCardInfo || {}),
+      const nextInfo = {
+        ...previousInfo,
+      };
 
-        [infoType]:
+      // ==================================================
+      // 名前の文字数
+      // ==================================================
+
+      if (
+        infoType ===
+        'nameLength'
+      ) {
+        nextInfo.nameLength =
+          nextRevealedInfo.nameLength;
+      }
+
+      // ==================================================
+      // 好物
+      // ==================================================
+
+      else if (
+        infoType ===
+        'favoriteFood'
+      ) {
+        nextInfo.favoriteFood =
           Array.isArray(
-            nextCard?.revealedInfo?.[
-              infoType
-            ]
+            nextRevealedInfo.favoriteFood
           )
             ? [
-                ...nextCard.revealedInfo[
-                  infoType
-                ],
+                ...nextRevealedInfo.favoriteFood,
               ]
-            : nextCard?.revealedInfo?.[
-                infoType
-              ],
-      },
-    })
+            : [];
+      }
+
+      // ==================================================
+      // 身長
+      // ==================================================
+
+      else if (
+        infoType ===
+        'height'
+      ) {
+        nextInfo.height =
+          Array.isArray(
+            nextRevealedInfo.height
+          )
+            ? [
+                ...nextRevealedInfo.height,
+              ]
+            : [];
+
+        const profile =
+          getCardProfile(
+            currentVivreCard
+          );
+
+        nextInfo.heightLength =
+          String(
+            profile?.height ??
+              ''
+          ).length;
+      }
+
+      // ==================================================
+      // 年齢
+      // ==================================================
+
+      else if (
+        infoType ===
+        'age'
+      ) {
+        nextInfo.age =
+          Array.isArray(
+            nextRevealedInfo.age
+          )
+            ? [
+                ...nextRevealedInfo.age,
+              ]
+            : [];
+
+        const profile =
+          getCardProfile(
+            currentVivreCard
+          );
+
+        nextInfo.ageLength =
+          String(
+            profile?.age ??
+              ''
+          ).length;
+      }
+
+      // ==================================================
+      // 血液型
+      // ==================================================
+
+      else if (
+        infoType ===
+        'blood'
+      ) {
+        nextInfo.blood =
+          nextRevealedInfo.blood;
+      }
+
+      // ==================================================
+      // 出身
+      // ==================================================
+
+      else if (
+        infoType ===
+        'origin'
+      ) {
+        nextInfo.origin =
+          nextRevealedInfo.origin;
+      }
+
+      // ==================================================
+      // 性別
+      // ==================================================
+
+      else if (
+        infoType ===
+        'gender'
+      ) {
+        nextInfo.gender =
+          nextRevealedInfo.gender;
+      }
+
+      // ==================================================
+      // 家族
+      // ==================================================
+
+      else if (
+        infoType ===
+        'family'
+      ) {
+        nextInfo.family =
+          Array.isArray(
+            nextRevealedInfo.family
+          )
+            ? [
+                ...nextRevealedInfo.family,
+              ]
+            : [];
+      }
+
+      return {
+        ...applyCost(
+          player,
+          cost
+        ),
+
+        vivreCardInfo:
+          nextInfo,
+      };
+    }
   );
 
   setCurrentVivreCard(
@@ -3210,9 +4371,10 @@ function handleRollButton() {
     infoType
   );
 
-  setActionUsed(
-    true
-  );
+  // ====================================================
+  // ここでは actionUsed を true にしない
+  // ビブカ情報購入は何回でも可能
+  // ====================================================
 
   setShowInfoShop(
     false
@@ -3318,24 +4480,39 @@ function handleRollButton() {
     );
   }
 
-  function handleAnswerSubmit(
-    event
-  ) {
-    event.preventDefault();
 
+function handleAnswerSubmit(
+  event
+) {
+  event.preventDefault();
+
+  if (
+    phase !== 'answer' ||
+    turnPlayer !== 0 ||
+    !answerMode
+  ) {
+    return;
+  }
+
+  const input =
+    answer.trim();
+
+  if (!input) {
+    return;
+  }
+
+  /*
+   * ========================================================
+   * 1枚ビブカを回答
+   * ========================================================
+   */
+
+  if (
+    answerMode === 'vivre'
+  ) {
     if (
-      phase !== 'answer' ||
-      turnPlayer !== 0 ||
-      answerUsed ||
       !currentVivreCard
     ) {
-      return;
-    }
-
-    const input =
-      answer.trim();
-
-    if (!input) {
       return;
     }
 
@@ -3372,16 +4549,251 @@ function handleRollButton() {
     }
 
     setMessage(
-      `あなたの回答「${input}」は不正解。CPUの回答フェーズへ移ります。`
+      `あなたの回答「${input}」は不正解。ターン終了です。`
     );
 
-    setTimeout(
-      () => {
-        runCpuAnswers();
-      },
-      900
+    setAnswer('');
+
+    setAnswerMode(
+      null
     );
+
+    setTimeout(() => {
+      startNextPlayerTurn();
+    }, 900);
+
+    return;
   }
+
+  /*
+   * ========================================================
+   * エクストラキャラを回答
+   * ========================================================
+   */
+
+  if (
+    answerMode === 'extra'
+  ) {
+    if (
+      !extraCharacter
+    ) {
+      setMessage(
+        'エクストラキャラが設定されていません。'
+      );
+
+      return;
+    }
+
+    /*
+     * エクストラキャラ専用の正規化
+     */
+    const normalizeExtraAnswer =
+      (value) =>
+        String(
+          value || ''
+        )
+          .normalize('NFKC')
+          .replace(
+            /\s+/g,
+            ''
+          )
+          .replace(
+            /（.*?）|\(.*?\)/g,
+            ''
+          )
+          .replace(
+            /・/g,
+            ''
+          )
+          .toLowerCase();
+
+    const extraName =
+      String(
+        extraCharacter.name ||
+          ''
+      );
+
+    const normalizedInput =
+      normalizeExtraAnswer(
+        input
+      );
+
+    const normalizedExtraName =
+      normalizeExtraAnswer(
+        extraName
+      );
+
+    const correct =
+      Boolean(
+        normalizedInput &&
+        normalizedExtraName &&
+        normalizedInput ===
+          normalizedExtraName
+      );
+
+    setLastAnswer({
+      player: 'あなた',
+      answer: input,
+      correct,
+    });
+
+    setAnswerUsed(
+      true
+    );
+
+    /*
+     * ========================================================
+     * エクストラキャラ正解
+     * ========================================================
+     */
+
+    if (
+      correct
+    ) {
+      const character =
+        extraCharacter;
+
+      updatePlayer(
+        0,
+        (player) => ({
+          ...player,
+
+          extraCharacterCount:
+            Number(
+              player.extraCharacterCount ||
+                0
+            ) + 1,
+
+          cards: [
+            ...(player.cards || []),
+            {
+              id:
+                `extra-${character.id || character.number || character.name}`,
+              type: 'extra',
+              name:
+                character.name ||
+                '不明',
+              description:
+                character.description ||
+                '',
+              character,
+            },
+          ],
+        })
+      );
+
+      setWinner(
+        0
+      );
+
+      setMessage(
+        `正解！あなたが「${
+          character.name ||
+          '不明'
+        }」を獲得しました。`
+      );
+
+      setAnswer('');
+
+      setAnswerMode(
+        null
+      );
+
+      setTimeout(() => {
+        startNextPlayerTurn();
+      }, 1200);
+
+      return;
+    }
+
+    /*
+     * ========================================================
+     * エクストラキャラ不正解
+     * ========================================================
+     */
+
+    setMessage(
+      `あなたの回答「${input}」は不正解。ターン終了です。`
+    );
+
+    setAnswer('');
+
+    setAnswerMode(
+      null
+    );
+
+    setTimeout(() => {
+      startNextPlayerTurn();
+    }, 900);
+
+    return;
+  }
+}
+
+function startNextPlayerTurn() {
+  const nextPlayer =
+    (turnPlayer + 1) % 4;
+
+  setTurnPlayer(
+    nextPlayer
+  );
+
+  setPhase(
+    'dice'
+  );
+
+  setActionUsed(
+    false
+  );
+
+  setAnswerUsed(
+    false
+  );
+
+  setAnswer('');
+
+  setAnswerMode(
+    null
+  );
+
+  setLastAnswer(
+    null
+  );
+
+  setWinner(
+    null
+  );
+
+  setDiceResult(
+    null
+  );
+
+  setDiceRolling(
+    false
+  );
+
+  setShowDiceResults(
+    false
+  );
+
+  setAllDiceResults(
+    {}
+  );
+
+  setSelectedInfo(
+    null
+  );
+
+  setMessage(
+    `${players[nextPlayer]?.name || `${nextPlayer + 1}P`}のターンです。`
+  );
+
+  setTimeout(() => {
+    applyStartTurnCardEffects(
+      nextPlayer
+    );
+  }, 50);
+}
 
   function handleVivreWin(
     seat,
@@ -3404,21 +4816,19 @@ function handleRollButton() {
       );
 
     updatePlayer(
-      seat,
-      (player) => ({
-        ...player,
+  seat,
+  (player) => ({
+    ...player,
 
-        vivreCardCount:
-          Number(
-            player.vivreCardCount ||
-              0
-          ) + 1,
+    vivreCardCount:
+      Number(
+        player.vivreCardCount ||
+          0
+      ) + 1,
 
-        vivreCardInfo: {
-          ...(player.vivreCardInfo || {}),
-        },
+    vivreCardInfo: {},
 
-        cards: [
+    cards: [
           ...(player.cards || []),
           {
             id:
@@ -3781,36 +5191,34 @@ function handleRollButton() {
   }
 
   function handleEndMyTurn() {
-    if (
-      !isMyTurn
-    ) {
-      return;
-    }
-
-    if (
-      !actionUsed
-    ) {
-      setMessage(
-        '先にアクションを1つ実行してください。'
-      );
-
-      return;
-    }
-
-    setPhase(
-      'answer'
-    );
-
-    setAnswer('');
-
-    setAnswerUsed(
-      false
-    );
-
-    setMessage(
-      'あなたの回答です。'
-    );
+  if (
+    !isMyTurn
+  ) {
+    return;
   }
+
+  setPhase(
+    'answer'
+  );
+
+  setAnswer('');
+
+  setAnswerMode(
+    null
+  );
+
+  setAnswerUsed(
+    false
+  );
+
+  setLastAnswer(
+    null
+  );
+
+  setMessage(
+    '回答する項目を選んでください。'
+  );
+}
 
   function handlePlayerClick(
     player
@@ -4093,32 +5501,47 @@ return (
                     styles.resourceRow
                   }
                 >
-                  <ResourceBox
-                    type="berry"
-                    value={
-                      player
-                        .resources
-                        ?.berry ?? 0
-                    }
-                  />
+<ResourceBox
+  type="berry"
+  value={
+    player
+      ?.resources
+      ?.berry ?? 0
+  }
+  max={
+    player
+      ?.maxResources
+      ?.berry ?? 12
+  }
+/>
 
-                  <ResourceBox
-                    type="verse"
-                    value={
-                      player
-                        .resources
-                        ?.verse ?? 0
-                    }
-                  />
+<ResourceBox
+  type="verse"
+  value={
+    player
+      ?.resources
+      ?.verse ?? 0
+  }
+  max={
+    player
+      ?.maxResources
+      ?.verse ?? 6
+  }
+/>
 
-                  <ResourceBox
-                    type="eternal"
-                    value={
-                      player
-                        .resources
-                        ?.eternal ?? 0
-                    }
-                  />
+<ResourceBox
+  type="eternal"
+  value={
+    player
+      ?.resources
+      ?.eternal ?? 0
+  }
+  max={
+    player
+      ?.maxResources
+      ?.eternal ?? 6
+  }
+/>
                 </div>
 
                 <div
@@ -4198,32 +5621,47 @@ return (
           styles.diceWorkshopResourceRow
         }
       >
-        <ResourceBox
-          type="berry"
-          value={
-            myPlayer
-              ?.resources
-              ?.berry ?? 0
-          }
-        />
+<ResourceBox
+  type="berry"
+  value={
+    myPlayer
+      ?.resources
+      ?.berry ?? 0
+  }
+  max={
+    myPlayer
+      ?.maxResources
+      ?.berry ?? 12
+  }
+/>
 
-        <ResourceBox
-          type="verse"
-          value={
-            myPlayer
-              ?.resources
-              ?.verse ?? 0
-          }
-        />
+<ResourceBox
+  type="verse"
+  value={
+    myPlayer
+      ?.resources
+      ?.verse ?? 0
+  }
+  max={
+    myPlayer
+      ?.maxResources
+      ?.verse ?? 6
+  }
+/>
 
-        <ResourceBox
-          type="eternal"
-          value={
-            myPlayer
-              ?.resources
-              ?.eternal ?? 0
-          }
-        />
+<ResourceBox
+  type="eternal"
+  value={
+    myPlayer
+      ?.resources
+      ?.eternal ?? 0
+  }
+  max={
+    myPlayer
+      ?.maxResources
+      ?.eternal ?? 6
+  }
+/>
       </div>
     </div>
   </div>
@@ -4579,40 +6017,6 @@ return (
       styles.diceWorkshopRollArea
     }
   >
-    <button
-      type="button"
-      onClick={
-        handleRollButton
-      }
-      disabled={
-        phase !== 'dice' ||
-        diceRolling
-      }
-      style={{
-        ...styles.diceWorkshopRollButton,
-
-        opacity:
-          phase !== 'dice' ||
-          diceRolling
-            ? 0.5
-            : 1,
-      }}
-    >
-      <span
-        style={
-          styles.diceWorkshopRollIcon
-        }
-      >
-        🎲
-      </span>
-
-      <span>
-        {diceRolling
-          ? '抽選中……'
-          : 'ダイスを振る'}
-      </span>
-    </button>
-
     {diceRolling && (
       <div
         style={
@@ -4753,29 +6157,19 @@ return (
                           : {}),
                       }}
                     >
-                      <div
-                        style={
-                          styles.infoLabel
-                        }
-                      >
-                        {item.label}
-                      </div>
-
-                      <div
-                        style={
-                          styles.infoValue
-                        }
-                      >
-                        {item.type ===
-                        'nameLength'
-                          ? currentVivreCard
-                              ?.revealedInfo
-                              ?.nameLength !=
-                            null
-                            ? `${currentVivreCard.revealedInfo.nameLength}文字`
-                            : '？？？'
-                          : item.value}
-                      </div>
+                     <div
+  style={
+    styles.infoValue
+  }
+>
+<div
+  style={
+    styles.infoValue
+  }
+>
+  {item.value}
+</div>
+</div>
                     </div>
                   )
                 )}
@@ -4799,6 +6193,29 @@ return (
                 </span>
               </div>
             </div>
+
+            {phase ===
+              'action' &&
+              isMyTurn && (
+              <button
+                type="button"
+                onClick={() =>
+                  setShowInfoShop(
+                    true
+                  )
+                }
+                style={{
+                  ...styles.actionButton,
+
+                  width:
+                    '100%',
+                  marginTop:
+                    '10px',
+                }}
+              >
+                🔎 ビブカ情報を買う
+              </button>
+            )}
 
             {lastAnswer && (
               <div
@@ -4998,134 +6415,192 @@ extraCharacterBoard.length > 0 ? (
             styles.actionArea
           }
         >
-          {phase ===
-            'dice' && (
-            <button
-              type="button"
-              onClick={
-                handleRollButton
-              }
-              disabled={
-                diceRolling
-              }
-              style={{
-                ...styles.primaryButton,
 
-                opacity:
-                  diceRolling
-                    ? 0.6
-                    : 1,
-              }}
-            >
-              {diceRolling
-                ? '🎲 サイコロを振っています……'
-                : '🎲 サイコロを2つ振る'}
-            </button>
-          )}
+{phase ===
+  'action' &&
+  isMyTurn && (
+    <button
+      type="button"
+      onClick={
+        handleEndMyTurn
+      }
+      style={{
+        ...styles.primaryButton,
+        opacity: 1,
+        margin: '0 auto',
+      }}
+    >
+      回答フェーズへ
+    </button>
+  )}
 
-          {phase ===
-            'action' &&
-            isMyTurn && (
-            <>
-              <button
-                type="button"
-                onClick={() =>
-                  setShowInfoShop(
-                    true
-                  )
-                }
-                disabled={
-                  actionUsed
-                }
-                style={{
-                  ...styles.actionButton,
+         {phase ===
+  'answer' &&
+  isMyTurn && (
+    <div
+      style={{
+        position: 'relative',
+        width: '100%',
+        minHeight: 260,
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 18,
+        padding: '24px 16px 70px',
+        boxSizing: 'border-box',
+      }}
+    >
+      {!answerMode && (
+  <>
+    <div
+      style={{
+        fontSize: 20,
+        fontWeight: 900,
+        color: '#172033',
+        marginBottom: 4,
+      }}
+    >
+      回答する項目を選択
+    </div>
 
-                  opacity:
-                    actionUsed
-                      ? 0.45
-                      : 1,
-                }}
-              >
-                🔎 ビブカ情報を買う
-              </button>
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 12,
+        width: '100%',
+        maxWidth: 420,
+      }}
+    >
+      <button
+        type="button"
+        onClick={() => {
+          setAnswerMode('vivre');
+          setAnswer('');
+          setMessage(
+            '1枚ビブカのキャラクター名を回答してください。'
+          );
+        }}
+        style={{
+          ...styles.primaryButton,
+          minWidth: 220,
+          width: '100%',
+        }}
+      >
+        1枚ビブカを回答
+      </button>
 
-              <button
-                type="button"
-                onClick={
-                  handleEndMyTurn
-                }
-                disabled={
-                  !actionUsed
-                }
-                style={{
-                  ...styles.primaryButton,
+      <button
+        type="button"
+        onClick={() => {
+          setAnswerMode('extra');
+          setAnswer('');
+          setMessage(
+            'エクストラキャラの名前を回答してください。'
+          );
+        }}
+        style={{
+          ...styles.primaryButton,
+          minWidth: 220,
+          width: '100%',
+        }}
+      >
+        エクストラキャラを回答
+      </button>
+    </div>
+  </>
+)}
 
-                  opacity:
-                    !actionUsed
-                      ? 0.45
-                      : 1,
-                }}
-              >
-                回答フェーズへ
-              </button>
-            </>
-          )}
+      {answerMode && (
+        <form
+          onSubmit={
+            handleAnswerSubmit
+          }
+          style={{
+            ...styles.answerForm,
+            width: '100%',
+            maxWidth: 560,
+          }}
+        >
+          <div
+            style={{
+              fontSize: 20,
+              fontWeight: 900,
+              color: '#172033',
+              textAlign: 'center',
+              marginBottom: 10,
+            }}
+          >
+            {answerMode ===
+            'vivre'
+              ? '1枚ビブカを回答'
+              : 'エクストラキャラを回答'}
+          </div>
 
-          {phase ===
-            'answer' &&
-            isMyTurn && (
-            <form
-              onSubmit={
-                handleAnswerSubmit
-              }
-              style={
-                styles.answerForm
-              }
-            >
-              <input
-                value={
-                  answer
-                }
-                onChange={(
-                  event
-                ) =>
-                  setAnswer(
-                    event.target
-                      .value
-                  )
-                }
-                placeholder="キャラクター名を入力"
-                autoComplete="off"
-                style={
-                  styles.answerInput
-                }
-              />
+          <input
+            value={
+              answer
+            }
+            onChange={(
+              event
+            ) =>
+              setAnswer(
+                event.target.value
+              )
+            }
+            placeholder="キャラクター名を入力"
+            autoComplete="off"
+            style={
+              styles.answerInput
+            }
+          />
 
-              <button
-                type="submit"
-                disabled={
-                  !answer.trim() ||
-                  answerUsed
-                }
-                style={
-                  styles.primaryButton
-                }
-              >
-                回答する
-              </button>
-            </form>
-          )}
+          <button
+            type="submit"
+            disabled={
+              !answer.trim()
+            }
+            style={
+              styles.primaryButton
+            }
+          >
+            回答する
+          </button>
+        </form>
+      )}
 
-          {phase ===
-            'cpu' && (
-            <div
-              style={
-                styles.cpuThinking
-              }
-            >
-              CPUがビブカを調査・回答しています……
-            </div>
-          )}
+      <button
+        type="button"
+        onClick={() => {
+          setAnswer('');
+          setAnswerMode(null);
+          setAnswerUsed(true);
+          setMessage(
+            '回答をスキップしました。'
+          );
+
+          setTimeout(() => {
+            startNextRound();
+          }, 500);
+        }}
+        style={{
+          position: 'absolute',
+          right: 16,
+          bottom: 12,
+          padding: '10px 18px',
+          borderRadius: 10,
+          border: '1px solid #cbd5e1',
+          background: '#ffffff',
+          color: '#172033',
+          fontWeight: 800,
+          cursor: 'pointer',
+        }}
+      >
+        回答をスキップ
+      </button>
+    </div>
+  )}
 
           {phase ===
             'reveal' && (
@@ -5139,9 +6614,11 @@ extraCharacterBoard.length > 0 ? (
           )}
         </div>
       </section>
-/* =====================================================
-  鍛造
- ====================================================== */
+
+
+    {/* ================================================== */}
+    {/* 鍛造*/}
+    {/* ================================================== */}
 
 <section
   style={
@@ -5555,9 +7032,8 @@ extraCharacterBoard.length > 0 ? (
         )}
       </div>
     </div>
-
     {/* ================================================== */}
-    {/* 6・8ベリー */}
+    {/* 6ベリー */}
     {/* ================================================== */}
 
     <div
@@ -5593,14 +7069,61 @@ extraCharacterBoard.length > 0 ? (
 >
   必要
 </span>
+      </div>
 
-        <div
-          style={
-            styles.diceTempleCostDivider
+      <div
+        style={
+          styles.diceTempleOffers
+        }
+      >
+        {[
+          'berry6_a',
+        ].map(
+          (id) => {
+            const offer =
+              getForgeOffer(id);
+
+            return (
+              <ForgeOfferCard
+                key={id}
+                offer={offer}
+                stock={
+                  forgeStocks[id]
+                }
+                selected={
+                  selectedForgeOffer?.id ===
+                  id
+                }
+                disabled={
+                  !canSelectForgeOffer(
+                    offer
+                  )
+                }
+                onSelect={
+                  handleForgeOfferSelect
+                }
+              />
+            );
           }
-        />
+        )}
+      </div>
+    </div>
 
- <img
+    {/* ================================================== */}
+    {/* 8ベリー */}
+    {/* ================================================== */}
+
+    <div
+      style={
+        styles.diceTempleForgeRow
+      }
+    >
+      <div
+        style={
+          styles.diceTempleCostColumn
+        }
+      >
+<img
   src={
     RESOURCE_ICONS.berry
   }
@@ -5631,7 +7154,6 @@ extraCharacterBoard.length > 0 ? (
         }
       >
         {[
-          'berry6_a',
           'berry8_a',
         ].map(
           (id) => {
@@ -5849,6 +7371,7 @@ extraCharacterBoard.length > 0 ? (
     </div>
   )}
 
+
   {/* ================================================== */}
   {/* 交換確認 */}
   {/* ================================================== */}
@@ -5857,88 +7380,219 @@ extraCharacterBoard.length > 0 ? (
     selectedForgeOffer &&
     selectedForgeDice && (
       <div
-        style={
-          styles.diceTempleConfirmOverlay
-        }
+        style={{
+          position: 'fixed',
+          inset: 0,
+          zIndex: 9999,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: 16,
+          boxSizing: 'border-box',
+          background:
+            'rgba(15, 23, 42, 0.45)',
+        }}
       >
         <div
-          style={
-            styles.diceTempleConfirmBox
-          }
+          style={{
+            width: 'min(560px, 100%)',
+            maxHeight:
+              'calc(100vh - 32px)',
+            overflowY: 'auto',
+            overflowX: 'hidden',
+            boxSizing: 'border-box',
+            background: '#ffffff',
+            color: '#172033',
+            borderRadius: 24,
+            border:
+              '1px solid rgba(23,32,51,0.12)',
+            boxShadow:
+              '0 20px 60px rgba(0,0,0,0.25)',
+            padding:
+              '24px 18px',
+          }}
         >
           <div
-            style={
-              styles.diceTempleConfirmTitle
-            }
+            style={{
+              textAlign: 'center',
+              fontSize: 22,
+              fontWeight: 1000,
+              color: '#172033',
+              marginBottom: 20,
+            }}
           >
             この面と交換しますか？
           </div>
 
           <div
-            style={
-              styles.diceTempleConfirmFaces
-            }
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 12,
+              width: '100%',
+              boxSizing: 'border-box',
+            }}
           >
+            {/* 鍛造後 */}
             <div
-              style={
-                styles.diceTempleConfirmFace
-              }
+              style={{
+                width: '100%',
+                boxSizing:
+                  'border-box',
+                background:
+                  '#f7f8fb',
+                border:
+                  '1px solid rgba(23,32,51,0.10)',
+                borderRadius: 18,
+                padding:
+                  '14px 10px',
+                overflow: 'hidden',
+              }}
             >
               <div
-                style={
-                  styles.diceTempleConfirmLabel
-                }
+                style={{
+                  textAlign:
+                    'center',
+                  fontSize: 14,
+                  fontWeight: 1000,
+                  color:
+                    '#64748b',
+                  marginBottom: 8,
+                }}
               >
                 鍛造後
               </div>
 
-              <ForgeFaceDisplay
-                faces={
-                  selectedForgeOffer.faces
-                }
-              />
+              <div
+                style={{
+                  width: '100%',
+                  maxWidth:
+                    '100%',
+                  minWidth: 0,
+                  overflow:
+                    'hidden',
+                  display: 'flex',
+                  justifyContent:
+                    'center',
+                  alignItems:
+                    'center',
+                  boxSizing:
+                    'border-box',
+                }}
+              >
+                <ForgeFaceDisplay
+                  faces={
+                    selectedForgeOffer.faces
+                  }
+                  face={
+                    selectedForgeOffer.choice
+                      ? {
+                          type: 'choice',
+                          faces:
+                            selectedForgeOffer.faces,
+                        }
+                      : selectedForgeOffer
+                          .faces
+                          ?.length === 1
+                        ? selectedForgeOffer
+                            .faces[0]
+                        : null
+                  }
+                />
+              </div>
             </div>
 
+            {/* 交換矢印 */}
             <div
-              style={
-                styles.diceTempleConfirmArrow
-              }
+              style={{
+                display: 'flex',
+                justifyContent:
+                  'center',
+                alignItems:
+                  'center',
+                fontSize: 28,
+                fontWeight: 1000,
+                color:
+                  '#64748b',
+                lineHeight: 1,
+              }}
             >
-              ⇄
+              ⇅
             </div>
 
+            {/* 現在の面 */}
             <div
-              style={
-                styles.diceTempleConfirmFace
-              }
+              style={{
+                width: '100%',
+                boxSizing:
+                  'border-box',
+                background:
+                  '#f7f8fb',
+                border:
+                  '1px solid rgba(23,32,51,0.10)',
+                borderRadius: 18,
+                padding:
+                  '14px 10px',
+                overflow: 'hidden',
+              }}
             >
               <div
-                style={
-                  styles.diceTempleConfirmLabel
-                }
+                style={{
+                  textAlign:
+                    'center',
+                  fontSize: 14,
+                  fontWeight: 1000,
+                  color:
+                    '#64748b',
+                  marginBottom: 8,
+                }}
               >
                 現在の面
               </div>
 
-              <ForgeFaceDisplay
-                face={
-                  selectedForgeDice.dieType ===
-                  'A'
-                    ? myPlayer.diceA[
-                        selectedForgeDice.index
-                      ]
-                    : myPlayer.diceB[
-                        selectedForgeDice.index
-                      ]
-                }
-              />
+              <div
+                style={{
+                  width: '100%',
+                  maxWidth:
+                    '100%',
+                  minWidth: 0,
+                  overflow:
+                    'hidden',
+                  display: 'flex',
+                  justifyContent:
+                    'center',
+                  alignItems:
+                    'center',
+                  boxSizing:
+                    'border-box',
+                }}
+              >
+                <ForgeFaceDisplay
+                  face={
+                    selectedForgeDice.dieType ===
+                    'A'
+                      ? myPlayer.diceA[
+                          selectedForgeDice.index
+                        ]
+                      : myPlayer.diceB[
+                          selectedForgeDice.index
+                        ]
+                  }
+                />
+              </div>
             </div>
           </div>
 
+          {/* 価格 */}
           <div
-            style={
-              styles.diceTempleConfirmCost
-            }
+            style={{
+              textAlign:
+                'center',
+              marginTop: 18,
+              fontSize: 17,
+              fontWeight: 1000,
+              color: '#172033',
+            }}
           >
             ベリー ×
             {
@@ -5947,19 +7601,37 @@ extraCharacterBoard.length > 0 ? (
             }
           </div>
 
+          {/* ボタン */}
           <div
-            style={
-              styles.diceTempleConfirmButtons
-            }
+            style={{
+              display: 'flex',
+              gap: 12,
+              marginTop: 18,
+              width: '100%',
+              boxSizing:
+                'border-box',
+            }}
           >
             <button
               type="button"
               onClick={
                 handleForgeCancel
               }
-              style={
-                styles.diceTempleConfirmNo
-              }
+              style={{
+                flex: 1,
+                minWidth: 0,
+                height: 52,
+                border: 'none',
+                borderRadius: 14,
+                background:
+                  '#e5e7eb',
+                color:
+                  '#172033',
+                fontSize: 16,
+                fontWeight: 1000,
+                cursor:
+                  'pointer',
+              }}
             >
               NO
             </button>
@@ -5969,9 +7641,21 @@ extraCharacterBoard.length > 0 ? (
               onClick={
                 handleForgeExchange
               }
-              style={
-                styles.diceTempleConfirmYes
-              }
+              style={{
+                flex: 1,
+                minWidth: 0,
+                height: 52,
+                border: 'none',
+                borderRadius: 14,
+                background:
+                  '#172033',
+                color:
+                  '#ffffff',
+                fontSize: 16,
+                fontWeight: 1000,
+                cursor:
+                  'pointer',
+              }}
             >
               YES
             </button>
@@ -5980,7 +7664,6 @@ extraCharacterBoard.length > 0 ? (
       </div>
     )}
 </section>
-
 
  {/* =====================================================
           カードショップ
@@ -6672,7 +8355,7 @@ onClick={() =>
                 style={styles.extraCharacterPurchaseCard}
 onClick={() =>
   handleExtraCharacterPurchase(
-    'berry10'
+    'berry7'
   )
 }
               >
@@ -6713,7 +8396,7 @@ onClick={() =>
                 <div
                   style={styles.extraCharacterPurchaseCost}
                 >
-                  ×10
+                  ×7
                 </div>
               </button>
 
@@ -6839,6 +8522,7 @@ onClick={() =>
 function ResourceBox({
   type,
   value,
+  max,
 }) {
   return (
     <div
@@ -6868,7 +8552,7 @@ function ResourceBox({
         </span>
 
         <strong>
-          {value}
+          {value}/{max}
         </strong>
       </div>
     </div>
@@ -6938,18 +8622,464 @@ function Dice3D({
   rolling,
   result,
 }) {
-  const safeDice =
+  const originalDice =
     Array.isArray(dice) &&
     dice.length === 6
       ? dice
       : INITIAL_DICE_A;
 
+  let safeDice =
+    originalDice;
+
+  /*
+   * 実際に出た面を
+   * 3Dサイコロの正面
+   * （safeDice[0]）に持ってくる。
+   */
+  if (
+    !rolling &&
+    result &&
+    Number.isInteger(
+      result.index
+    ) &&
+    result.index >= 0 &&
+    result.index < 6
+  ) {
+    const resultIndex =
+      result.index;
+
+    safeDice = [
+      originalDice[
+        resultIndex
+      ],
+      ...originalDice.filter(
+        (_, index) =>
+          index !== resultIndex
+      ),
+    ];
+  }
+
   const displayRotation =
-    rotation || {
-      x: 0,
-      y: 0,
-      z: 0,
-    };
+    rolling
+      ? (
+          rotation || {
+            x: 0,
+            y: 0,
+            z: 0,
+          }
+        )
+      : {
+          x: 0,
+          y: 0,
+          z: 0,
+        };
+
+  /*
+   * ----------------------------------------
+   * 資源1つ
+   * ----------------------------------------
+   */
+  const renderResource = (
+    face
+  ) => {
+    if (
+      !face ||
+      !face.type
+    ) {
+      return null;
+    }
+
+    const icon =
+      RESOURCE_ICONS[
+        face.type
+      ];
+
+    const name =
+      RESOURCE_NAMES[
+        face.type
+      ] ||
+      face.type;
+
+    if (!icon) {
+      return null;
+    }
+
+    return (
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent:
+            'center',
+          gap: 1,
+          minWidth: 0,
+          lineHeight: 1,
+        }}
+      >
+        <img
+          src={icon}
+          alt={name}
+          style={{
+            width: 24,
+            height: 24,
+            objectFit:
+              'contain',
+            background:
+              'transparent',
+            mixBlendMode:
+              'multiply',
+            flexShrink: 0,
+          }}
+        />
+
+        <strong
+          style={{
+            fontSize: 8,
+            lineHeight: 1,
+            whiteSpace:
+              'nowrap',
+          }}
+        >
+          +{face.value}
+        </strong>
+      </div>
+    );
+  };
+
+  /*
+   * ----------------------------------------
+   * 2つの資源
+   * ＋で縦並び
+   * ----------------------------------------
+   */
+  const renderCombo = (
+    faces
+  ) => {
+    if (
+      !Array.isArray(faces) ||
+      faces.length === 0
+    ) {
+      return null;
+    }
+
+    /*
+     * 3つの場合は
+     * 三角形配置
+     */
+    if (faces.length === 3) {
+      return (
+        <div
+          style={{
+            position:
+              'relative',
+            width: '100%',
+            height: '100%',
+            minHeight: 42,
+            minWidth: 0,
+          }}
+        >
+          <div
+            style={{
+              position:
+                'absolute',
+              top: 1,
+              left: '50%',
+              transform:
+                'translateX(-50%)',
+            }}
+          >
+            {renderResource(
+              faces[0]
+            )}
+          </div>
+
+          <div
+            style={{
+              position:
+                'absolute',
+              bottom: 1,
+              left: 1,
+            }}
+          >
+            {renderResource(
+              faces[1]
+            )}
+          </div>
+
+          <div
+            style={{
+              position:
+                'absolute',
+              bottom: 1,
+              right: 1,
+            }}
+          >
+            {renderResource(
+              faces[2]
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div
+        style={{
+          display: 'flex',
+          flexDirection:
+            'column',
+          alignItems:
+            'center',
+          justifyContent:
+            'center',
+          gap: 0,
+          width: '100%',
+          height: '100%',
+          minWidth: 0,
+        }}
+      >
+        {faces.map(
+          (
+            face,
+            index
+          ) => (
+            <div
+              key={`combo-${index}`}
+              style={{
+                display: 'flex',
+                flexDirection:
+                  'column',
+                alignItems:
+                  'center',
+                justifyContent:
+                  'center',
+                gap: 0,
+              }}
+            >
+              {index > 0 && (
+                <span
+                  style={{
+                    fontSize: 5,
+                    lineHeight: 1,
+                    fontWeight:
+                      1000,
+                    color:
+                      '#172033',
+                  }}
+                >
+                  +
+                </span>
+              )}
+
+              {renderResource(
+                face
+              )}
+            </div>
+          )
+        )}
+      </div>
+    );
+  };
+
+  /*
+   * ----------------------------------------
+   * OR選択
+   * 2つ → 縦並び
+   * 3つ → 三角形
+   * ----------------------------------------
+   */
+  const renderChoice = (
+    faces
+  ) => {
+    if (
+      !Array.isArray(faces) ||
+      faces.length === 0
+    ) {
+      return null;
+    }
+
+    /*
+     * 3択
+     * 三角形配置
+     */
+    if (faces.length === 3) {
+      return (
+        <div
+          style={{
+            position:
+              'relative',
+            width: '100%',
+            height: '100%',
+            minHeight: 42,
+            minWidth: 0,
+          }}
+        >
+          <div
+            style={{
+              position:
+                'absolute',
+              top: 1,
+              left: '50%',
+              transform:
+                'translateX(-50%)',
+            }}
+          >
+            {renderResource(
+              faces[0]
+            )}
+          </div>
+
+          <div
+            style={{
+              position:
+                'absolute',
+              bottom: 1,
+              left: 1,
+            }}
+          >
+            {renderResource(
+              faces[1]
+            )}
+          </div>
+
+          <div
+            style={{
+              position:
+                'absolute',
+              bottom: 1,
+              right: 1,
+            }}
+          >
+            {renderResource(
+              faces[2]
+            )}
+          </div>
+
+          <span
+            style={{
+              position:
+                'absolute',
+              top: '50%',
+              left: '50%',
+              transform:
+                'translate(-50%, -50%)',
+              fontSize: 5,
+              lineHeight: 1,
+              fontWeight:
+                1000,
+              color:
+                '#64748b',
+            }}
+          >
+            OR
+          </span>
+        </div>
+      );
+    }
+
+    /*
+     * 2択
+     * 縦並び
+     */
+    return (
+      <div
+        style={{
+          display: 'flex',
+          flexDirection:
+            'column',
+          alignItems:
+            'center',
+          justifyContent:
+            'center',
+          gap: 0,
+          width: '100%',
+          height: '100%',
+          minWidth: 0,
+        }}
+      >
+        {faces.map(
+          (
+            face,
+            index
+          ) => (
+            <div
+              key={`choice-${index}`}
+              style={{
+                display: 'flex',
+                flexDirection:
+                  'column',
+                alignItems:
+                  'center',
+                justifyContent:
+                  'center',
+                gap: 0,
+              }}
+            >
+              {index > 0 && (
+                <span
+                  style={{
+                    fontSize: 4,
+                    lineHeight: 1,
+                    fontWeight:
+                      1000,
+                    color:
+                      '#64748b',
+                  }}
+                >
+                  OR
+                </span>
+              )}
+
+              {renderResource(
+                face
+              )}
+            </div>
+          )
+        )}
+      </div>
+    );
+  };
+
+  /*
+   * ----------------------------------------
+   * ダイス面全体
+   * ----------------------------------------
+   */
+  const renderFaceContent = (
+    face
+  ) => {
+    if (!face) {
+      return null;
+    }
+
+    if (
+      face.type ===
+        'choice' &&
+      Array.isArray(
+        face.faces
+      )
+    ) {
+      return renderChoice(
+        face.faces
+      );
+    }
+
+    if (
+      face.type ===
+        'combo' &&
+      Array.isArray(
+        face.faces
+      )
+    ) {
+      return renderCombo(
+        face.faces
+      );
+    }
+
+    return renderResource(
+      face
+    );
+  };
 
   return (
     <div
@@ -6993,78 +9123,78 @@ function Dice3D({
             style={{
               ...styles.dice3DFace,
               ...styles.dice3DFaceFront,
+              overflow:
+                'hidden',
             }}
           >
-            <Dice3DFaceContent
-              face={
-                safeDice[0]
-              }
-            />
+            {renderFaceContent(
+              safeDice[0]
+            )}
           </div>
 
           <div
             style={{
               ...styles.dice3DFace,
               ...styles.dice3DFaceBack,
+              overflow:
+                'hidden',
             }}
           >
-            <Dice3DFaceContent
-              face={
-                safeDice[1]
-              }
-            />
+            {renderFaceContent(
+              safeDice[1]
+            )}
           </div>
 
           <div
             style={{
               ...styles.dice3DFace,
               ...styles.dice3DFaceRight,
+              overflow:
+                'hidden',
             }}
           >
-            <Dice3DFaceContent
-              face={
-                safeDice[2]
-              }
-            />
+            {renderFaceContent(
+              safeDice[2]
+            )}
           </div>
 
           <div
             style={{
               ...styles.dice3DFace,
               ...styles.dice3DFaceLeft,
+              overflow:
+                'hidden',
             }}
           >
-            <Dice3DFaceContent
-              face={
-                safeDice[3]
-              }
-            />
+            {renderFaceContent(
+              safeDice[3]
+            )}
           </div>
 
           <div
             style={{
               ...styles.dice3DFace,
               ...styles.dice3DFaceTop,
+              overflow:
+                'hidden',
             }}
           >
-            <Dice3DFaceContent
-              face={
-                safeDice[4]
-              }
-            />
+            {renderFaceContent(
+              safeDice[4]
+            )}
           </div>
 
           <div
             style={{
               ...styles.dice3DFace,
               ...styles.dice3DFaceBottom,
+              overflow:
+                'hidden',
             }}
           >
-            <Dice3DFaceContent
-              face={
-                safeDice[5]
-              }
-            />
+            {renderFaceContent(
+              safeDice[5]
+            )}
           </div>
         </div>
       </div>
@@ -7077,7 +9207,14 @@ function Dice3D({
         {rolling
           ? '抽選中……'
           : result
-            ? `出目：${RESOURCE_NAMES[result.type] || result.type} +${result.value}`
+            ? `出目：${
+                RESOURCE_NAMES[
+                  result.type
+                ] ||
+                result.type
+              } +${
+                result.value
+              }`
             : '待機中'}
       </div>
     </div>
@@ -7130,6 +9267,400 @@ function DiceFaceList({
   title,
   dice,
 }) {
+  const renderResourceFace = (
+    face,
+    small = false
+  ) => {
+    if (
+      !face ||
+      !face.type
+    ) {
+      return null;
+    }
+
+    const icon =
+      RESOURCE_ICONS[
+        face.type
+      ];
+
+    const name =
+      RESOURCE_NAMES[
+        face.type
+      ] ||
+      face.type;
+
+    if (!icon) {
+      return null;
+    }
+
+    return (
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent:
+            'center',
+          gap: small ? 1 : 2,
+          flexShrink: 0,
+          minWidth: 0,
+        }}
+      >
+        <img
+          src={icon}
+          alt={name}
+          style={{
+            ...styles.diceFaceIcon,
+            width: small ? 22 : 25,
+            height: small ? 22 : 25,
+            background:
+              'transparent',
+            mixBlendMode:
+              'multiply',
+          }}
+        />
+
+        <strong
+          style={{
+            fontSize:
+              small ? 9 : 10,
+            lineHeight: 1,
+            whiteSpace:
+              'nowrap',
+          }}
+        >
+          +{face.value}
+        </strong>
+      </div>
+    );
+  };
+
+  const renderComboFace = (
+    faces
+  ) => {
+    if (
+      !Array.isArray(faces) ||
+      faces.length === 0
+    ) {
+      return null;
+    }
+
+    /*
+     * 3つの資源を持つ面
+     * → 三角形配置
+     */
+    if (faces.length === 3) {
+      return (
+        <div
+          style={{
+            position:
+              'relative',
+            width: '100%',
+            height: '100%',
+            minHeight: 58,
+          }}
+        >
+          <div
+            style={{
+              position:
+                'absolute',
+              top: 0,
+              left: '50%',
+              transform:
+                'translateX(-50%)',
+            }}
+          >
+            {renderResourceFace(
+              faces[0],
+              true
+            )}
+          </div>
+
+          <div
+            style={{
+              position:
+                'absolute',
+              bottom: 0,
+              left: 2,
+            }}
+          >
+            {renderResourceFace(
+              faces[1],
+              true
+            )}
+          </div>
+
+          <div
+            style={{
+              position:
+                'absolute',
+              bottom: 0,
+              right: 2,
+            }}
+          >
+            {renderResourceFace(
+              faces[2],
+              true
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    /*
+     * 2つの資源を持つ面
+     * → 縦並び
+     */
+    return (
+      <div
+        style={{
+          display: 'flex',
+          flexDirection:
+            'column',
+          alignItems:
+            'center',
+          justifyContent:
+            'center',
+          gap: 1,
+          width: '100%',
+          height: '100%',
+          minWidth: 0,
+        }}
+      >
+        {faces.map(
+          (
+            face,
+            faceIndex
+          ) => (
+            <div
+              key={`combo-${faceIndex}`}
+              style={{
+                display: 'flex',
+                flexDirection:
+                  'column',
+                alignItems:
+                  'center',
+                justifyContent:
+                  'center',
+                gap: 1,
+              }}
+            >
+              {faceIndex >
+                0 && (
+                <strong
+                  style={{
+                    fontSize: 6,
+                    lineHeight: 1,
+                    color:
+                      '#172033',
+                    fontWeight: 1000,
+                  }}
+                >
+                  +
+                </strong>
+              )}
+
+              {renderResourceFace(
+                face,
+                true
+              )}
+            </div>
+          )
+        )}
+      </div>
+    );
+  };
+
+  const renderChoiceFace = (
+    faces
+  ) => {
+    if (
+      !Array.isArray(faces) ||
+      faces.length === 0
+    ) {
+      return null;
+    }
+
+    /*
+     * 3択
+     * → 三角形配置
+     */
+    if (faces.length === 3) {
+      return (
+        <div
+          style={{
+            position:
+              'relative',
+            width: '100%',
+            height: '100%',
+            minHeight: 58,
+          }}
+        >
+          <div
+            style={{
+              position:
+                'absolute',
+              top: 0,
+              left: '50%',
+              transform:
+                'translateX(-50%)',
+            }}
+          >
+            {renderResourceFace(
+              faces[0],
+              true
+            )}
+          </div>
+
+          <div
+            style={{
+              position:
+                'absolute',
+              bottom: 0,
+              left: 2,
+            }}
+          >
+            {renderResourceFace(
+              faces[1],
+              true
+            )}
+          </div>
+
+          <div
+            style={{
+              position:
+                'absolute',
+              bottom: 0,
+              right: 2,
+            }}
+          >
+            {renderResourceFace(
+              faces[2],
+              true
+            )}
+          </div>
+
+          <div
+            style={{
+              position:
+                'absolute',
+              top: '50%',
+              left: '50%',
+              transform:
+                'translate(-50%, -50%)',
+              fontSize: 6,
+              lineHeight: 1,
+              fontWeight: 1000,
+              color:
+                '#64748b',
+            }}
+          >
+            OR
+          </div>
+        </div>
+      );
+    }
+
+    /*
+     * 2択
+     * → 縦並び
+     */
+    return (
+      <div
+        style={{
+          display: 'flex',
+          flexDirection:
+            'column',
+          alignItems:
+            'center',
+          justifyContent:
+            'center',
+          gap: 1,
+          width: '100%',
+          height: '100%',
+          minWidth: 0,
+        }}
+      >
+        {faces.map(
+          (
+            face,
+            faceIndex
+          ) => (
+            <div
+              key={`choice-${faceIndex}`}
+              style={{
+                display: 'flex',
+                flexDirection:
+                  'column',
+                alignItems:
+                  'center',
+                justifyContent:
+                  'center',
+                gap: 1,
+              }}
+            >
+              {faceIndex >
+                0 && (
+                <strong
+                  style={{
+                    fontSize: 5,
+                    lineHeight: 1,
+                    color:
+                      '#64748b',
+                    fontWeight: 1000,
+                  }}
+                >
+                  OR
+                </strong>
+              )}
+
+              {renderResourceFace(
+                face,
+                true
+              )}
+            </div>
+          )
+        )}
+      </div>
+    );
+  };
+
+  const renderFace = (
+    face
+  ) => {
+    if (!face) {
+      return null;
+    }
+
+    if (
+      face.type ===
+        'combo' &&
+      Array.isArray(
+        face.faces
+      )
+    ) {
+      return renderComboFace(
+        face.faces
+      );
+    }
+
+    if (
+      face.type ===
+        'choice' &&
+      Array.isArray(
+        face.faces
+      )
+    ) {
+      return renderChoiceFace(
+        face.faces
+      );
+    }
+
+    return renderResourceFace(
+      face,
+      false
+    );
+  };
+
   return (
     <div
       style={
@@ -7158,23 +9689,16 @@ function DiceFaceList({
           ) => (
             <div
               key={`${title || 'dice'}-${index}`}
-              style={
-                styles.diceFace
-              }
+              style={{
+                ...styles.diceFace,
+                overflow: 'hidden',
+                minWidth: 0,
+                minHeight: 0,
+              }}
             >
-<img
-  src={RESOURCE_ICONS[face.type]}
-  alt={RESOURCE_NAMES[face.type] || face.type}
-  style={{
-    ...styles.diceFaceIcon,
-    background: 'transparent',
-    mixBlendMode: 'multiply',
-  }}
-/>
-
-              <strong>
-                +{face.value}
-              </strong>
+              {renderFace(
+                face
+              )}
             </div>
           )
         )}
