@@ -48,18 +48,18 @@ const INITIAL_RESOURCES = [
   },
   {
     berry: 2,
-    verse: 0,
-    eternal: 0,
+    verse: 6,
+    eternal: 6,
   },
   {
     berry: 1,
-    verse: 0,
-    eternal: 0,
+    verse: 6,
+    eternal: 6,
   },
   {
     berry: 0,
-    verse: 0,
-    eternal: 0,
+    verse: 6,
+    eternal: 6,
   },
 ];
 
@@ -1440,6 +1440,39 @@ function ForgeFaceDisplay({
     );
   }
 
+  /*
+   * ============================================================
+   * 魔法の天候棒マス
+   * ============================================================
+   */
+
+    if (face.type === 'tact') {
+      return (
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            width: '100%',
+            height: '100%',
+            minWidth: 0,
+            lineHeight: 1,
+          }}
+        >
+          <img
+            src="/saikoro/tactdice.png"
+            alt="魔法の天候棒"
+            style={{
+              width: 34,
+              height: 34,
+              objectFit: 'contain',
+              display: 'block',
+              flexShrink: 0,
+            }}
+          />
+        </div>
+      );
+    }
 
   /*
    * ============================================================
@@ -1680,6 +1713,8 @@ const [actionHistory, setActionHistory] =
   const [phase, setPhase] =
     useState('loading');
 
+const barabaraWasActionVisibleRef = useRef(false);
+
   const [message, setMessage] =
     useState(
       'ゲームを準備しています……'
@@ -1861,23 +1896,17 @@ const FORGE_OFFERS = [
     cost: {
       berry: 4,
     },
-    choice: true,
     faces: [
       {
-        type: 'berry',
-        value: 2,
+        type: 'verse',
+        value: 1,
       },
       {
         type: 'eternal',
         value: 1,
       },
-      {
-        type: 'verse',
-        value: 1,
-      },
     ],
   },
-
   {
     id: 'berry4_d',
     cost: {
@@ -1895,41 +1924,39 @@ const FORGE_OFFERS = [
     ],
   },
 
-{
-  id: 'berry5_a',
-  cost: {
-    berry: 5,
+  {
+    id: 'berry5_a',
+    cost: {
+      berry: 5,
+    },
+    faces: [
+      {
+        type: 'berry',
+        value: 4,
+      },
+      {
+        type: 'verse',
+        value: 1,
+      },
+    ],
   },
-  choice: true,
-  faces: [
-    {
-      type: 'berry',
-      value: 3,
-    },
-    {
-      type: 'verse',
-      value: 2,
-    },
-  ],
-},
 
-{
-  id: 'berry5_b',
-  cost: {
-    berry: 5,
+  {
+    id: 'berry5_b',
+    cost: {
+      berry: 5,
+    },
+    faces: [
+      {
+        type: 'berry',
+        value: 4,
+      },
+      {
+        type: 'eternal',
+        value: 1,
+      },
+    ],
   },
-  choice: true,
-  faces: [
-    {
-      type: 'berry',
-      value: 3,
-    },
-    {
-      type: 'eternal',
-      value: 2,
-    },
-  ],
-},
 
   {
     id: 'berry6_a',
@@ -2001,7 +2028,7 @@ const CARD_OFFERS = [
     id: 'dorudoru',
     name: 'ドルドルの実',
     image: '/saikoro/dorudoru.png',
-    cost: { eternal: 1 },
+    cost: { verse: 1 },
     description:
       '所持数の上限を増やす。ベリー＋4枠、ヴァース＋3枠、永久指針＋3枠。',
   },
@@ -2009,7 +2036,7 @@ const CARD_OFFERS = [
     id: 'yomiyomi',
     name: 'ヨミヨミの実',
     image: '/saikoro/yomiyomi.png',
-    cost: { eternal: 2 },
+    cost: { verse: 2 },
     description:
       '自分のターン開始時、指定した片方のダイスをもう一度振ることができる。',
   },
@@ -2017,7 +2044,7 @@ const CARD_OFFERS = [
     id: 'jikijiki',
     name: 'ジキジキの実',
     image: '/saikoro/jikijiki.png',
-    cost: { eternal: 3 },
+    cost: { verse: 3 },
     description:
       'プレイヤーを1人指定し、そのプレイヤーが持っている1枚ビブカまたはエクストラの情報を入手する。※1度きり',
   },
@@ -2025,7 +2052,7 @@ const CARD_OFFERS = [
     id: 'manemane',
     name: 'マネマネの実',
     image: '/saikoro/manemane.png',
-    cost: { eternal: 4 },
+    cost: { verse: 4 },
     description:
       'ダイスの出目を2つマネマネマスに変える。マネマネマスは他人が出したダイスの出目を好きなダイスから1つ指定し、その出目にする。',
   },
@@ -2033,7 +2060,7 @@ const CARD_OFFERS = [
     id: 'bakubaku',
     name: 'バクバクの実',
     image: '/saikoro/bakubaku.png',
-    cost: { eternal: 5 },
+    cost: { verse: 5 },
     description:
       '毎ターン、回答回数が1回増える。',
   },
@@ -2041,7 +2068,7 @@ const CARD_OFFERS = [
     id: 'barabara',
     name: 'バラバラの実',
     image: '/saikoro/barabara.png',
-    cost: { eternal: 6 },
+    cost: { verse: 6 },
     description:
       '自分のターン開始時、まだ自分が見えていないエクストラキャラのマスがランダムで3つ見える。',
   },
@@ -2051,7 +2078,7 @@ const CARD_OFFERS = [
     image: '/saikoro/daiaru.png',
     cost: { eternal: 1 },
     description:
-      '毎ターン、ダイスの振り直しを1度だけできる。',
+      '毎ターン、ダイスの振り直しを1度だけできる。2枚持ちで2度',
   },
   {
     id: 'takara',
@@ -2059,7 +2086,7 @@ const CARD_OFFERS = [
     image: '/saikoro/takara.png',
     cost: { eternal: 2 },
     description:
-      '自分のターン、ミニダイスが1個追加で振られる。ミニダイスはゴールド3が1面、ゴールド2が1面、ゴールド1が3面。',
+      '自分のターン、ミニダイスが1個追加で振られる。ミニダイスはベリー3が1面、ベリー2が1面、ベリー1が3面。',
   },
   {
     id: 'smile',
@@ -2067,7 +2094,7 @@ const CARD_OFFERS = [
     image: '/saikoro/smile.png',
     cost: { eternal: 3 },
     description:
-      '毎ターン10％の確率で、出た目の3倍の資源をもらえることがある。',
+      '毎ターン10％の確率で、出た目の3倍の資源をもらえることがある。2枚持ちで20％',
   },
   {
     id: 'news',
@@ -2091,7 +2118,7 @@ const CARD_OFFERS = [
     image: '/saikoro/kuroden.png',
     cost: { eternal: 6 },
     description:
-      '他人が1枚ビブカの情報を買った時、30％の確率で自分も同じ情報を得られる。',
+      '他人が1枚ビブカの情報を買った時、30％の確率で自分も同じ情報を得られる。2枚持ちで60％',
   },
 ];
 
@@ -2119,6 +2146,33 @@ const [cardEffectUsed, setCardEffectUsed] =
     jikijiki: false,
   });
 
+const [impactDialPrompt, setImpactDialPrompt] =
+  useState(false);
+
+const [impactDialChoosingDie, setImpactDialChoosingDie] =
+  useState(false);
+
+const [impactDialRemaining, setImpactDialRemaining] =
+  useState(0);
+
+const [impactDialResults, setImpactDialResults] =
+  useState({});
+
+const [impactDialRolling, setImpactDialRolling] =
+  useState(false);
+
+const [impactDialRollingType, setImpactDialRollingType] =
+  useState(null);
+
+const [impactDialDiceRotation, setImpactDialDiceRotation] =
+  useState({
+    a: { x: 0, y: 0, z: 0 },
+    b: { x: 0, y: 0, z: 0 },
+  });
+
+const impactDialAnimationIntervalRef = useRef(null);
+const impactDialAnimationTimerRef = useRef(null);
+
 const [manemaneSelecting, setManemaneSelecting] =
   useState(false);
 
@@ -2142,6 +2196,26 @@ const [manemaneCopyOptions, setManemaneCopyOptions] =
 
 const [manemaneCopySelecting, setManemaneCopySelecting] =
   useState(false);
+
+const [tactSelecting, setTactSelecting] =
+  useState(false);
+
+const [tactSelectedDice, setTactSelectedDice] =
+  useState([]);
+
+const [tactConfirming, setTactConfirming] =
+  useState(false);
+
+const [tactPendingFaces, setTactPendingFaces] =
+  useState([]);
+
+const [tactResourceSelecting, setTactResourceSelecting] =
+  useState(false);
+
+const [pendingDiceResults, setPendingDiceResults] = useState(null);
+
+const [tactResourceRemaining, setTactResourceRemaining] =
+  useState(0);
 
 const [jikijikiMode, setJikijikiMode] =
   useState(null);
@@ -2474,7 +2548,8 @@ if (
   const [answerUsed, setAnswerUsed] =
     useState(false);
 
-
+const [answerAttempts, setAnswerAttempts] =
+  useState(0);
 
 function addActionHistory(
   text
@@ -2494,6 +2569,20 @@ function addActionHistory(
     ]
   );
 }
+
+
+
+const [takaraRolling, setTakaraRolling] = useState(false);
+const [takaraUsedCount, setTakaraUsedCount] = useState(0);
+const [takaraResult, setTakaraResult] = useState(null);
+const [takaraRotation, setTakaraRotation] = useState({
+  x: 0,
+  y: 0,
+});
+
+const [newsSelecting, setNewsSelecting] = useState(false);
+
+const [newsUsedCount, setNewsUsedCount] = useState(0);
 
   const [yomiyomiSelecting, setYomiyomiSelecting] =
     useState(false);
@@ -2553,18 +2642,43 @@ const handleCardPurchase =
       return;
     }
 
+  
     if (
       !spendResources(
         myPlayer,
         selectedCard.cost
       )
     ) {
+      const costNames = {
+        berry: 'ベリー',
+        verse: 'ヴァース',
+        eternal: '永久指針',
+      };
+
+      const missingResources =
+        Object.entries(
+          selectedCard.cost || {}
+        )
+          .filter(
+            ([type, amount]) =>
+              Number(
+                myPlayer?.resources?.[type] || 0
+              ) < Number(amount || 0)
+          )
+          .map(
+            ([type]) =>
+              costNames[type] || type
+          );
+
       window.alert(
-        '永久指針が足りません。'
+        missingResources.length > 0
+          ? `${missingResources.join('・')}が足りません。`
+          : 'カード購入に必要な資源が足りません。'
       );
 
       return;
     }
+
 
     setPlayers((prev) => {
       const next =
@@ -2746,7 +2860,19 @@ if (
     'マネマネの実：マネマネマスにする自分のダイス面を2つ選択してください。'
   );
 }
+
+    if (purchasedCardId === 'tact') {
+      setTactSelectedDice([]);
+      setTactPendingFaces([]);
+      setTactConfirming(false);
+      setTactSelecting(true);
+
+      setMessage(
+        '魔法の天候棒：天候棒マスにする自分のダイス面を2つ選んでください。'
+      );
+    }
   };
+
 
 
 
@@ -2851,22 +2977,12 @@ function handleManemaneDiceConfirm() {
 }
 
 
+
 function handleManemaneCancel() {
-  setManemaneSelecting(
-    false
-  );
-
-  setManemaneSelectedDice(
-    []
-  );
-
-  setManemaneConfirming(
-    false
-  );
-
-  setManemanePendingFaces(
-    []
-  );
+ setManemaneConfirming(false);
+  setManemaneSelectedDice([]);
+  setManemanePendingFaces([]);
+  setManemaneSelecting(true);
 }
 
 
@@ -2962,9 +3078,104 @@ function handleManemaneExchange() {
   );
 }
 
-function handleManemaneCopySelect(
-  option
-) {
+function handleTactDiceSelect(dieType, index) {
+  if (!tactSelecting) return;
+  if (dieType !== 'A' && dieType !== 'B') return;
+  if (!Number.isInteger(index) || index < 0 || index >= 6) return;
+
+  const key = `${dieType}-${index}`;
+
+  setTactSelectedDice((prev) => {
+    const exists = prev.some((item) => item.key === key);
+
+    if (exists) {
+      return prev.filter((item) => item.key !== key);
+    }
+
+    if (prev.length >= 2) {
+      return prev;
+    }
+
+    return [...prev, { key, dieType, index }];
+  });
+}
+
+function handleTactDiceConfirm() {
+  if (
+    !tactSelecting ||
+    tactSelectedDice.length !== 2 ||
+    !myPlayer
+  ) {
+    return;
+  }
+
+  const nextFaces = tactSelectedDice.map((selected) => ({
+    dieType: selected.dieType,
+    index: selected.index,
+    face:
+      selected.dieType === 'A'
+        ? myPlayer.diceA[selected.index]
+        : myPlayer.diceB[selected.index],
+  }));
+
+  setTactPendingFaces(nextFaces);
+  setTactConfirming(true);
+}
+
+
+function handleTactCancel() {
+  setTactConfirming(false);
+  setTactSelectedDice([]);
+  setTactPendingFaces([]);
+  setTactSelecting(true);
+}
+
+function handleTactExchange() {
+  if (tactPendingFaces.length !== 2 || !myPlayer) {
+    return;
+  }
+
+  setPlayers((prev) =>
+    prev.map((player, playerIndex) => {
+      if (playerIndex !== 0) {
+        return player;
+      }
+
+      const nextDiceA = Array.isArray(player.diceA)
+        ? [...player.diceA]
+        : [];
+
+      const nextDiceB = Array.isArray(player.diceB)
+        ? [...player.diceB]
+        : [];
+
+      tactPendingFaces.forEach((selected) => {
+        const tactFace = { type: 'tact' };
+
+        if (selected.dieType === 'A') {
+          nextDiceA[selected.index] = tactFace;
+        } else {
+          nextDiceB[selected.index] = tactFace;
+        }
+      });
+
+      return {
+        ...player,
+        diceA: nextDiceA,
+        diceB: nextDiceB,
+      };
+    })
+  );
+
+  setTactSelecting(false);
+  setTactSelectedDice([]);
+  setTactConfirming(false);
+  setTactPendingFaces([]);
+
+  setMessage('魔法の天候棒：2つのダイス面を天候棒マスに変更しました。');
+}
+
+function handleManemaneCopySelect(option) {
   if (
     !manemaneCopySelecting ||
     !option?.result
@@ -2972,37 +3183,24 @@ function handleManemaneCopySelect(
     return;
   }
 
-  const result =
-    option.result;
+  const result = option.result;
 
-  if (
-    result.type ===
-    'manemane'
-  ) {
+  if (result.type === 'manemane') {
     return;
   }
 
-  // ==================================================
-  // 選択した面と同じ資源を獲得
-  // ==================================================
+  setPlayers((prev) =>
+    prev.map((player, index) => {
+      if (index !== 0) {
+        return player;
+      }
 
-  setPlayers(
-    (prev) =>
-      prev.map(
-        (player, index) => {
-          if (
-            index !== 0
-          ) {
-            return player;
-          }
-
-          return addResource(
-            player,
-            result.type,
-            result.value
-          );
-        }
-      )
+      return addResource(
+        player,
+        result.type,
+        result.value
+      );
+    })
   );
 
   const nextChoiceIndex =
@@ -3011,17 +3209,8 @@ function handleManemaneCopySelect(
   const totalChoices =
     manemaneChoiceQueue.length;
 
-  // ==================================================
-  // まだ2回目の選択が残っている
-  // ==================================================
-
-  if (
-    nextChoiceIndex <
-    totalChoices
-  ) {
-    setManemaneChoiceIndex(
-      nextChoiceIndex
-    );
+  if (nextChoiceIndex < totalChoices) {
+    setManemaneChoiceIndex(nextChoiceIndex);
 
     setMessage(
       `マネマネマス：${nextChoiceIndex + 1}回目の面を選択してください。`
@@ -3030,31 +3219,17 @@ function handleManemaneCopySelect(
     return;
   }
 
-  // ==================================================
-  // すべてのマネマネ処理完了
-  // ==================================================
-
-  setManemaneCopySelecting(
-    false
-  );
-
-  setManemaneCopyOptions(
-    []
-  );
-
-  setManemaneChoiceQueue(
-    []
-  );
-
-  setManemaneChoiceIndex(
-    0
-  );
+  setManemaneCopySelecting(false);
+  setManemaneCopyOptions([]);
+  setManemaneChoiceQueue([]);
+  setManemaneChoiceIndex(0);
 
   setMessage(
     'マネマネマスの効果で資源を獲得しました。'
   );
-}
 
+  finishDicePhase(allDiceResults);
+}
 function handleJikijikiTargetSelect(
   targetSeat
 ) {
@@ -3187,121 +3362,58 @@ function handleJikijikiTypeSelect(
     }
   }
 
-  if (
-    type === 'extra'
-  ) {
-    const indexes =
-      Array.isArray(
-        targetPlayer.extraCharacterRevealedIndexes
-      )
-        ? targetPlayer.extraCharacterRevealedIndexes
-        : [];
-
-    if (
-      indexes.length ===
-      0
-    ) {
-      setMessage(
-        `${targetPlayer.name}は、まだエクストラキャラの情報を持っていません。`
-      );
-
-      return;
-    }
-  }
-
-  setJikijikiTargetType(
-    type
-  );
-
-  if (
-    type === 'vivre'
-  ) {
-    const sourceInfo =
-      targetPlayer.vivreCardInfo ||
-      {};
-
-    const copiedInfo = {};
-
-    Object.keys(
-      sourceInfo
-    ).forEach(
-      (key) => {
-        const value =
-          sourceInfo[key];
-
-        copiedInfo[key] =
-          Array.isArray(
-            value
-          )
-            ? [
-                ...value,
-              ]
-            : value;
-      }
-    );
-
-    updatePlayer(
-      0,
-      (player) => ({
-        ...player,
-
-        vivreCardInfo: {
-          ...(player.vivreCardInfo || {}),
-          ...copiedInfo,
-        },
-      })
-    );
-
-    setMessage(
-      `${targetPlayer.name}が持っていた1枚ビブカ情報を入手しました。`
-    );
-  }
 
   if (
     type === 'extra'
   ) {
-    const sourceIndexes =
-      Array.isArray(
-        targetPlayer.extraCharacterRevealedIndexes
-      )
-        ? targetPlayer.extraCharacterRevealedIndexes
-        : [];
-
-    updatePlayer(
-      0,
-      (player) => {
-        const currentIndexes =
+    const sourceIndexes = [
+      ...new Set(
+        (
           Array.isArray(
-            player.extraCharacterRevealedIndexes
+            targetPlayer.extraCharacterRevealedIndexes
           )
-            ? player.extraCharacterRevealedIndexes
-            : [];
+            ? targetPlayer.extraCharacterRevealedIndexes
+            : []
+        ).map(Number)
+          .filter(Number.isInteger)
+      ),
+    ];
 
-        const merged =
-          Array.from(
-            new Set([
-              ...currentIndexes,
-              ...sourceIndexes,
-            ])
-          ).sort(
-            (a, b) =>
-              Number(a) -
-              Number(b)
-          );
+    setPlayers((prev) => {
+      const next = [...prev];
+      const me = next[0];
 
-        return {
-          ...player,
-
-          extraCharacterRevealedIndexes:
-            merged,
-        };
+      if (!me) {
+        return prev;
       }
-    );
+
+      const myIndexes =
+        Array.isArray(
+          me.extraCharacterRevealedIndexes
+        )
+          ? me.extraCharacterRevealedIndexes.map(Number)
+          : [];
+
+      next[0] = {
+        ...me,
+        extraCharacterRevealedIndexes: [
+          ...new Set([
+            ...myIndexes,
+            ...sourceIndexes,
+          ]),
+        ].sort((a, b) => a - b),
+      };
+
+      return next;
+    });
 
     setMessage(
-      `${targetPlayer.name}が持っていたエクストラキャラ情報を入手しました。`
+      sourceIndexes.length > 0
+        ? `${targetPlayer.name}の公開済みエクストラ情報を${sourceIndexes.length}文字コピーしました。`
+        : `${targetPlayer.name}にはコピーできる公開済み文字がありません。`
     );
   }
+
 
   setJikijikiMode(
     null
@@ -3333,6 +3445,79 @@ function cancelJikijiki() {
   setMessage(
     'ジキジキの実の使用を終了しました。'
   );
+}
+
+function handleTakaraUse() {
+  if (
+    !isMyTurn ||
+    phase !== 'action' ||
+    takaraRolling
+  ) {
+    return;
+  }
+
+  const takaraCount =
+    (myPlayer?.cards || []).filter(
+      (card) => card?.id === 'takara'
+    ).length;
+
+  if (
+    takaraCount <= 0 ||
+    takaraUsedCount >= takaraCount
+  ) {
+    return;
+  }
+
+  // 先に使用済みにして連打を防ぐ
+  setTakaraUsedCount((prev) => prev + 1);
+
+  const roll = Math.floor(Math.random() * 5);
+  const gold =
+    roll === 0 ? 3 :
+    roll === 1 ? 2 :
+    1;
+
+  setTakaraRolling(true);
+  setTakaraResult(null);
+
+  setMessage('食糧宝船のミニダイスを振っています……');
+
+  setTimeout(() => {
+    setPlayers((prev) => {
+      return prev.map((player, index) => {
+        if (index !== 0) {
+          return player;
+        }
+
+        const currentBerry =
+          Number(player.resources?.berry || 0);
+
+        const maxBerry =
+          Number(player.maxResources?.berry || 0);
+
+        const actualGain =
+          Math.max(
+            0,
+            Math.min(gold, maxBerry - currentBerry)
+          );
+
+        return {
+          ...player,
+          resources: {
+            ...player.resources,
+            berry: currentBerry + actualGain,
+          },
+        };
+      });
+    });
+
+    setTakaraResult(gold);
+    setTakaraRolling(false);
+
+    setMessage(
+      `食糧宝船のミニダイス！ベリーを${gold}個獲得しました。`
+    );
+  }, 1500);
 }
 
 function handleYomiyomiUse() {
@@ -3373,6 +3558,189 @@ function handleYomiyomiUse() {
     }回）`
   );
 }
+
+
+
+
+function handleNewsUse(resource) {
+  if (
+    !isMyTurn ||
+    phase !== 'action' ||
+    newsSelecting === false
+  ) {
+    return;
+  }
+
+  const newsCount =
+    (myPlayer?.cards || []).filter(
+      (card) => card?.id === 'news'
+    ).length;
+
+  if (
+    newsCount <= 0 ||
+    newsUsedCount >= newsCount
+  ) {
+    return;
+  }
+
+  const allowedResources = [
+    'berry',
+    'verse',
+    'eternal',
+  ];
+
+  if (!allowedResources.includes(resource)) {
+    return;
+  }
+
+  const current =
+    Number(myPlayer?.resources?.[resource] || 0);
+
+  const max =
+    Number(myPlayer?.maxResources?.[resource] || 0);
+
+  if (current >= max) {
+    setMessage('この資源は所持上限に達しています。');
+    return;
+  }
+
+  setNewsUsedCount((prev) => prev + 1);
+
+  setPlayers((prev) =>
+    prev.map((player, index) => {
+      if (index !== 0) {
+        return player;
+      }
+
+      const playerCurrent =
+        Number(player.resources?.[resource] || 0);
+
+      const playerMax =
+        Number(player.maxResources?.[resource] || 0);
+
+      return {
+        ...player,
+        resources: {
+          ...player.resources,
+          [resource]: Math.min(
+            playerMax,
+            playerCurrent + 1
+          ),
+        },
+      };
+    })
+  );
+
+  const resourceNames = {
+    berry: 'ベリー',
+    verse: 'ヴァース',
+    eternal: '永久指針',
+  };
+
+  setNewsSelecting(false);
+
+  setMessage(
+    `ニュース・クーで${resourceNames[resource]}を1個獲得しました！`
+  );
+}
+
+
+function handleTactResourceUse(resource) {
+if (
+  !['dice', 'action', 'cpu'].includes(phase) ||
+  !tactResourceSelecting ||
+  tactResourceRemaining <= 0
+) {
+  return;
+}
+
+  const allowedResources = [
+    'berry',
+    'verse',
+    'eternal',
+  ];
+
+  if (!allowedResources.includes(resource)) {
+    return;
+  }
+
+  const current = Number(
+    myPlayer?.resources?.[resource] || 0
+  );
+
+  const max = Number(
+    myPlayer?.maxResources?.[resource] || 0
+  );
+
+  if (current >= max) {
+    setMessage('その資源は所持上限に達しています。');
+    return;
+  }
+
+  const gained = Math.min(3, max - current);
+
+  setPlayers((prev) =>
+    prev.map((player, index) => {
+      if (index !== 0) {
+        return player;
+      }
+
+      const playerCurrent = Number(
+        player.resources?.[resource] || 0
+      );
+
+      const playerMax = Number(
+        player.maxResources?.[resource] || 0
+      );
+
+      return {
+        ...player,
+        resources: {
+          ...player.resources,
+          [resource]: Math.min(
+            playerMax,
+            playerCurrent + gained
+          ),
+        },
+      };
+    })
+  );
+
+  const resourceNames = {
+    berry: 'ベリー',
+    verse: 'ヴァース',
+    eternal: '永久指針',
+  };
+
+  const remaining = tactResourceRemaining - 1;
+
+  setTactResourceRemaining(remaining);
+
+  if (remaining <= 0) {
+    setTactResourceSelecting(false);
+
+    setMessage(
+      `魔法の天候棒で${resourceNames[resource]}を${gained}個獲得しました。資源選択が完了しました。`
+    );
+
+    const results = pendingDiceResults;
+
+    setPendingDiceResults(null);
+
+    if (results) {
+      setTimeout(() => {
+        finishDiceRollAfterTact(results);
+      }, 300);
+    }
+  } else {
+    setMessage(
+      `魔法の天候棒で${resourceNames[resource]}を${gained}個獲得しました。残り${remaining}回、資源を選んでください。`
+    );
+  }
+}
+
+
+
 
 function handleYomiyomiReroll(
   diceType
@@ -3584,6 +3952,123 @@ const isMyTurn =
     getCardProfile(
       currentVivreCard
     );
+
+useEffect(() => {
+  const isActionButtonVisible =
+    phase === 'action' &&
+    isMyTurn;
+
+  if (!isActionButtonVisible) {
+    barabaraWasActionVisibleRef.current = false;
+    return;
+  }
+
+  // ボタンが表示されたままの再描画では発動しない
+  if (barabaraWasActionVisibleRef.current) {
+    return;
+  }
+
+  // 今回の手番でボタンが表示されたことを記録
+  barabaraWasActionVisibleRef.current = true;
+
+  const barabaraCount =
+    Array.isArray(myPlayer?.cards)
+      ? myPlayer.cards.filter(
+          (card) => card?.id === 'barabara'
+        ).length
+      : 0;
+
+  if (barabaraCount === 0) {
+    return;
+  }
+
+  const hiddenIndexes =
+    getExtraCharacterHiddenIndexes(0);
+
+  const revealCount = Math.min(
+    barabaraCount * 3,
+    hiddenIndexes.length
+  );
+
+  if (revealCount === 0) {
+    setMessage(
+      'バラバラの実：公開できるマスがありません。'
+    );
+    return;
+  }
+
+  const shuffledIndexes = [
+    ...hiddenIndexes,
+  ];
+
+  for (
+    let i = shuffledIndexes.length - 1;
+    i > 0;
+    i--
+  ) {
+    const j = Math.floor(
+      Math.random() * (i + 1)
+    );
+
+    const temp = shuffledIndexes[i];
+
+    shuffledIndexes[i] = shuffledIndexes[j];
+    shuffledIndexes[j] = temp;
+  }
+
+  const selectedIndexes =
+    shuffledIndexes.slice(0, revealCount);
+
+  setPlayers((prev) => {
+    const next = prev.map((player) => ({
+      ...player,
+      extraCharacterRevealedIndexes:
+        Array.isArray(
+          player.extraCharacterRevealedIndexes
+        )
+          ? [...player.extraCharacterRevealedIndexes]
+          : [],
+    }));
+
+    if (!next[0]) {
+      return prev;
+    }
+
+    const revealedSet = new Set(
+      next[0].extraCharacterRevealedIndexes
+    );
+
+    const newIndexes = selectedIndexes.filter(
+      (index) => !revealedSet.has(index)
+    );
+
+    next[0].extraCharacterRevealedIndexes = [
+      ...next[0].extraCharacterRevealedIndexes,
+      ...newIndexes,
+    ];
+
+    return next;
+  });
+
+  setExtraCharacterBoard((prev) =>
+    prev.map((item) =>
+      selectedIndexes.includes(item.index)
+        ? {
+            ...item,
+            revealed: true,
+          }
+        : item
+    )
+  );
+
+  setMessage(
+    `バラバラの実を${barabaraCount}個所持！エクストラキャラのマスを${revealCount}つ公開しました。`
+  );
+}, [
+  phase,
+  isMyTurn,
+  myPlayer?.cards,
+]);
 
 const myExtraCharacterRevealedIndexes =
   new Set(
@@ -3812,33 +4297,32 @@ const infoSummary =
               cost
             );
 
-          next[0] = {
-            ...next[0],
-            extraRandomCount:
-              Number(
-                next[0]
-                  .extraRandomCount ||
-                0
-              ) + 1,
-          };
+
+      next[0] = {
+        ...next[0],
+        extraRandomCount:
+          Number(
+            next[0].extraRandomCount || 0
+          ) + 1,
+        extraCharacterRevealedIndexes: [
+          ...(
+            Array.isArray(
+              next[0].extraCharacterRevealedIndexes
+            )
+              ? next[0].extraCharacterRevealedIndexes
+              : []
+          ),
+          randomIndex,
+        ],
+      };
+
+
 
           return next;
         }
       );
 
-workingPlayer = {
-  ...workingPlayer,
 
-  extraCharacterRevealedIndexes: [
-    ...(Array.isArray(
-      workingPlayer.extraCharacterRevealedIndexes
-    )
-      ? workingPlayer.extraCharacterRevealedIndexes
-      : []),
-
-    randomIndex,
-  ],
-};
       setExtraCharacterPurchaseMode(
         null
       );
@@ -4296,7 +4780,6 @@ setPlayers(
   }
 
 
-
 function rollAllDice() {
   if (
     phase !== 'dice' ||
@@ -4309,6 +4792,10 @@ function rollAllDice() {
   setShowDiceResults(false);
   setDiceResult(null);
   setAllDiceResults({});
+  setImpactDialPrompt(false);
+  setImpactDialChoosingDie(false);
+  setImpactDialRemaining(0);
+  setImpactDialResults({});
 
   setMessage(
     '🎲 全員のサイコロを振っています……'
@@ -4316,373 +4803,606 @@ function rollAllDice() {
 
   let tick = 0;
 
-  if (
-    diceRollIntervalRef.current
-  ) {
-    clearInterval(
-      diceRollIntervalRef.current
+  if (diceRollIntervalRef.current) {
+    clearInterval(diceRollIntervalRef.current);
+  }
+
+  diceRollIntervalRef.current = setInterval(() => {
+    tick += 1;
+
+    setDice3DRotation({
+      a: {
+        x: tick * 55 + Math.random() * 40,
+        y: tick * 65 + Math.random() * 40,
+        z: Math.random() * 40 - 20,
+      },
+      b: {
+        x: tick * 60 + Math.random() * 40,
+        y: -tick * 70 + Math.random() * 40,
+        z: Math.random() * 40 - 20,
+      },
+    });
+  }, 90);
+
+  if (diceRollTimerRef.current) {
+    clearTimeout(diceRollTimerRef.current);
+  }
+
+  diceRollTimerRef.current = setTimeout(() => {
+    if (diceRollIntervalRef.current) {
+      clearInterval(diceRollIntervalRef.current);
+      diceRollIntervalRef.current = null;
+    }
+
+    const results = {};
+
+    players.forEach((player) => {
+      results[player.seat] = {
+        a: rollDice(player.diceA),
+        b: rollDice(player.diceB),
+      };
+    });
+
+    setImpactDialResults(results);
+    setAllDiceResults(results);
+
+    const mySeat = players[0]?.seat;
+    setDiceResult(results[mySeat] || null);
+
+    setDice3DRotation({
+      a: { x: 0, y: 0, z: 0 },
+      b: { x: 0, y: 0, z: 0 },
+    });
+
+    setDiceRolling(false);
+    setMessage('🎲 全員のサイコロ結果が出ました！');
+
+    setTimeout(() => {
+      setShowDiceResults(true);
+    }, 750);
+
+    setTimeout(() => {
+      startImpactDialForSeat(results, 0);
+    }, 1200);
+  }, 1200);
+}
+
+function startImpactDialForSeat(results, seat) {
+  if (seat >= players.length) {
+    finishDiceRoll(results);
+    return;
+  }
+
+  const player = players[seat];
+
+  if (!player) {
+    startImpactDialForSeat(results, seat + 1);
+    return;
+  }
+
+  const dialCount = Array.isArray(player.cards)
+    ? player.cards.filter(
+        (card) => card?.id === 'daiaru'
+      ).length
+    : 0;
+
+  if (dialCount <= 0) {
+    startImpactDialForSeat(results, seat + 1);
+    return;
+  }
+
+  // 人間プレイヤーは、使用するかどうかを選ぶ
+  if (seat === 0) {
+    setImpactDialResults(results);
+    setImpactDialRemaining(dialCount);
+    setImpactDialPrompt(true);
+    setImpactDialChoosingDie(false);
+
+    setMessage(
+      `衝撃貝を使用できます。残り${dialCount}回、ダイスを振り直せます。`
+    );
+
+    return;
+  }
+
+  // CPUは所持している衝撃貝を必ず使用する
+  const nextResults = {
+    ...results,
+    [player.seat]: {
+      ...results[player.seat],
+    },
+  };
+
+  for (let i = 0; i < dialCount; i++) {
+    const dieType = Math.random() < 0.5 ? 'a' : 'b';
+
+    nextResults[player.seat][dieType] =
+      rollDice(
+        dieType === 'a'
+          ? player.diceA
+          : player.diceB
+      );
+  }
+
+  setImpactDialResults(nextResults);
+  setAllDiceResults(nextResults);
+
+  if (players[0]) {
+    setDiceResult(
+      nextResults[players[0].seat]
     );
   }
 
-  diceRollIntervalRef.current =
+  startImpactDialForSeat(
+    nextResults,
+    seat + 1
+  );
+}
+
+function handleImpactDialUse() {
+  setImpactDialChoosingDie(true);
+
+  setMessage(
+    '振り直すダイスを選択してください。'
+  );
+}
+
+function handleImpactDialSkip() {
+  const results = impactDialResults;
+
+  setImpactDialPrompt(false);
+  setImpactDialChoosingDie(false);
+  setImpactDialRemaining(0);
+
+  startImpactDialForSeat(results, 1);
+}
+
+function handleImpactDialReroll(dieType) {
+  if (
+    !impactDialPrompt ||
+    !impactDialChoosingDie ||
+    impactDialRemaining <= 0 ||
+    impactDialRolling
+  ) {
+    return;
+  }
+
+  const player = players[0];
+
+  if (!player) {
+    return;
+  }
+
+  const currentResult =
+    impactDialResults[player.seat];
+
+  if (!currentResult) {
+    return;
+  }
+
+  // 前回のアニメーションが残っていたら停止
+  if (impactDialAnimationIntervalRef.current) {
+    clearInterval(impactDialAnimationIntervalRef.current);
+    impactDialAnimationIntervalRef.current = null;
+  }
+
+  if (impactDialAnimationTimerRef.current) {
+    clearTimeout(impactDialAnimationTimerRef.current);
+    impactDialAnimationTimerRef.current = null;
+  }
+
+  setImpactDialRolling(true);
+  setImpactDialRollingType(dieType);
+  setImpactDialChoosingDie(false);
+
+  setMessage(
+    `衝撃貝でダイス${dieType.toUpperCase()}を振り直しています……`
+  );
+
+  let tick = 0;
+
+  // 選んだダイスだけ回転させる
+  impactDialAnimationIntervalRef.current =
     setInterval(() => {
       tick += 1;
 
-      setDice3DRotation({
-        a: {
-          x:
-            tick * 55 +
-            Math.random() * 40,
+      setImpactDialDiceRotation((prev) => ({
+        ...prev,
+        [dieType]: {
+          x: tick * 55 + Math.random() * 40,
           y:
-            tick * 65 +
-            Math.random() * 40,
-          z:
-            Math.random() * 40 - 20,
+            (dieType === 'a' ? 1 : -1) *
+            (tick * 65 + Math.random() * 40),
+          z: Math.random() * 40 - 20,
         },
+      }));
+    }, 50);
 
-        b: {
-          x:
-            tick * 60 +
-            Math.random() * 40,
-          y:
-            -tick * 70 +
-            Math.random() * 40,
-          z:
-            Math.random() * 40 - 20,
-        },
-      });
-    }, 90);
-
-  if (
-    diceRollTimerRef.current
-  ) {
-    clearTimeout(
-      diceRollTimerRef.current
-    );
-  }
-
-  diceRollTimerRef.current =
+  // 回転が終わってから、新しい出目を確定する
+  impactDialAnimationTimerRef.current =
     setTimeout(() => {
-      if (
-        diceRollIntervalRef.current
-      ) {
-        clearInterval(
-          diceRollIntervalRef.current
+      if (impactDialAnimationIntervalRef.current) {
+        clearInterval(impactDialAnimationIntervalRef.current);
+        impactDialAnimationIntervalRef.current = null;
+      }
+
+      impactDialAnimationTimerRef.current = null;
+
+      const nextResults = {
+        ...impactDialResults,
+        [player.seat]: {
+          ...currentResult,
+          [dieType]: rollDice(
+            dieType === 'a'
+              ? player.diceA
+              : player.diceB
+          ),
+        },
+      };
+
+      const nextRemaining =
+        impactDialRemaining - 1;
+
+      setImpactDialResults(nextResults);
+      setAllDiceResults(nextResults);
+      setDiceResult(nextResults[player.seat]);
+      setImpactDialRemaining(nextRemaining);
+
+      // アニメーションを終了し、正面に新しい面を表示
+      setImpactDialDiceRotation((prev) => ({
+        ...prev,
+        [dieType]: {
+          x: 0,
+          y: 0,
+          z: 0,
+        },
+      }));
+
+      setImpactDialRolling(false);
+      setImpactDialRollingType(null);
+
+      if (nextRemaining > 0) {
+        setImpactDialChoosingDie(false);
+        setImpactDialPrompt(true);
+
+        setMessage(
+          `振り直しが完了しました。残り${nextRemaining}回です。`
         );
 
-        diceRollIntervalRef.current =
-          null;
+        return;
       }
 
-      const results = {};
+      setImpactDialPrompt(false);
+      setImpactDialChoosingDie(false);
 
-setPlayers(
-  (prev) =>
-    prev.map(
-      (player) => {
-        const a =
-          rollDice(
-            player.diceA
-          );
-
-        const b =
-          rollDice(
-            player.diceB
-          );
-
-        results[
-          player.seat
-        ] = {
-          a,
-          b,
-        };
-
-        let next = {
-          ...player,
-
-          diceResult: {
-            a,
-            b,
-          },
-        };
-
-        // ==================================================
-        // 通常のダイス面だけ、その場で資源を獲得
-        // マネマネマスは後で選択して資源を獲得する
-        // ==================================================
-
-        if (
-          a &&
-          a.type !==
-            'manemane'
-        ) {
-          next =
-            addResource(
-              next,
-              a.type,
-              a.value
-            );
-        }
-
-        if (
-          b &&
-          b.type !==
-            'manemane'
-        ) {
-          next =
-            addResource(
-              next,
-              b.type,
-              b.value
-            );
-        }
-
-        return next;
-      }
-    )
-);
-
-      const myResult =
-        results[0];
-
-      console.log(
-        '🎲 実際の出目',
-        {
-          A: myResult?.a,
-          B: myResult?.b,
-        }
+      setMessage(
+        '衝撃貝を使い切りました。CPUの処理に進みます。'
       );
 
-      setAllDiceResults(
-        results
-      );
+      startImpactDialForSeat(nextResults, 1);
+    }, 1100);
+}
 
-      setDiceResult(
-        myResult
-      );
 
-// ==================================================
-// マネマネの実
-// 自分のダイスに出たマネマネマスの数だけ
-// 他3人の通常ダイスからコピーする
-// ==================================================
+function finishDiceRoll(results) {
+  setImpactDialPrompt(false);
+  setImpactDialChoosingDie(false);
+  setImpactDialRemaining(0);
 
-const manemaneCount =
-  [
+  setImpactDialResults(results);
+  setAllDiceResults(results);
+
+  const mySeat = players[0]?.seat;
+  const myResult = results[mySeat];
+
+  setDiceResult(myResult || null);
+  setShowDiceResults(false);
+
+  // 天候棒の処理を最優先する
+  const tactCount = [
     myResult?.a,
     myResult?.b,
   ].filter(
-    (result) =>
-      result?.type ===
-      'manemane'
+    (result) => result?.type === 'tact'
   ).length;
 
-console.log(
-  '🎭 マネマネ判定',
-  {
-    myResult,
-    manemaneCount,
-    allResults:
-      results,
-  }
-);
 
-if (
-  manemaneCount > 0
-) {
-  const copyOptions = [];
+  setPendingDiceResults(results);
 
-  // ==================================================
-  // players の配列順で他プレイヤーを取得する
-  // 自分 = index 0
-  // 他3人 = index 1,2,3
-  // ==================================================
+  // 天候棒で獲得できる資源が1つもない場合はスキップ
+  const humanPlayer =
+    players[0];
 
-  for (
-    let playerIndex = 1;
-    playerIndex < players.length;
-    playerIndex += 1
-  ) {
-    const otherResult =
-      results[playerIndex];
-
-    console.log(
-      '🎭 マネマネ候補',
-      {
-        playerIndex,
-        otherResult,
-      }
-    );
-
-    if (!otherResult) {
-      continue;
-    }
-
-    // ==================================================
-    // 他プレイヤーのA
-    // マネマネマスはコピー対象外
-    // ==================================================
-
-    if (
-      otherResult.a &&
-      otherResult.a.type !==
-        'manemane'
-    ) {
-      copyOptions.push({
-        seat:
-          players[playerIndex]
-            ?.seat ??
-          playerIndex,
-        dieType:
-          'A',
-        result:
-          otherResult.a,
-      });
-    }
-
-    // ==================================================
-    // 他プレイヤーのB
-    // マネマネマスはコピー対象外
-    // ==================================================
-
-    if (
-      otherResult.b &&
-      otherResult.b.type !==
-        'manemane'
-    ) {
-      copyOptions.push({
-        seat:
-          players[playerIndex]
-            ?.seat ??
-          playerIndex,
-        dieType:
-          'B',
-        result:
-          otherResult.b,
-      });
-    }
-  }
-
-  console.log(
-    '🎭 マネマネコピー候補',
-    copyOptions
-  );
-
-  // ==================================================
-  // コピー可能な面が存在する場合
-  // ==================================================
+  const canGainAnyTactResource =
+    Number(humanPlayer?.resources?.berry || 0) <
+      Number(humanPlayer?.maxResources?.berry ?? 12) ||
+    Number(humanPlayer?.resources?.verse || 0) <
+      Number(humanPlayer?.maxResources?.verse ?? 6) ||
+    Number(humanPlayer?.resources?.eternal || 0) <
+      Number(humanPlayer?.maxResources?.eternal ?? 6);
 
   if (
-    copyOptions.length > 0
+    tactCount === 0 ||
+    !canGainAnyTactResource
   ) {
-    setManemaneCopyOptions(
-      copyOptions
-    );
+    setTactResourceRemaining(0);
+    setTactResourceSelecting(false);
+    setPendingDiceResults(null);
 
-    setManemaneChoiceQueue(
-      Array.from(
-        {
-          length:
-            manemaneCount,
-        },
-        (_, index) =>
-          index
-      )
-    );
+    if (
+      tactCount > 0 &&
+      !canGainAnyTactResource
+    ) {
+      setMessage(
+        'すべての資源が所持上限のため、魔法の天候棒をスキップします。'
+      );
+    }
 
-    setManemaneChoiceIndex(
-      0
-    );
-
-    setManemaneCopySelecting(
-      true
-    );
-
-    setMessage(
-      manemaneCount === 2
-        ? 'マネマネマスが2つ出ました。コピーする面を2回選択してください。'
-        : 'マネマネマスが出ました。コピーする面を1つ選択してください。'
-    );
-  } else {
-    console.log(
-      '🎭 マネマネ：コピー可能な出目がありません'
-    );
+    finishDiceRollAfterTact(results);
+    return;
   }
+
+  setTactResourceRemaining(tactCount);
+  setTactResourceSelecting(true);
+
+  setMessage(
+    tactCount === 2
+      ? '魔法の天候棒が2つ出ました。資源を2回選んでください。'
+      : '魔法の天候棒が出ました。獲得する資源を選んでください。'
+  );
 }
-      /*
-       * 実際に出た面を
-       * 3Dサイコロの正面に表示する。
-       *
-       * Dice3D側で
-       * result.index を使って
-       * 面を入れ替えるため、
-       * 回転は0に戻す。
-       */
-      setDice3DRotation({
-        a: {
-          x: 0,
-          y: 0,
-          z: 0,
-        },
 
-        b: {
-          x: 0,
-          y: 0,
-          z: 0,
-        },
-      });
+function finishDiceRollAfterTact(results) {
+  const mySeat = players[0]?.seat;
+  const myResult = results[mySeat];
 
-      setDiceRolling(false);
+console.log('[天候棒チェック]', {
+  phase,
+  mySeat,
+  myResult,
+  tactA: myResult?.a?.type,
+  tactB: myResult?.b?.type,
+});
+
+  const manemaneCount = [
+    myResult?.a,
+    myResult?.b,
+  ].filter(
+    (result) => result?.type === 'manemane'
+  ).length;
+
+  if (manemaneCount > 0) {
+    const copyOptions = [];
+
+    players.forEach((player, playerIndex) => {
+      if (playerIndex === 0) {
+        return;
+      }
+
+      const otherResult = results[player.seat];
+
+      if (!otherResult) {
+        return;
+      }
+
+      if (
+        otherResult.a &&
+        otherResult.a.type !== 'manemane'
+      ) {
+        copyOptions.push({
+          seat: player.seat,
+          dieType: 'A',
+          result: otherResult.a,
+        });
+      }
+
+      if (
+        otherResult.b &&
+        otherResult.b.type !== 'manemane'
+      ) {
+        copyOptions.push({
+          seat: player.seat,
+          dieType: 'B',
+          result: otherResult.b,
+        });
+      }
+    });
+
+    if (copyOptions.length > 0) {
+      setManemaneCopyOptions(copyOptions);
+
+      setManemaneChoiceQueue(
+        Array.from(
+          { length: manemaneCount },
+          (_, index) => index
+        )
+      );
+
+      setManemaneChoiceIndex(0);
+      setManemaneCopySelecting(true);
 
       setMessage(
-        '🎲 全員のサイコロ結果が出ました！'
+        manemaneCount === 2
+          ? 'マネマネマスが2つ出ました。コピーする面を2回選択してください。'
+          : 'マネマネマスが出ました。コピーする面を1つ選択してください。'
+      );
+
+      return;
+    }
+
+    setMessage(
+      'マネマネマスが出ましたが、コピーできる通常のダイス面がありません。'
+    );
+  }
+
+  setTimeout(() => {
+    finishDicePhase(results);
+  }, 3200);
+}
+
+function finishDicePhase(
+  results,
+  smileChecked = false,
+  smileActivatedSeats = []
+) {
+  // ========================================
+  // SMILE：マネマネの処理が終わってから発動判定
+  // ========================================
+  if (!smileChecked) {
+    const activatedSeats = [];
+
+    players.forEach((player) => {
+      if (
+        !player ||
+        !results[player.seat]
+      ) {
+        return;
+      }
+
+      const smileCount =
+        (player.cards || []).filter(
+          (card) => card?.id === 'smile'
+        ).length;
+
+      if (smileCount <= 0) {
+        return;
+      }
+
+      const activationChance =
+        Math.min(smileCount * 0.1, 1);
+
+      if (Math.random() < activationChance) {
+        activatedSeats.push(player.seat);
+      }
+    });
+
+    if (activatedSeats.length > 0) {
+      setCardEffectMessage(
+        'SMILEが発動しました。'
       );
 
       setTimeout(() => {
-        setShowDiceResults(true);
-      }, 750);
+        setCardEffectMessage('');
 
-      /*
-       * 結果表示後、
-       * そのままアクションフェーズへ進む。
-       *
-       * turnPlayerはここでは変更しない。
-       */
-      setTimeout(() => {
+        finishDicePhase(
+          results,
+          true,
+          activatedSeats
+        );
+      }, 1000);
+
+      return;
+    }
+
+    finishDicePhase(
+      results,
+      true,
+      []
+    );
+
+    return;
+  }
+
+  // ========================================
+  // ダイスの資源を獲得
+  // ========================================
+
+
+  setPlayers((prev) =>
+    prev.map((player) => {
+      const result = results[player.seat];
+
+      if (!result) {
+        return player;
+      }
+
+      let next = {
+        ...player,
+        diceResult: {
+          a: result.a,
+          b: result.b,
+        },
+      };
+
+      const multiplier =
+        smileActivatedSeats.includes(player.seat)
+          ? 3
+          : 1;
+
+      const diceResults = [
+        result.a,
+        result.b,
+      ];
+
+      diceResults.forEach((diceResult) => {
+        if (!diceResult) {
+          return;
+        }
+
+        if (
+          diceResult.type === 'manemane' ||
+          diceResult.type === 'tact'
+        ) {
+          return;
+        }
+
+        const faces = Array.isArray(diceResult.faces)
+          ? diceResult.faces
+          : [
+              {
+                type: diceResult.type,
+                value: diceResult.value,
+              },
+            ];
+
+        faces.forEach((face) => {
+          if (
+            !face ||
+            !face.type ||
+            face.type === 'manemane' ||
+            face.type === 'tact'
+          ) {
+            return;
+          }
+
+          next = addResource(
+            next,
+            face.type,
+            Number(face.value || 0) * multiplier
+          );
+        });
+      });
+
+      return next;
+    })
+  );
+
   setShowDiceResults(false);
+  setManemaneCopySelecting(false);
+  setManemaneCopyOptions([]);
+  setManemaneChoiceQueue([]);
+  setManemaneChoiceIndex(0);
 
   setPhase('action');
-
   setActionUsed(false);
-
   setAnswerUsed(false);
-
+  setAnswerAttempts(0);
   setSelectedInfo(null);
 
   setMessage(
     `${players[turnPlayer]?.name || 'プレイヤー1'}のターンです。`
   );
 
-  /*
-   * CPUターンなら、
-   * ダイス結果表示が終わったあとにCPUを動かす。
-   *
-   * P1（0）は人間なので何もしない。
-   * P2～P4（1～3）はCPU。
-   */
   if (
     turnPlayer >= 1 &&
     turnPlayer <= 3
   ) {
     setTimeout(() => {
-      handleCpuTurn(
-        turnPlayer
-      );
+      handleCpuTurn(turnPlayer);
     }, 300);
   }
-}, 3200);
-    }, 1200);
 }
+
 
 const diceAutoTriggeredRef =
   useRef(false);
@@ -4946,7 +5666,7 @@ const applyStartTurnCardEffects = (
     }
   }
 
-  /*
+   /*
    * 食糧宝船
    *
    * ミニダイスは
@@ -5008,38 +5728,7 @@ const applyStartTurnCardEffects = (
 
   /*
    * SMILE
-   *
-   * ターン開始時に10%判定。
-   *
-   * 実際のダイス結果ではなく、
-   * このターンに得た資源を3倍にするため、
-   * フラグとして保持する。
    */
-  if (
-    hasCard(
-      player,
-      'smile'
-    )
-  ) {
-    if (
-      Math.random() < 0.1
-    ) {
-      messages.push(
-        'SMILE発動！このターンは獲得資源が3倍になります！'
-      );
-
-      nextPlayers[seat]
-        .smileActive = true;
-
-      changed = true;
-    } else {
-      nextPlayers[seat]
-        .smileActive = false;
-    }
-  } else {
-    nextPlayers[seat]
-      .smileActive = false;
-  }
 
   if (changed) {
     setPlayers(
@@ -5070,6 +5759,11 @@ function startNextRound() {
   setTurnPlayer(
     0
   );
+
+setNewsUsedCount(0);
+setNewsSelecting(false);
+
+setTakaraUsedCount(0);
 
   setPhase(
     'dice'
@@ -5790,6 +6484,16 @@ function handleBuyInfo(
     nextCard
   );
 
+
+  applyKuroDenDenMushi(
+    0,
+    infoType,
+    nextRevealedInfo,
+    nextCard
+  );
+
+
+
   // ====================================================
   // ここでは actionUsed を true にしない
   // ビブカ情報購入は何回でも可能
@@ -5840,6 +6544,89 @@ function handleBuyInfo(
       info[type] !== null
     );
   }
+
+
+function applyKuroDenDenMushi(
+buyerSeat,
+infoType,
+revealedInfo,
+sourceCard
+) {
+setPlayers((prev) => {
+return prev.map((player, index) => {
+// 購入者本人には発動しない
+if (index === buyerSeat) {
+return player;
+}
+
+
+  const kurodenCount =
+    (player.cards || []).filter(
+      (card) => card?.id === 'kuroden'
+    ).length;
+
+  if (kurodenCount === 0) {
+    return player;
+  }
+
+  // 黒電伝虫1枚につき30%、最大60%
+  const chance =
+    Math.min(kurodenCount * 0.3, 0.6);
+
+  if (Math.random() >= chance) {
+    return player;
+  }
+
+  const previousInfo =
+    player.vivreCardInfo || {};
+
+  // すでに取得済みの情報は上書きしない
+  if (
+    previousInfo[infoType] !== undefined &&
+    previousInfo[infoType] !== null
+  ) {
+    return player;
+  }
+
+  let copiedValue =
+    revealedInfo?.[infoType];
+
+  if (copiedValue === undefined || copiedValue === null) {
+    return player;
+  }
+
+  if (Array.isArray(copiedValue)) {
+    copiedValue = [...copiedValue];
+  }
+
+  const nextInfo = {
+    ...previousInfo,
+    [infoType]: copiedValue,
+  };
+
+  // 身長・年齢の桁数も保存
+  const profile =
+    getCardProfile(sourceCard);
+
+  if (infoType === 'height') {
+    nextInfo.heightLength =
+      String(profile?.height ?? '').length;
+  }
+
+  if (infoType === 'age') {
+    nextInfo.ageLength =
+      String(profile?.age ?? '').length;
+  }
+
+  return {
+    ...player,
+    vivreCardInfo: nextInfo,
+  };
+});
+
+});
+}
+
 
   function savePlayerInfo(
     seat,
@@ -5901,22 +6688,17 @@ function handleBuyInfo(
   }
 
 
-function handleAnswerSubmit(
-  event
-) {
+function handleAnswerSubmit(event) {
   event.preventDefault();
 
-  console.log(
-    '[ANSWER DEBUG]',
-    {
-      phase,
-      turnPlayer,
-      answerMode,
-      answer,
-      currentVivreCard,
-      extraCharacter,
-    }
-  );
+  console.log('[ANSWER DEBUG]', {
+    phase,
+    turnPlayer,
+    answerMode,
+    answer,
+    currentVivreCard,
+    extraCharacter,
+  });
 
   if (
     phase !== 'answer' ||
@@ -5926,38 +6708,57 @@ function handleAnswerSubmit(
     return;
   }
 
-  const input =
-    answer.trim();
+  const input = answer.trim();
 
   if (!input) {
     return;
   }
 
-  /*
-   * ========================================================
-   * 1枚ビブカを回答
-   * ========================================================
-   */
+  // バクバクの実の所持枚数に応じて回答回数を決定
+  const bakubakuCount =
+    (players[0]?.cards || []).filter(
+      (card) => card.id === 'bakubaku'
+    ).length;
 
-  if (
-    answerMode === 'vivre'
-  ) {
-    if (
-      !currentVivreCard
-    ) {
+  const maxAttempts = 1 + bakubakuCount;
+  const nextAttempts = answerAttempts + 1;
+  const hasMoreAttempts =
+    nextAttempts < maxAttempts;
+
+  setAnswerAttempts(nextAttempts);
+
+  // 回答権が残っている場合の共通処理
+  const continueAnswering = () => {
+    setAnswer('');
+    setAnswerMode(null);
+    setPhase('answer');
+    setMessage(
+      `回答権が残っています（残り${maxAttempts - nextAttempts}回）。次の回答先を選んでください。`
+    );
+  };
+
+  // 回答権を使い切った場合の共通処理
+  const finishAnswering = (message) => {
+    setAnswer('');
+    setAnswerMode(null);
+    setMessage(message);
+
+    setTimeout(() => {
+      startNextPlayerTurn();
+    }, 900);
+  };
+
+  // =====================================================
+  // 1枚ビブカへの回答
+  // =====================================================
+  if (answerMode === 'vivre') {
+    if (!currentVivreCard) {
       return;
     }
 
-    const correct =
-      isCorrectVivreAnswer
-        ? isCorrectVivreAnswer(
-            currentVivreCard,
-            input
-          )
-        : isSimpleAnswerCorrect(
-            currentVivreCard,
-            input
-          );
+    const correct = isCorrectVivreAnswer
+      ? isCorrectVivreAnswer(currentVivreCard, input)
+      : isSimpleAnswerCorrect(currentVivreCard, input);
 
     setLastAnswer({
       player: 'あなた',
@@ -5965,103 +6766,66 @@ function handleAnswerSubmit(
       correct,
     });
 
-    setAnswerUsed(
-      true
-    );
+    setAnswerUsed(true);
 
-    if (
-      correct
-    ) {
-      handleVivreWin(
-        0,
-        input
-      );
+    if (correct) {
+      handleVivreWin(0, input, {
+        continueAnswering: hasMoreAttempts,
+        finishTurn: true,
+      });
 
       return;
     }
 
-    setMessage(
-      `あなたの回答「${input}」は不正解。ターン終了です。`
+    if (hasMoreAttempts) {
+      continueAnswering();
+      setLastAnswer({
+        player: 'あなた',
+        answer: input,
+        correct: false,
+      });
+      return;
+    }
+
+    finishAnswering(
+      `あなたの回答「${input}」は不正解。回答権を使い切りました。`
     );
-
-    setAnswer('');
-
-    setAnswerMode(
-      null
-    );
-
-    setTimeout(() => {
-      startNextPlayerTurn();
-    }, 900);
 
     return;
   }
 
-  /*
-   * ========================================================
-   * エクストラキャラを回答
-   * ========================================================
-   */
-
-  if (
-    answerMode === 'extra'
-  ) {
-    if (
-      !extraCharacter
-    ) {
-      setMessage(
-        'エクストラキャラが設定されていません。'
-      );
-
+  // =====================================================
+  // エクストラキャラへの回答
+  // =====================================================
+  if (answerMode === 'extra') {
+    if (!extraCharacter) {
+      setMessage('エクストラキャラが設定されていません。');
       return;
     }
 
-    /*
-     * エクストラキャラ専用の正規化
-     */
-    const normalizeExtraAnswer =
-      (value) =>
-        String(
-          value || ''
-        )
-          .normalize('NFKC')
-          .replace(
-            /\s+/g,
-            ''
-          )
-          .replace(
-            /（.*?）|\(.*?\)/g,
-            ''
-          )
-          .replace(
-            /・/g,
-            ''
-          )
-          .toLowerCase();
+    const normalizeExtraAnswer = (value) =>
+      String(value || '')
+        .normalize('NFKC')
+        .replace(/\s+/g, '')
+        .replace(/（.*?）|\(.*?\)/g, '')
+        .replace(/・/g, '')
+        .toLowerCase();
 
-    const extraName =
-      String(
-        extraCharacter.name ||
-          ''
-      );
+    const extraName = String(
+      extraCharacter.name || ''
+    );
 
     const normalizedInput =
-      normalizeExtraAnswer(
-        input
-      );
+      normalizeExtraAnswer(input);
 
     const normalizedExtraName =
-      normalizeExtraAnswer(
-        extraName
-      );
+      normalizeExtraAnswer(extraName);
 
-    const correct =
-      Boolean(
-        normalizedInput &&
-        normalizedExtraName &&
-        normalizedInput ===
-          normalizedExtraName
-      );
+    const correct = Boolean(
+      normalizedInput &&
+      normalizedExtraName &&
+      normalizedInput === normalizedExtraName
+    );
 
     setLastAnswer({
       player: 'あなた',
@@ -6069,165 +6833,102 @@ function handleAnswerSubmit(
       correct,
     });
 
-    setAnswerUsed(
-      true
-    );
+    setAnswerUsed(true);
 
+    if (correct) {
+      const character = extraCharacter;
 
-
-/*
- * ========================================================
- * エクストラキャラ正解
- * ========================================================
- */
-
-if (
-  correct
-) {
-  const character =
-    extraCharacter;
-
-  updatePlayer(
-    0,
-    (player) => ({
-      ...player,
-
-      extraCharacterCount:
-        Number(
-          player.extraCharacterCount ||
-            0
-        ) + 1,
-
-      cards: [
-        ...(player.cards || []),
-        {
-          id:
-            `extra-${character.id || character.number || character.name}`,
-          type: 'extra',
-          name:
-            character.name ||
-            '不明',
-          description:
-            character.description ||
-            '',
-          character,
-        },
-      ],
-    })
-  );
-
-  /*
-   * ======================================================
-   * 正解演出
-   * ======================================================
-   */
-
-setWinner(
-  0
-);
-
-setRevealResult({
-  type: 'extra',
-  name:
-    character.name ||
-    '不明',
-  player: 0,
-});
-
-setMessage(
-  `正解！あなたが「${
-    character.name ||
-    '不明'
-  }」を獲得しました。`
-);
-  setAnswer('');
-  setAnswerMode(null);
-
-  /*
-   * ======================================================
-   * 次のエクストラキャラを補充
-   * ======================================================
-   */
-
-  const nextExtraCharacter =
-    randomChoice(
-      extraCharacters
-    );
-
-  setExtraCharacter(
-    nextExtraCharacter
-  );
-
-  const nextDescription =
-    String(
-      nextExtraCharacter?.description ||
-        ''
-    );
-
-setExtraCharacterBoard(
-  createExtraCharacterBoard(
-    nextDescription
-  )
-);
-
-setPlayers(
-  (prev) =>
-    prev.map(
-      (player) => ({
+      updatePlayer(0, (player) => ({
         ...player,
 
-        extraCharacterRevealedIndexes: [],
-      })
-    )
-);
+        extraCharacterCount:
+          Number(player.extraCharacterCount || 0) + 1,
 
-  /*
-   * ======================================================
-   * 正解画面を表示
-   * ======================================================
-   *
-   * 1枚ビブカと同じく
-   * phase = reveal にして、
-   * 大きな「正解！」表示を出す。
-   */
+        cards: [
+          ...(player.cards || []),
+          {
+            id: `extra-${character.id || character.number || character.name}`,
+            type: 'extra',
+            name: character.name || '不明',
+            description: character.description || '',
+            character,
+          },
+        ],
+      }));
 
-  setPhase('reveal');
+      setWinner(0);
 
-  /*
-   * 少し正解画面を見せてから
-   * 次のプレイヤーへ。
-   */
+      setRevealResult({
+        type: 'extra',
+        name: character.name || '不明',
+        player: 0,
+      });
 
-  setTimeout(
-    () => {
-      startNextPlayerTurn();
-    },
-    1800
-  );
+      setMessage(
+        `正解！あなたが「${character.name || '不明'}」を獲得しました。`
+      );
 
-  return;
-}
+      setAnswer('');
+      setAnswerMode(null);
 
+      const nextExtraCharacter =
+        randomChoice(extraCharacters);
 
-    /*
-     * ========================================================
-     * エクストラキャラ不正解
-     * ========================================================
-     */
+      setExtraCharacter(nextExtraCharacter);
 
-    setMessage(
-      `あなたの回答「${input}」は不正解。ターン終了です。`
+      const nextDescription =
+        String(nextExtraCharacter?.description || '');
+
+      setExtraCharacterBoard(
+        createExtraCharacterBoard(nextDescription)
+      );
+
+      setPlayers((prev) =>
+        prev.map((player) => ({
+          ...player,
+          extraCharacterRevealedIndexes: [],
+          extraSpecifiedCount: 0,
+          extraRandomCount: 0,
+        }))
+      );
+
+      setPhase('reveal');
+
+      setTimeout(() => {
+        if (hasMoreAttempts) {
+          setWinner(null);
+          setRevealResult(null);
+          setLastAnswer(null);
+          setPhase('answer');
+          setAnswer('');
+          setAnswerMode(null);
+
+          setMessage(
+            `エクストラキャラ獲得！回答権が残っています（残り${maxAttempts - nextAttempts}回）。次の回答先を選んでください。`
+          );
+        } else {
+          startNextPlayerTurn();
+        }
+      }, 1800);
+
+      return;
+    }
+
+    if (hasMoreAttempts) {
+      continueAnswering();
+
+      setLastAnswer({
+        player: 'あなた',
+        answer: input,
+        correct: false,
+      });
+
+      return;
+    }
+
+    finishAnswering(
+      `あなたの回答「${input}」は不正解。回答権を使い切りました。`
     );
-
-    setAnswer('');
-
-    setAnswerMode(
-      null
-    );
-
-    setTimeout(() => {
-      startNextPlayerTurn();
-    }, 900);
 
     return;
   }
@@ -6259,6 +6960,8 @@ function startNextPlayerTurn() {
   setTurnPlayer(
     nextPlayer
   );
+
+setTakaraUsedCount(0);
 
   setPhase(
     'dice'
@@ -6325,144 +7028,141 @@ addActionHistory(
   }, 50);
 }
 
-  function handleVivreWin(
-    seat,
-    submittedAnswer
-  ) {
-    const profile =
-      getCardProfile(
-        currentVivreCard
-      );
+function handleVivreWin(seat, submittedAnswer, options = {}) {
+const profile =
+getCardProfile(
+currentVivreCard
+);
 
-    if (!profile) {
-      return;
-    }
+if (!profile) {
+return;
+}
 
-    const name =
-      String(
-        profile.name ||
-          submittedAnswer ||
-          '不明'
-      );
+const name =
+String(
+profile.name ||
+submittedAnswer ||
+'不明'
+);
 
-    updatePlayer(
-  seat,
-  (player) => ({
-    ...player,
+updatePlayer(
+seat,
+(player) => ({
+...player,
 
-    vivreCardCount:
-      Number(
-        player.vivreCardCount ||
-          0
-      ) + 1,
 
-    vivreCardInfo: {},
+  vivreCardCount:
+    Number(
+      player.vivreCardCount ||
+        0
+    ) + 1,
 
-    cards: [
-          ...(player.cards || []),
-          {
-            id:
-              `vivre-${profile.id || profile.number || name}`,
-            type: 'vivre',
-            name,
-            profile,
-          },
-        ],
-      })
-    );
+  vivreCardInfo: {},
+
+  cards: [
+    ...(player.cards || []),
+    {
+      id:
+        `vivre-${profile.id || profile.number || name}`,
+      type: 'vivre',
+      name,
+      profile,
+    },
+  ],
+})
+
+
+);
+
+// 全プレイヤーの1枚ビブカ調査情報をリセット
+setPlayers((prev) =>
+prev.map((player) => ({
+...player,
+vivreCardInfo: {},
+}))
+);
 
 setWinner(
-  seat
+seat
 );
 
 setRevealResult({
-  type: 'vivre',
-  name,
-  player: seat,
+type: 'vivre',
+name,
+player: seat,
 });
 
 setPhase(
-  'reveal'
+'reveal'
 );
 
-    setMessage(
-      `正解！${players[seat]?.name || `${seat + 1}P`}が「${name}」を獲得しました。`
-    );
+setMessage(
+`正解！${players[seat]?.name || `${seat + 1}P`}が「${name}」を獲得しました。`
+);
 
-    setTimeout(
-      () => {
-        replaceVivreCard();
-      },
-      1800
-    );
+setTimeout(
+() => {
+replaceVivreCard(options);
+},
+1800
+);
+}
+
+
+function replaceVivreCard(options = {}) {
+  const profile = getCardProfile(currentVivreCard);
+
+  const oldId = String(
+    profile?.id ??
+    profile?.number ??
+    profile?.name ??
+    ''
+  );
+
+  const nextUsed = oldId
+    ? [...usedVivreIds, oldId]
+    : usedVivreIds;
+
+  const nextCard = chooseNewVivreCard(
+    profiles,
+    nextUsed
+  );
+
+  setUsedVivreIds(nextUsed);
+  setCurrentVivreCard(nextCard);
+
+  setAnswer('');
+  setAnswerMode(null);
+  setLastAnswer(null);
+  setWinner(null);
+  setRevealResult(null);
+
+  if (options.finishTurn) {
+    if (options.continueAnswering) {
+      setTurnPlayer(0);
+      setPhase('answer');
+
+      setMessage(
+        '新しい1枚ビブカが補充されました。残りの回答権を使えます。回答先を選んでください。'
+      );
+    } else {
+      startNextPlayerTurn();
+    }
+
+    return;
   }
 
-  function replaceVivreCard() {
-    const profile =
-      getCardProfile(
-        currentVivreCard
-      );
+  // 既存の通常処理は維持
+  setActionUsed(false);
+  setAnswerUsed(false);
+  setAnswerAttempts(0);
+  setTurnPlayer(0);
+  setPhase('action');
 
-    const oldId =
-      String(
-        profile?.id ??
-          profile?.number ??
-          profile?.name ??
-          ''
-      );
-
-    const nextUsed =
-      oldId
-        ? [
-            ...usedVivreIds,
-            oldId,
-          ]
-        : usedVivreIds;
-
-    const nextCard =
-      chooseNewVivreCard(
-        profiles,
-        nextUsed
-      );
-
-    setUsedVivreIds(
-      nextUsed
-    );
-
-    setCurrentVivreCard(
-      nextCard
-    );
-
-    setWinner(
-      null
-    );
-
-    setAnswer('');
-
-    setLastAnswer(
-      null
-    );
-
-    setActionUsed(
-      false
-    );
-
-    setAnswerUsed(
-      false
-    );
-
-    setTurnPlayer(
-      0
-    );
-
-    setPhase(
-      'action'
-    );
-
-    setMessage(
-      '新しい1枚ビブカが補充されました。あなたのターンです。'
-    );
-  }
+  setMessage(
+    '新しい1枚ビブカが補充されました。あなたのターンです。'
+  );
+}
 
   function runCpuAnswers() {
     if (
@@ -6678,88 +7378,78 @@ addActionHistory(
        * ランダム公開を、
        * ベリーが足りなくなるまで行う。
        */
-      let cpuExtraRandomCount = 0;
+  let cpuExtraRandomCount = 0;
 
-      while (
-        workingPlayer?.resources?.berry >=
-        3
-      ) {
-        const hiddenIndexes =
-          extraCharacterBoard
-            .filter(
-              (entry) =>
-                !entry.revealed
-            )
-            .map(
-              (entry) =>
-                entry.index
-            );
+  /*
+   * CPUのエクストラ情報購入
+   * 公開した文字番号もプレイヤーに保存する
+   */
+  let cpuExtraIndexes = Array.isArray(
+    workingPlayer?.extraCharacterRevealedIndexes
+  )
+    ? [...workingPlayer.extraCharacterRevealedIndexes]
+    : [];
 
-        if (
-          hiddenIndexes.length === 0
-        ) {
-          break;
-        }
+  while (
+    Number(workingPlayer?.resources?.berry || 0) >= 3
+  ) {
+    const knownIndexes = new Set(
+      cpuExtraIndexes.map(Number)
+    );
 
-        const randomIndex =
-          randomChoice(
-            hiddenIndexes
-          );
+    const hiddenIndexes =
+      extraCharacterBoard
+        .filter(
+          (entry) =>
+            !entry.revealed &&
+            !knownIndexes.has(Number(entry.index))
+        )
+        .map((entry) => entry.index);
 
-        if (
-          randomIndex == null
-        ) {
-          break;
-        }
+    if (hiddenIndexes.length === 0) {
+      break;
+    }
 
-        workingPlayer =
-          applyCost(
-            workingPlayer,
-            {
-              berry: 3,
-              verse: 0,
-              eternal: 0,
-            }
-          );
+    const randomIndex = randomChoice(hiddenIndexes);
 
-               cpuExtraRandomCount += 1;
+    if (randomIndex == null) {
+      break;
+    }
 
-        workingPlayer = {
-          ...workingPlayer,
-
-          extraCharacterRevealedIndexes: [
-            ...(Array.isArray(
-              workingPlayer.extraCharacterRevealedIndexes
-            )
-              ? workingPlayer.extraCharacterRevealedIndexes
-              : []),
-
-            randomIndex,
-          ],
-        };
+    workingPlayer = applyCost(
+      workingPlayer,
+      {
+        berry: 3,
+        verse: 0,
+        eternal: 0,
       }
+    );
 
-      if (
-        cpuExtraRandomCount > 0
-      ) {
-        workingPlayer = {
-          ...workingPlayer,
-          extraRandomCount:
-            Number(
-              workingPlayer
-                .extraRandomCount ||
-              0
-            ) +
-            cpuExtraRandomCount,
-        };
-      }
+    // 購入した文字番号を保存
+    cpuExtraIndexes.push(randomIndex);
+
+    cpuExtraRandomCount += 1;
+  }
+
+  workingPlayer = {
+    ...workingPlayer,
+    extraRandomCount:
+      Number(workingPlayer.extraRandomCount || 0) +
+      cpuExtraRandomCount,
+    extraCharacterRevealedIndexes: [
+      ...new Set([
+        ...cpuExtraIndexes.map(Number),
+      ]),
+    ],
+  };
 
       /*
        * CPUが購入した情報をまとめて保存する
        */
-      if (
-        boughtInfos.length > 0
-      ) {
+if (
+  boughtInfos.length > 0 ||
+  cpuExtraRandomCount > 0
+) {
         const finalCard =
           revealedCard;
 
@@ -6793,6 +7483,16 @@ updatePlayer(
       ),
   })
 );
+
+        // 黒電伝虫：CPUが購入した情報を他のプレイヤーへ共有
+        for (const info of boughtInfos) {
+          applyKuroDenDenMushi(
+            seat,
+            info,
+            finalCard?.revealedInfo,
+            finalCard
+          );
+        }
 
 
         setMessage(
@@ -6897,10 +7597,20 @@ addActionHistory(
   );
 }
 
-  function handleEndMyTurn() {
+function handleEndMyTurn() {
   if (
     !isMyTurn
   ) {
+    return;
+  }
+
+  if (
+    tactResourceSelecting ||
+    tactResourceRemaining > 0
+  ) {
+    setMessage(
+      '魔法の天候棒の資源選択を終えてください。'
+    );
     return;
   }
 
@@ -7305,6 +8015,16 @@ return (
                       }
                     </strong>
                   </div>
+                  <div>
+                    エクストラ
+                    <strong>
+                      {
+                        player
+                          .extraCharacterCount ??
+                        0
+                      }
+                    </strong>
+                  </div>
                 </div>
               </button>
             );
@@ -7440,25 +8160,32 @@ return (
     myPlayer?.diceA ||
     INITIAL_DICE_A
   }
-  rotation={
-    yomiyomiRolling &&
-    yomiyomiRollingType === 'a'
+rotation={
+  impactDialRolling &&
+  impactDialRollingType === 'a'
+    ? impactDialDiceRotation.a
+    : yomiyomiRolling &&
+      yomiyomiRollingType === 'a'
       ? yomiyomiDiceRotation.a
       : dice3DRotation.a
-  }
+}
   result={
     yomiyomiRolling &&
     yomiyomiRollingType === 'a'
       ? yomiyomiRollResult
       : allDiceResults?.[0]?.a
   }
-  rolling={
-    diceRolling ||
-    (
-      yomiyomiRolling &&
-      yomiyomiRollingType === 'a'
-    )
-  }
+rolling={
+  diceRolling ||
+  (
+    impactDialRolling &&
+    impactDialRollingType === 'a'
+  ) ||
+  (
+    yomiyomiRolling &&
+    yomiyomiRollingType === 'a'
+  )
+}
 />
 
     {/* ==============================
@@ -7470,12 +8197,15 @@ return (
     myPlayer?.diceB ||
     INITIAL_DICE_B
   }
-  rotation={
-    yomiyomiRolling &&
-    yomiyomiRollingType === 'b'
+ rotation={
+  impactDialRolling &&
+  impactDialRollingType === 'b'
+    ? impactDialDiceRotation.b
+    : yomiyomiRolling &&
+      yomiyomiRollingType === 'b'
       ? yomiyomiDiceRotation.b
       : dice3DRotation.b
-  }
+}
   result={
     yomiyomiRolling &&
     yomiyomiRollingType === 'b'
@@ -7483,12 +8213,16 @@ return (
       : allDiceResults?.[0]?.b
   }
   rolling={
-    diceRolling ||
-    (
-      yomiyomiRolling &&
-      yomiyomiRollingType === 'b'
-    )
-  }
+  diceRolling ||
+  (
+    impactDialRolling &&
+    impactDialRollingType === 'b'
+  ) ||
+  (
+    yomiyomiRolling &&
+    yomiyomiRollingType === 'b'
+  )
+}
 />
 
     {/* ==============================
@@ -7516,267 +8250,307 @@ return (
       />
     </div>
 
-    {/* ==============================
-        全員のダイス結果
-        常時表示
-    ============================== */}
-    <div
-      style={{
-        background:
-          'rgba(255,253,242,0.72)',
-        border:
-          '2px solid rgba(128,99,63,0.35)',
-        borderRadius: '10px',
-        padding: '8px 10px',
-        minHeight: '150px',
-        boxSizing: 'border-box',
-      }}
-    >
-      <div
-        style={{
-          fontSize: '14px',
-          fontWeight: '900',
-          color: '#3d2c1b',
-          marginBottom: '7px',
-          textAlign: 'center',
-        }}
-      >
-        🎲 全員のダイス結果
-      </div>
 
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns:
-            'repeat(4, minmax(0, 1fr))',
-          gap: '6px',
-        }}
-      >
-        {players.map(
-          (player) => {
-            const result =
-              allDiceResults?.[
-                player.seat
-              ];
+{/* ==============================
+    全員のダイス結果
+    常時表示
+============================== */}
+<div
+  style={{
+    background: 'rgba(255,253,242,0.72)',
+    border: '2px solid rgba(128,99,63,0.35)',
+    borderRadius: '10px',
+    padding: '8px 10px',
+    minHeight: '150px',
+    boxSizing: 'border-box',
+  }}
+>
+  <div
+    style={{
+      fontSize: '14px',
+      fontWeight: '900',
+      color: '#3d2c1b',
+      marginBottom: '7px',
+      textAlign: 'center',
+    }}
+  >
+    🎲 全員のダイス結果
+  </div>
 
-            const renderResultIcon = (
-              resultFace
-            ) => {
-              if (!resultFace) {
-                return (
-                  <span
-                    style={{
-                      fontSize: '18px',
-                      color: '#8c7a62',
-                    }}
-                  >
-                    ？
-                  </span>
-                );
-              }
+  <div
+    style={{
+      display: 'grid',
+      gridTemplateColumns: 'repeat(4, minmax(0, 1fr))',
+      gap: '6px',
+    }}
+  >
+    {players.map((player) => {
+      const result = allDiceResults?.[player.seat];
 
-              if (
-                resultFace.type ===
-                'manemane'
-              ) {
-                return (
-                  <img
-                    src="/saikoro/manedice.png"
-                    alt="マネマネマス"
-                    style={{
-                      width: '30px',
-                      height: '30px',
-                      objectFit: 'contain',
-                    }}
-                  />
-                );
-              }
+      // 資源1個分のアイコンを表示
+      const renderSingleResultIcon = (face) => {
+        if (!face) {
+          return null;
+        }
 
-              return (
-                <img
-                  src={
-                    RESOURCE_ICONS[
-                      resultFace.type
-                    ]
-                  }
-                  alt={
-                    RESOURCE_NAMES[
-                      resultFace.type
-                    ] ||
-                    resultFace.type
-                  }
+        if (face.type === 'manemane') {
+          return (
+            <img
+              src="/saikoro/manedice.png"
+              alt="マネマネマス"
+              style={{
+                width: '18px',
+                height: '18px',
+                objectFit: 'contain',
+                flexShrink: 0,
+              }}
+            />
+          );
+        }
+
+        if (face.type === 'tact') {
+          return (
+            <img
+              src="/saikoro/tactdice.png"
+              alt="魔法の天候棒"
+              style={{
+                width: '18px',
+                height: '18px',
+                objectFit: 'contain',
+                flexShrink: 0,
+              }}
+            />
+          );
+        }
+
+        const icon = RESOURCE_ICONS[face.type];
+
+        if (!icon) {
+          return (
+            <span
+              style={{
+                fontSize: '10px',
+                color: '#8c7a62',
+              }}
+            >
+              {RESOURCE_NAMES[face.type] || face.type}
+            </span>
+          );
+        }
+
+        return (
+          <img
+            src={icon}
+            alt={RESOURCE_NAMES[face.type] || face.type}
+            style={{
+              width: '18px',
+              height: '18px',
+              objectFit: 'contain',
+              flexShrink: 0,
+            }}
+          />
+        );
+      };
+
+      // ダイス面のアイコンを表示
+      const renderResultIcon = (resultFace) => {
+        if (!resultFace) {
+          return (
+            <span
+              style={{
+                fontSize: '18px',
+                color: '#8c7a62',
+              }}
+            >
+              ？
+            </span>
+          );
+        }
+
+        if (
+          (resultFace.type === 'combo' ||
+            resultFace.type === 'choice') &&
+          Array.isArray(resultFace.faces)
+        ) {
+          const isChoice = resultFace.type === 'choice';
+
+          return (
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexWrap: 'wrap',
+                gap: '1px',
+                maxWidth: '64px',
+              }}
+            >
+              {resultFace.faces.map((face, index) => (
+                <span
+                  key={`${player.seat}-${resultFace.type}-${index}`}
                   style={{
-                    width: '30px',
-                    height: '30px',
-                    objectFit: 'contain',
+                    display: 'contents',
                   }}
-                />
-              );
-            };
+                >
+                  {index > 0 && (
+                    <span
+                      style={{
+                        fontSize: isChoice ? '7px' : '10px',
+                        fontWeight: '900',
+                        color: '#806f57',
+                      }}
+                    >
+                      {isChoice ? 'OR' : '+'}
+                    </span>
+                  )}
+                  {renderSingleResultIcon(face)}
+                </span>
+              ))}
+            </div>
+          );
+        }
 
-            const renderResultName = (
-              resultFace
-            ) => {
-              if (!resultFace) {
+        return renderSingleResultIcon(resultFace);
+      };
+
+      // ダイス面の名前を表示
+      const renderResultName = (resultFace) => {
+        if (!resultFace) {
+          return '---';
+        }
+
+        if (resultFace.type === 'manemane') {
+          return 'マネマネマス';
+        }
+
+        if (resultFace.type === 'tact') {
+          return '魔法の天候棒';
+        }
+
+        if (
+          (resultFace.type === 'combo' ||
+            resultFace.type === 'choice') &&
+          Array.isArray(resultFace.faces)
+        ) {
+          const separator =
+            resultFace.type === 'choice' ? ' OR ' : ' ＋ ';
+
+          return resultFace.faces
+            .map((face) => {
+              if (!face) {
                 return '---';
               }
 
-              if (
-                resultFace.type ===
-                'manemane'
-              ) {
+              if (face.type === 'manemane') {
                 return 'マネマネマス';
               }
 
-              return (
-                RESOURCE_NAMES[
-                  resultFace.type
-                ] ||
-                resultFace.type
-              );
-            };
-
-            return (
-              <div
-                key={
-                  player.seat
-                }
-                style={{
-                  background:
-                    'rgba(255,255,255,0.62)',
-                  border:
-                    '1px solid rgba(128,99,63,0.25)',
-                  borderRadius:
-                    '7px',
-                  padding:
-                    '6px 4px',
-                  textAlign:
-                    'center',
-                }}
-              >
-                <div
-                  style={{
-                    fontSize:
-                      '11px',
-                    fontWeight:
-                      '900',
-                    color:
-                      '#4b3926',
-                    marginBottom:
-                      '4px',
-                    whiteSpace:
-                      'nowrap',
-                    overflow:
-                      'hidden',
-                    textOverflow:
-                      'ellipsis',
-                  }}
-                >
-                  {player.name}
-                </div>
-
-                <div
-                  style={{
-                    display:
-                      'flex',
-                    justifyContent:
-                      'center',
-                    alignItems:
-                      'center',
-                    gap: '5px',
-                  }}
-                >
-                  <div
-                    style={{
-                      width:
-                        '32px',
-                      height:
-                        '32px',
-                      display:
-                        'flex',
-                      alignItems:
-                        'center',
-                      justifyContent:
-                        'center',
-                    }}
-                  >
-                    {renderResultIcon(
-                      result?.a
-                    )}
-                  </div>
-
-                  <span
-                    style={{
-                      fontSize:
-                        '11px',
-                      color:
-                        '#806f57',
-                      fontWeight:
-                        '900',
-                    }}
-                  >
-                    ＋
-                  </span>
-
-                  <div
-                    style={{
-                      width:
-                        '32px',
-                      height:
-                        '32px',
-                      display:
-                        'flex',
-                      alignItems:
-                        'center',
-                      justifyContent:
-                        'center',
-                    }}
-                  >
-                    {renderResultIcon(
-                      result?.b
-                    )}
-                  </div>
-                </div>
-
-                <div
-                  style={{
-                    marginTop:
-                      '3px',
-                    fontSize:
-                      '9px',
-                    color:
-                      '#786348',
-                    fontWeight:
-                      '800',
-                    whiteSpace:
-                      'nowrap',
-                  }}
-                >
-                  {renderResultName(
-                    result?.a
-                  )}
-
-                  {' ＋ '}
-
-                  {renderResultName(
-                    result?.b
-                  )}
-                </div>
-              </div>
-            );
-          }
-        )}
-      </div>
-    </div>
-    {diceRolling && (
-      <div
-        style={
-          styles.diceWorkshopRollingText
+              return RESOURCE_NAMES[face.type] || face.type;
+            })
+            .join(separator);
         }
-      >
-        ダイスを振っています……
-      </div>
-    )}
+
+        return RESOURCE_NAMES[resultFace.type] || resultFace.type;
+      };
+
+      return (
+        <div
+          key={player.seat}
+          style={{
+            background: 'rgba(255,255,255,0.62)',
+            border: '1px solid rgba(128,99,63,0.25)',
+            borderRadius: '7px',
+            padding: '6px 4px',
+            textAlign: 'center',
+            minWidth: 0,
+          }}
+        >
+          <div
+            style={{
+              fontSize: '11px',
+              fontWeight: '900',
+              color: '#4b3926',
+              marginBottom: '4px',
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+            }}
+          >
+            {player.name}
+          </div>
+
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'center',
+              alignItems: 'center',
+              gap: '5px',
+            }}
+          >
+            <div
+              style={{
+                width: '32px',
+                height: '32px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                minWidth: 0,
+              }}
+            >
+              {renderResultIcon(result?.a)}
+            </div>
+
+            <span
+              style={{
+                fontSize: '11px',
+                color: '#806f57',
+                fontWeight: '900',
+              }}
+            >
+              ＋
+            </span>
+
+            <div
+              style={{
+                width: '32px',
+                height: '32px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                minWidth: 0,
+              }}
+            >
+              {renderResultIcon(result?.b)}
+            </div>
+          </div>
+
+          <div
+            style={{
+              marginTop: '3px',
+              fontSize: '9px',
+              color: '#786348',
+              fontWeight: '800',
+              whiteSpace: 'normal',
+              overflowWrap: 'anywhere',
+            }}
+          >
+            {renderResultName(result?.a)}
+            {' ＋ '}
+            {renderResultName(result?.b)}
+          </div>
+        </div>
+      );
+    })}
+  </div>
+</div>
+
+{diceRolling && (
+  <div
+    style={styles.diceWorkshopRollingText}
+  >
+    ダイスを振っています……
+  </div>
+)}
   </div>
 </section>
 
@@ -8003,6 +8777,292 @@ return (
               </div>
             )}
 
+{(takaraRolling || takaraResult !== null) && (
+  <div
+    style={{
+      position: 'fixed',
+      inset: 0,
+      zIndex: 9999,
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      background: 'rgba(15, 12, 8, 0.72)',
+      perspective: '1000px',
+    }}
+  >
+
+
+<style>{`
+  @keyframes takaraDiceThrow {
+    0% {
+      transform: translateY(100px) scale(0.35);
+      opacity: 0;
+    }
+    20% {
+      transform: translateY(-35px) scale(1.25);
+      opacity: 1;
+    }
+    45% {
+      transform: translateY(12px) scale(1.15);
+      opacity: 1;
+    }
+    70% {
+      transform: translateY(-12px) scale(1.08);
+      opacity: 1;
+    }
+    100% {
+      transform: translateY(0) scale(1);
+      opacity: 1;
+    }
+  }
+
+  @keyframes takaraCubeSpin {
+    0% {
+      transform: rotateX(0deg) rotateY(0deg);
+    }
+    20% {
+      transform: rotateX(180deg) rotateY(180deg);
+    }
+    45% {
+      transform: rotateX(400deg) rotateY(320deg);
+    }
+    70% {
+      transform: rotateX(600deg) rotateY(540deg);
+    }
+    100% {
+      transform: rotateX(720deg) rotateY(720deg);
+    }
+  }
+
+  @keyframes takaraShadowPulse {
+    0%, 100% {
+      transform: scale(0.7);
+      opacity: 0.2;
+    }
+    50% {
+      transform: scale(1.2);
+      opacity: 0.55;
+    }
+  }
+
+  @keyframes takaraResultPop {
+    0% {
+      opacity: 0;
+      transform: scale(0.5);
+    }
+    75% {
+      opacity: 1;
+      transform: scale(1.12);
+    }
+    100% {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+`}</style>
+
+
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        gap: 24,
+        padding: 24,
+        width: '100%',
+      }}
+    >
+      <div
+        style={{
+          color: '#ffe5a1',
+          fontSize: 25,
+          fontWeight: 1000,
+          textShadow: '0 3px 8px #000',
+          textAlign: 'center',
+        }}
+      >
+        {takaraRolling
+          ? '食糧宝船！ミニダイス！'
+          : 'ミニダイスの出目！'}
+      </div>
+
+      <div
+        style={{
+          position: 'relative',
+          width: 220,
+          height: 220,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        <div
+          style={{
+            position: 'absolute',
+            bottom: 18,
+            width: 140,
+            height: 30,
+            borderRadius: '50%',
+            background: 'rgba(0,0,0,0.7)',
+            filter: 'blur(12px)',
+            animation: takaraRolling
+              ? 'takaraShadowPulse 0.5s infinite'
+              : 'none',
+          }}
+        />
+
+
+        <div
+          style={{
+            position: 'relative',
+            width: 112,
+            height: 112,
+            transformStyle: 'preserve-3d',
+            animation: takaraRolling
+              ? 'takaraCubeSpin 1.5s cubic-bezier(.15,.75,.2,1) forwards'
+              : 'none',
+          }}
+        >
+
+
+          {[
+            { name: 'front', transform: 'translateZ(56px)' },
+            { name: 'back', transform: 'rotateY(180deg) translateZ(56px)' },
+            { name: 'right', transform: 'rotateY(90deg) translateZ(56px)' },
+            { name: 'left', transform: 'rotateY(-90deg) translateZ(56px)' },
+            { name: 'top', transform: 'rotateX(90deg) translateZ(56px)' },
+            { name: 'bottom', transform: 'rotateX(-90deg) translateZ(56px)' },
+          ].map((face, index) => {
+            const faceGold =
+              index === 0 && takaraResult !== null
+                ? takaraResult
+                : index === 1
+                  ? 3
+                  : index === 2
+                    ? 2
+                    : 1;
+
+            return (
+              <div
+                key={face.name}
+                style={{
+                  position: 'absolute',
+                  inset: 0,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 3,
+                  boxSizing: 'border-box',
+                  border: '4px solid #80501b',
+                  borderRadius: 16,
+                  background: 'linear-gradient(145deg, #fff9df, #e8bd66)',
+                  boxShadow: 'inset 0 0 12px rgba(100,50,0,0.2)',
+                  backfaceVisibility: 'hidden',
+                  transform: face.transform,
+                }}
+              >
+                <img
+                  src="/saikoro/berry.png"
+                  alt="ベリー"
+                  style={{
+                    width: 49,
+                    height: 49,
+                    objectFit: 'contain',
+                  }}
+                />
+                <div
+                  style={{
+                    fontSize: 24,
+                    fontWeight: 1000,
+                    color: '#633c12',
+                    lineHeight: 1,
+                  }}
+                >
+                  ×{faceGold}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {takaraRolling ? (
+        <div
+          style={{
+            color: '#fff',
+            fontSize: 17,
+            fontWeight: 900,
+            textShadow: '0 2px 5px #000',
+          }}
+        >
+          ミニダイスを回します
+        </div>
+      ) : (
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: 12,
+            animation: 'takaraResultPop 250ms ease-out',
+          }}
+        >
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 10,
+              padding: '12px 22px',
+              borderRadius: 16,
+              background: 'linear-gradient(145deg, #fff4bd, #e9b34d)',
+              border: '3px solid #8b571a',
+              boxShadow: '0 6px 20px rgba(0,0,0,0.4)',
+            }}
+          >
+            <img
+              src="/saikoro/berry.png"
+              alt="ベリー"
+              style={{
+                width: 42,
+                height: 42,
+                objectFit: 'contain',
+              }}
+            />
+            <span
+              style={{
+                color: '#60390e',
+                fontSize: 29,
+                fontWeight: 1000,
+              }}
+            >
+              ベリー +{takaraResult}
+            </span>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setTakaraResult(null)}
+            style={{
+              border: '2px solid #f5d38c',
+              borderRadius: 999,
+              padding: '10px 30px',
+              background: '#75471c',
+              color: '#fff',
+              fontSize: 16,
+              fontWeight: 900,
+              cursor: 'pointer',
+            }}
+          >
+            OK
+          </button>
+        </div>
+      )}
+    </div>
+  </div>
+)}
+
 {revealResult && (
   <div
     style={
@@ -8088,59 +9148,170 @@ return (
     </button>
   )}
 
-                {Array.isArray(
-                  myPlayer?.cards
-                ) &&
-                  myPlayer.cards.some(
-                    (card) =>
-                      card?.id ===
-                      'takara'
-                  ) && (
-                    <button
-                      type="button"
-                      disabled
-                      style={{
-                        ...styles.primaryButton,
-                        minHeight: 48,
-                        padding:
-                          '8px 14px',
-                        fontSize: 16,
-                        fontWeight: 900,
-                        opacity: 0.55,
-                        cursor:
-                          'not-allowed',
-                      }}
-                    >
-                      食糧宝船を使用
-                    </button>
-                  )}
 
-                {Array.isArray(
-                  myPlayer?.cards
-                ) &&
-                  myPlayer.cards.some(
-                    (card) =>
-                      card?.id ===
-                      'news'
-                  ) && (
-                    <button
-                      type="button"
-                      disabled
-                      style={{
-                        ...styles.primaryButton,
-                        minHeight: 48,
-                        padding:
-                          '8px 14px',
-                        fontSize: 16,
-                        fontWeight: 900,
-                        opacity: 0.55,
-                        cursor:
-                          'not-allowed',
-                      }}
-                    >
-                      ニュース・クーを使用
-                    </button>
-                  )}
+{Array.isArray(myPlayer?.cards) &&
+  myPlayer.cards.some(
+    (card) => card?.id === 'takara'
+  ) &&
+  takaraUsedCount <
+    myPlayer.cards.filter(
+      (card) => card?.id === 'takara'
+    ).length && (
+    <button
+      type="button"
+      disabled={takaraRolling}
+      onClick={handleTakaraUse}
+      style={{
+        ...styles.primaryButton,
+        minHeight: 48,
+        padding: '8px 14px',
+        fontSize: 16,
+        fontWeight: 900,
+        opacity: takaraRolling ? 0.5 : 1,
+      }}
+    >
+      食糧宝船を使用
+    </button>
+  )}
+
+
+              
+
+{Array.isArray(myPlayer?.cards) &&
+  myPlayer.cards.some(
+    (card) => card?.id === 'news'
+  ) &&
+  newsUsedCount <
+    myPlayer.cards.filter(
+      (card) => card?.id === 'news'
+    ).length &&
+  !newsSelecting && (
+    <button
+      type="button"
+      disabled={!isMyTurn || phase !== 'action'}
+      onClick={() => setNewsSelecting(true)}
+      style={{
+        ...styles.primaryButton,
+        minHeight: 48,
+        padding: '8px 14px',
+        fontSize: 16,
+        fontWeight: 900,
+      }}
+    >
+      ニュース・クーを使用
+    </button>
+  )}
+
+
+{newsSelecting && (
+  <div
+    style={{
+      width: '100%',
+      padding: 12,
+      marginTop: 8,
+      borderRadius: 12,
+      background: '#fff8e7',
+      border: '3px solid #d6a447',
+      boxShadow: '0 8px 24px rgba(0,0,0,0.3)',
+      color: '#241d15',
+    }}
+  >
+    <div
+      style={{
+        fontSize: 18,
+        fontWeight: 1000,
+        textAlign: 'center',
+        marginBottom: 12,
+      }}
+    >
+      ニュース・クー
+    </div>
+
+    <div
+      style={{
+        fontSize: 14,
+        fontWeight: 800,
+        textAlign: 'center',
+        marginBottom: 12,
+      }}
+    >
+      獲得する資源を1つ選んでください
+    </div>
+
+    <div
+      style={{
+        display: 'flex',
+        gap: 8,
+        justifyContent: 'center',
+        flexWrap: 'wrap',
+      }}
+    >
+      {[
+        { id: 'berry', name: 'ベリー', image: '/saikoro/berry.png' },
+        { id: 'verse', name: 'ヴァース', image: '/saikoro/vasu.png' },
+        { id: 'eternal', name: '永久指針', image: '/saikoro/pors.png' },
+      ].map((resource) => {
+
+const current =
+  Number(players?.[0]?.resources?.[resource.id] || 0);
+
+const max =
+  Number(players?.[0]?.maxResources?.[resource.id] || 0);
+
+        const full = current >= max;
+
+        return (
+          <button
+            key={resource.id}
+            type="button"
+            disabled={full}
+            onClick={() => handleNewsUse(resource.id)}
+            style={{
+              ...styles.primaryButton,
+              minWidth: 90,
+              minHeight: 90,
+              padding: 8,
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: 5,
+              opacity: full ? 0.45 : 1,
+            }}
+          >
+            <img
+              src={resource.image}
+              alt={resource.name}
+              style={{
+                width: 36,
+                height: 36,
+                objectFit: 'contain',
+              }}
+            />
+            <span>{resource.name}</span>
+            <span style={{ fontSize: 12 }}>
+              {full ? '上限到達' : '+1'}
+            </span>
+          </button>
+        );
+      })}
+    </div>
+
+    <button
+      type="button"
+      onClick={() => setNewsSelecting(false)}
+      style={{
+        ...styles.primaryButton,
+        width: '100%',
+        marginTop: 10,
+      }}
+    >
+      キャンセル
+    </button>
+  </div>
+)}
+
+
+
 
                 {yomiyomiSelecting && (
                   <div
@@ -8277,7 +9448,13 @@ extraCharacterBoard.map(
       item.revealed === true;
 
     const isMyRevealed =
-      myExtraCharacterRevealedIndexes.has(
+      new Set(
+        Array.isArray(
+          players[0]?.extraCharacterRevealedIndexes
+        )
+          ? players[0].extraCharacterRevealedIndexes
+          : []
+      ).has(
         item.index
       );
 
@@ -8533,17 +9710,19 @@ style={{
       <button
         type="button"
         onClick={() => {
-          setAnswer('');
-          setAnswerMode(null);
-          setAnswerUsed(true);
-          setMessage(
-            '回答をスキップしました。'
-          );
+  setAnswer('');
+  setAnswerMode(null);
+  setAnswerUsed(true);
+  setAnswerAttempts(0);
+  setMessage(
+    '回答をスキップしました。次のプレイヤーに移ります。'
+  );
+  setTimeout(() => {
+    startNextPlayerTurn();
+  }, 500);
+}}
 
-setTimeout(() => {
-  startNextPlayerTurn();
-}, 500);
-        }}
+
         style={{
           position: 'absolute',
           right: 1,
@@ -9585,6 +10764,299 @@ setTimeout(() => {
     </div>
   )}
 
+{/* ================================================== */}
+{/* 魔法の天候棒：ダイス面選択 */}
+{/* ================================================== */}
+
+{tactSelecting && !tactConfirming && (
+  <div
+    style={{
+      marginTop: 14,
+      padding: 16,
+      borderRadius: 18,
+      background: '#e0f2fe',
+      border: '3px solid #0284c7',
+      color: '#172033',
+    }}
+  >
+    <div
+      style={{
+        fontSize: 22,
+        fontWeight: 1000,
+        textAlign: 'center',
+        marginBottom: 6,
+      }}
+    >
+      魔法の天候棒
+    </div>
+
+    <div
+      style={{
+        fontSize: 15,
+        fontWeight: 900,
+        textAlign: 'center',
+        marginBottom: 14,
+      }}
+    >
+      天候棒マスに変更する自分のダイス面を2つ選んでください。
+      <br />
+      選択中：{tactSelectedDice.length} / 2
+    </div>
+
+    <div
+      style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+        gap: 12,
+      }}
+    >
+      {[
+        {
+          dieType: 'A',
+          faces: myPlayer?.diceA || [],
+        },
+        {
+          dieType: 'B',
+          faces: myPlayer?.diceB || [],
+        },
+      ].map((die) => (
+        <div
+          key={die.dieType}
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 8,
+          }}
+        >
+          <div
+            style={{
+              textAlign: 'center',
+              fontSize: 17,
+              fontWeight: 1000,
+            }}
+          >
+            ダイス{die.dieType}
+          </div>
+
+          {die.faces.map((face, index) => {
+            const selected = tactSelectedDice.some(
+              (item) =>
+                item.dieType === die.dieType &&
+                item.index === index
+            );
+
+            return (
+              <button
+                key={`${die.dieType}-${index}`}
+                type="button"
+                disabled={
+                  !selected && tactSelectedDice.length >= 2
+                }
+                onClick={() =>
+                  handleTactDiceSelect(die.dieType, index)
+                }
+                style={{
+                  position: 'relative',
+                  minHeight: 74,
+                  borderRadius: 14,
+                  border: selected
+                    ? '4px solid #0284c7'
+                    : '2px solid #cbd5e1',
+                  background: selected ? '#bae6fd' : '#ffffff',
+                  cursor: 'pointer',
+                  padding: 8,
+                  boxSizing: 'border-box',
+                  opacity:
+                    !selected && tactSelectedDice.length >= 2
+                      ? 0.5
+                      : 1,
+                }}
+              >
+                <div
+                  style={{
+                    position: 'absolute',
+                    top: 4,
+                    left: 6,
+                    fontSize: 12,
+                    fontWeight: 900,
+                  }}
+                >
+                  {selected ? '選択中' : `面 ${index + 1}`}
+                </div>
+
+                <div style={{ paddingTop: 12 }}>
+                  <ForgeFaceDisplay face={face} />
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      ))}
+    </div>
+
+    <div
+      style={{
+        display: 'flex',
+        gap: 8,
+        marginTop: 14,
+      }}
+    >
+      <button
+        type="button"
+        disabled={tactSelectedDice.length !== 2}
+        onClick={handleTactDiceConfirm}
+        style={{
+          ...styles.primaryButton,
+          flex: 1,
+          opacity: tactSelectedDice.length === 2 ? 1 : 0.45,
+        }}
+      >
+        2面を選んで確認
+      </button>
+
+      <button
+        type="button"
+        onClick={handleTactCancel}
+        style={{
+          ...styles.primaryButton,
+          flex: 1,
+        }}
+      >
+        キャンセル
+      </button>
+    </div>
+  </div>
+)}
+
+{/* ================================================== */}
+{/* 魔法の天候棒：交換確認 */}
+{/* ================================================== */}
+
+{tactConfirming && tactPendingFaces.length === 2 && (
+  <div
+    style={{
+      position: 'fixed',
+      inset: 0,
+      zIndex: 10000,
+      background: 'rgba(0,0,0,0.7)',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      padding: 16,
+    }}
+  >
+    <div
+      style={{
+        width: '100%',
+        maxWidth: 420,
+        padding: 20,
+        borderRadius: 18,
+        background: '#ffffff',
+        color: '#172033',
+        textAlign: 'center',
+        boxShadow: '0 8px 30px rgba(0,0,0,0.3)',
+      }}
+    >
+      <img
+        src="/saikoro/tactdice.png"
+        alt="天候棒マス"
+        style={{
+          width: 100,
+          height: 100,
+          objectFit: 'contain',
+          margin: '0 auto 10px',
+        }}
+      />
+
+      <div
+        style={{
+          fontSize: 22,
+          fontWeight: 1000,
+          marginBottom: 8,
+        }}
+      >
+        この2面を変更しますか？
+      </div>
+
+      <div
+        style={{
+          fontSize: 14,
+          fontWeight: 800,
+          marginBottom: 16,
+        }}
+      >
+        選んだダイス面が天候棒マスに変わります。
+        <br />
+        天候棒マスが出ると、好きな資源を最大3個獲得できます。
+      </div>
+
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'center',
+          gap: 12,
+          marginBottom: 18,
+        }}
+      >
+        {tactPendingFaces.map((item) => (
+          <div
+            key={`${item.dieType}-${item.index}`}
+            style={{
+              width: 100,
+              padding: 8,
+              border: '2px solid #0284c7',
+              borderRadius: 12,
+              background: '#e0f2fe',
+            }}
+          >
+            <div
+              style={{
+                fontSize: 13,
+                fontWeight: 900,
+                marginBottom: 6,
+              }}
+            >
+              ダイス{item.dieType}・面{item.index + 1}
+            </div>
+
+            <ForgeFaceDisplay face={item.face} />
+          </div>
+        ))}
+      </div>
+
+      <div
+        style={{
+          display: 'flex',
+          gap: 8,
+        }}
+      >
+        <button
+          type="button"
+          onClick={handleTactCancel}
+          style={{
+            ...styles.primaryButton,
+            flex: 1,
+          }}
+        >
+          選び直す
+        </button>
+
+        <button
+          type="button"
+          onClick={handleTactExchange}
+          style={{
+            ...styles.primaryButton,
+            flex: 1,
+            background: '#0284c7',
+          }}
+        >
+          この2面に変更
+        </button>
+      </div>
+    </div>
+  </div>
+)}
+
   {/* ================================================== */}
   {/* 自分のダイス選択 */}
   {/* ================================================== */}
@@ -10079,16 +11551,32 @@ setTimeout(() => {
           </div>
 
           <div style={styles.cardShopCardBottom}>
-            <div style={styles.cardShopCost}>
-              <img
-                src={RESOURCE_ICONS.eternal}
-                alt="永久指針"
-                style={styles.cardShopCostIcon}
-              />
+                       <div style={styles.cardShopCost}>
+              {Object.entries(card.cost || {}).map(
+                ([type, amount]) => (
+                  <div
+                    key={type}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 4,
+                    }}
+                  >
+                    <img
+                      src={RESOURCE_ICONS[type]}
+                      alt={
+                        RESOURCE_NAMES[type] ||
+                        type
+                      }
+                      style={styles.cardShopCostIcon}
+                    />
 
-              <span>
-                ×{card.cost.eternal}
-              </span>
+                    <span>
+                      ×{amount}
+                    </span>
+                  </div>
+                )
+              )}
             </div>
 
             <div
@@ -10136,17 +11624,40 @@ selectedCard ? (
             {selectedCard.description}
           </div>
 
-          <div style={styles.cardConfirmCost}>
-            <img
-              src={RESOURCE_ICONS.eternal}
-              alt="永久指針"
-              style={styles.cardConfirmCostIcon}
-            />
+          <div
+            style={{
+              ...styles.cardConfirmCost,
+              flexWrap: 'wrap',
+              gap: 10,
+            }}
+          >
+            {Object.entries(
+              selectedCard.cost || {}
+            ).map(([type, amount]) => (
+              <div
+                key={type}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 5,
+                }}
+              >
+                <img
+                  src={RESOURCE_ICONS[type]}
+                  alt={
+                    RESOURCE_NAMES[type] ||
+                    type
+                  }
+                  style={styles.cardConfirmCostIcon}
+                />
 
-            <span>
-              永久指針 ×
-              {selectedCard.cost.eternal}
-            </span>
+                <span>
+                  {RESOURCE_NAMES[type] || type}
+                  {' ×'}
+                  {amount}
+                </span>
+              </div>
+            ))}
           </div>
 
           <div style={styles.cardConfirmRemaining}>
@@ -10953,6 +12464,20 @@ selectedCard ? (
               <br />
 
               <div>
+                エクストラキャラ獲得：
+                <strong>
+                  {
+                    selectedPlayer
+                      .extraCharacterCount ??
+                    0
+                  }
+                </strong>
+                枚
+              </div>
+
+              <br />
+
+              <div>
                 所持カード：
                 {
                   selectedPlayer
@@ -11224,6 +12749,386 @@ onClick={() =>
         </div>
       )}
 
+{impactDialPrompt && (
+  <div
+    style={{
+      position: 'fixed',
+      inset: 0,
+      zIndex: 10000,
+      background: 'rgba(0, 0, 0, 0.8)',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      padding: 20,
+    }}
+  >
+    <div
+      style={{
+        width: '100%',
+        maxWidth: 420,
+        padding: 24,
+        borderRadius: 16,
+        background: '#fff8e7',
+        color: '#332515',
+        textAlign: 'center',
+        boxShadow: '0 8px 30px rgba(0,0,0,0.4)',
+      }}
+    >
+      <h2 style={{ marginTop: 0 }}>
+        衝撃貝
+      </h2>
+
+      {!impactDialChoosingDie ? (
+        <>
+          <p>
+            ダイスを振り直しますか？
+          </p>
+
+          <p>
+            残り使用回数：
+            <strong>
+              {impactDialRemaining}回
+            </strong>
+          </p>
+
+          <button
+            type="button"
+            onClick={handleImpactDialUse}
+            style={{
+              width: '100%',
+              padding: '14px 12px',
+              marginBottom: 10,
+              border: 'none',
+              borderRadius: 10,
+              background: '#d94825',
+              color: '#fff',
+              fontWeight: 'bold',
+              fontSize: 16,
+              cursor: 'pointer',
+            }}
+          >
+            振り直す
+          </button>
+
+          <button
+            type="button"
+            onClick={handleImpactDialSkip}
+            style={{
+              width: '100%',
+              padding: '14px 12px',
+              border: '1px solid #aaa',
+              borderRadius: 10,
+              background: '#fff',
+              color: '#333',
+              fontSize: 16,
+              cursor: 'pointer',
+            }}
+          >
+            使用しない
+          </button>
+        </>
+      ) : (
+        <>
+          <p>
+            振り直すダイスを選んでください。
+          </p>
+
+          <button
+            type="button"
+            onClick={() => handleImpactDialReroll('a')}
+            style={{
+              width: '100%',
+              padding: '16px 12px',
+              marginBottom: 12,
+              border: 'none',
+              borderRadius: 10,
+              background: '#2463a6',
+              color: '#fff',
+              fontWeight: 'bold',
+              fontSize: 18,
+              cursor: 'pointer',
+            }}
+          >
+            🎲 ダイスAを振り直す
+          </button>
+
+          <button
+            type="button"
+            onClick={() => handleImpactDialReroll('b')}
+            style={{
+              width: '100%',
+              padding: '16px 12px',
+              border: 'none',
+              borderRadius: 10,
+              background: '#16845b',
+              color: '#fff',
+              fontWeight: 'bold',
+              fontSize: 18,
+              cursor: 'pointer',
+            }}
+          >
+            🎲 ダイスBを振り直す
+          </button>
+        </>
+      )}
+    </div>
+  </div>
+)}
+
+{cardEffectMessage === 'SMILEが発動しました。' && (
+
+  <div
+    style={{
+      position: 'fixed',
+      inset: 0,
+      zIndex: 10001,
+      background: 'rgba(0, 0, 0, 0.65)',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      padding: 20,
+      pointerEvents: 'none',
+    }}
+  >
+    <div
+      style={{
+        width: '100%',
+        maxWidth: 420,
+        padding: 28,
+        borderRadius: 20,
+        background: '#fff8e7',
+        color: '#332515',
+        textAlign: 'center',
+        boxShadow: '0 8px 30px rgba(0,0,0,0.5)',
+        border: '4px solid #e5a323',
+      }}
+    >
+      <div
+        style={{
+          marginBottom: 8,
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+        }}
+      >
+        <img
+          src="/saikoro/smile.png"
+          alt="SMILE"
+          style={{
+            width: 100,
+            height: 100,
+            objectFit: 'contain',
+          }}
+        />
+      </div>
+
+  <h2
+    style={{
+      margin: 0,
+      fontSize: 28,
+      color: '#d94825',
+    }}
+  >
+    SMILE発動！
+  </h2>
+
+  <p
+    style={{
+      marginBottom: 0,
+      fontSize: 18,
+      fontWeight: 'bold',
+    }}
+  >
+    獲得資源が3倍！
+  </p>
+</div>
+
+  </div>
+)}
+
+{/* ================================================== */}
+{/* 魔法の天候棒：資源選択モーダル */}
+{/* ================================================== */}
+
+{tactResourceSelecting &&
+  tactResourceRemaining > 0 && (
+    <div
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 10001,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: 16,
+        background: 'rgba(15, 23, 42, 0.65)',
+        boxSizing: 'border-box',
+      }}
+    >
+      <div
+        style={{
+          width: 'min(440px, 100%)',
+          maxHeight: '90dvh',
+          overflowY: 'auto',
+          background: '#ffffff',
+          color: '#172033',
+          borderRadius: 22,
+          padding: 22,
+          boxSizing: 'border-box',
+          border: '3px solid #0284c7',
+          boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
+        }}
+      >
+        <div
+          style={{
+            textAlign: 'center',
+            fontSize: 25,
+            fontWeight: 1000,
+            marginBottom: 8,
+          }}
+        >
+          魔法の天候棒
+        </div>
+
+        <div
+          style={{
+            textAlign: 'center',
+            fontSize: 16,
+            fontWeight: 900,
+            color: '#475569',
+            marginBottom: 8,
+          }}
+        >
+          獲得する資源を1種類選んでください
+        </div>
+
+        <div
+          style={{
+            textAlign: 'center',
+            fontSize: 18,
+            fontWeight: 1000,
+            color: '#0369a1',
+            background: '#e0f2fe',
+            borderRadius: 12,
+            padding: 10,
+            marginBottom: 18,
+          }}
+        >
+          最大3個獲得
+          {'　'}
+          残り {tactResourceRemaining} 回
+        </div>
+
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
+            gap: 10,
+          }}
+        >
+          {[
+            {
+              id: 'berry',
+              name: 'ベリー',
+              image: '/saikoro/berry.png',
+            },
+            {
+              id: 'verse',
+              name: 'ヴァース',
+              image: '/saikoro/vasu.png',
+            },
+            {
+              id: 'eternal',
+              name: '永久指針',
+              image: '/saikoro/pors.png',
+            },
+          ].map((resource) => {
+            const current = Number(
+              players?.[0]?.resources?.[resource.id] || 0
+            );
+
+            const max = Number(
+              players?.[0]?.maxResources?.[resource.id] || 0
+            );
+
+            const gained = Math.min(
+              3,
+              Math.max(0, max - current)
+            );
+
+            const full = gained <= 0;
+
+            return (
+              <button
+                key={resource.id}
+                type="button"
+                disabled={full}
+                onClick={() =>
+                  handleTactResourceUse(resource.id)
+                }
+                style={{
+                  minWidth: 0,
+                  minHeight: 125,
+                  padding: '12px 5px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 7,
+                  border: full
+                    ? '2px solid #cbd5e1'
+                    : '2px solid #0284c7',
+                  borderRadius: 16,
+                  background: full ? '#e5e7eb' : '#f0f9ff',
+                  color: '#172033',
+                  fontSize: 14,
+                  fontWeight: 1000,
+                  opacity: full ? 0.5 : 1,
+                  cursor: full ? 'not-allowed' : 'pointer',
+                }}
+              >
+                <img
+                  src={resource.image}
+                  alt={resource.name}
+                  style={{
+                    width: 48,
+                    height: 48,
+                    objectFit: 'contain',
+                  }}
+                />
+
+                <span>{resource.name}</span>
+
+                <span
+                  style={{
+                    fontSize: 13,
+                    color: full ? '#64748b' : '#0369a1',
+                  }}
+                >
+                  {full ? '所持上限' : `＋${gained}個`}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+
+        <div
+          style={{
+            marginTop: 16,
+            textAlign: 'center',
+            color: '#64748b',
+            fontSize: 13,
+            fontWeight: 800,
+          }}
+        >
+          資源を選ぶと、次の選択に進みます。
+        </div>
+      </div>
+    </div>
+  )}
+
+
+
 {manemaneCopySelecting && (
   <div
     style={{
@@ -11386,6 +13291,8 @@ onClick={() =>
   </main>
 );
 }
+
+
 function ResourceBox({
   type,
   value,
@@ -11578,6 +13485,37 @@ function Dice3D({
           <img
             src="/saikoro/manedice.png"
             alt="マネマネマス"
+            style={{
+              width: 34,
+              height: 34,
+              objectFit: 'contain',
+              display: 'block',
+              flexShrink: 0,
+            }}
+          />
+        </div>
+      );
+    }
+
+    /*
+     * 魔法の天候棒
+     */
+    if (face.type === 'tact') {
+      return (
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            width: '100%',
+            height: '100%',
+            minWidth: 0,
+            lineHeight: 1,
+          }}
+        >
+          <img
+            src="/saikoro/tactdice.png"
+            alt="魔法の天候棒"
             style={{
               width: 34,
               height: 34,
@@ -12105,19 +14043,21 @@ function Dice3D({
           styles.dice3DStatus
         }
       >
- {rolling
+{rolling
   ? '抽選中……'
   : result
     ? result.type === 'manemane'
       ? '出目：マネマネマス'
-      : `出目：${
-          RESOURCE_NAMES[
+      : result.type === 'tact'
+        ? '出目：魔法の天候棒'
+        : `出目：${
+            RESOURCE_NAMES[
+              result.type
+            ] ||
             result.type
-          ] ||
-          result.type
-        } +${
-          result.value
-        }`
+          } +${
+            result.value
+          }`
     : '待機中'}
       </div>
     </div>
@@ -12223,6 +14163,36 @@ function DiceFaceList({
       );
     }
 
+    /*
+     * 魔法の天候棒
+     */
+    if (face.type === 'tact') {
+      return (
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            width: '100%',
+            height: '100%',
+            minWidth: 0,
+          }}
+        >
+          <img
+            src="/saikoro/tactdice.png"
+            alt="魔法の天候棒"
+            style={{
+              ...styles.diceFaceIcon,
+              width: small ? 28 : 34,
+              height: small ? 28 : 34,
+              objectFit: 'contain',
+              display: 'block',
+            }}
+          />
+        </div>
+      );
+    }
+
     const icon =
       RESOURCE_ICONS[
         face.type
@@ -12282,6 +14252,8 @@ function DiceFaceList({
       </div>
     );
   };
+
+
 
 
   const renderComboFace = (
@@ -12880,8 +14852,8 @@ const styles = {
 
   playerBottom: {
     display: 'grid',
-    gridTemplateColumns:
-      'repeat(2, 1fr)',
+        gridTemplateColumns:
+      'repeat(3, 1fr)',
     gap: '5px',
     marginTop: '7px',
     paddingTop: '7px',
