@@ -123,6 +123,15 @@ const FREE_GAMES = [
     available: true,
     rulePath: '/free/extra-poker/rules',
   },
+  {
+    id: 'saikoro',
+    name: '看板たぬき',
+    description: 'ダイスを強化しながら知識と戦略で競うゲーム',
+    minPlayers: 4,
+    maxPlayers: 4,
+    available: true,
+    rulePath: '/free/saikoro/rules',
+  },
 ];
 
 // ========================================
@@ -446,21 +455,31 @@ const onFreeGameStart = (payload) => {
     return;
   }
 
-  // エクストラポーカー
-  if (gameId === 'extra-poker') {
-    router.push(
-      `/free/extra-poker?room=${encodeURIComponent(roomId)}`
-    );
-    return;
-  }
+// エクストラポーカー
+if (gameId === 'extra-poker') {
+router.push(
+`/free/extra-poker?room=${encodeURIComponent(roomId)}`
+);
+return;
+}
 
-  setFreeError(
-    `未対応のゲームです: ${gameId || '不明'}`
-  );
+// 看板たぬき
+if (gameId === 'saikoro') {
+router.push(
+`/free/saikoro?room=${encodeURIComponent(roomId)}`
+);
+return;
+}
+
+
+setFreeError(
+  `未対応のゲームです: ${gameId || '不明'}`
+);
 };
-    // ======================================
-    // イベント登録
-    // ======================================
+
+// ======================================
+// イベント登録
+// ======================================
 
     s.on('connect', onConnect);
     s.on('connect_error', onConnectError);

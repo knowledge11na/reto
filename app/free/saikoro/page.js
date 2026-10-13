@@ -2,6 +2,7 @@
 'use client';
 
 import {useEffect,useMemo,useRef,useState,}from'react';
+import io from 'socket.io-client';
 
 import {
   loadSaikoroVivreProfiles,
@@ -186,18 +187,11 @@ function formatCost(cost) {
 }
 
 function createPlayer(index) {
-  const names = [
-    'あなた',
-    'CPU1',
-    'CPU2',
-    'CPU3',
-  ];
-
   return {
     seat: index,
     id: `player-${index}`,
-    name: names[index],
-    isCpu: index !== 0,
+    name: index === 0 ? 'あなた' : `プレイヤー${index + 1}`,
+    isCpu: false,
 
     resources: {
       ...INITIAL_RESOURCES[index],
@@ -218,19 +212,13 @@ function createPlayer(index) {
     ),
 
     diceResult: null,
-
     cards: [],
-
     extraCharacterInfo: [],
-
-extraCharacterRevealedIndexes: [],
-
-vivreCardInfo: {},
-
-extraCharacterCount: 0,
-extraSpecifiedCount: 0,
-extraRandomCount: 0,
-
+    extraCharacterRevealedIndexes: [],
+    vivreCardInfo: {},
+    extraCharacterCount: 0,
+    extraSpecifiedCount: 0,
+    extraRandomCount: 0,
     vivreCardCount: 0,
   };
 }
@@ -243,7 +231,6 @@ function clonePlayers() {
     createPlayer(3),
   ];
 }
-
 function randomChoice(array) {
   if (!Array.isArray(array) || array.length === 0) {
     return null;
@@ -1667,6 +1654,20 @@ export default function SaikoroPage() {
       () => clonePlayers()
     );
 
+const [socketConnected, setSocketConnected] =
+  useState(false);
+
+const [onlineState, setOnlineState] =
+  useState(null);
+
+const [mySeat, setMySeat] =
+  useState(null);
+
+const [onlineError, setOnlineError] =
+  useState('');
+
+const socketRef = useRef(null);
+
 
 const [extraCharacter, setExtraCharacter] =
   useState(null);
@@ -1712,6 +1713,20 @@ const [actionHistory, setActionHistory] =
 
   const [phase, setPhase] =
     useState('loading');
+
+  const [victoryTarget, setVictoryTarget] =
+    useState(3);
+
+  const [startingPlayerMode, setStartingPlayerMode] =
+    useState('random');
+
+  const [specifiedStartingPlayer, setSpecifiedStartingPlayer] =
+    useState(0);
+
+  const [gameWinner, setGameWinner] =
+    useState(null);
+
+  const gameFinishedRef = useRef(false);
 
 const barabaraWasActionVisibleRef = useRef(false);
 
@@ -1783,6 +1798,12 @@ const [answerMode, setAnswerMode] = useState(null);
 
   const [showForgeConfirm, setShowForgeConfirm] =
     useState(false);
+
+const [forgeUsedThisTurn, setForgeUsedThisTurn] =
+  useState(false);
+
+const [cardPurchasedThisTurn, setCardPurchasedThisTurn] =
+  useState(false);
 
   const [forgeStocks, setForgeStocks] =
     useState({
@@ -2038,7 +2059,7 @@ const CARD_OFFERS = [
     image: '/saikoro/yomiyomi.png',
     cost: { verse: 2 },
     description:
-      '自分のターン開始時、指定した片方のダイスをもう一度振ることができる。',
+      '自分のターン開始時、指定した片方のダイスをもう一度振ることができる。マネマネ、天候棒は発動しない',
   },
   {
     id: 'jikijiki',
@@ -2278,36 +2299,41 @@ const [cardEffectSelecting, setCardEffectSelecting] =
       );
     };
 
-  const canSelectForgeOffer =
-    (offer) => {
-      if (!offer) {
-        return false;
-      }
+const canSelectForgeOffer =
+  (offer) => {
+    if (
+      !isMyTurn ||
+      phase !== 'action' ||
+      forgeUsedThisTurn ||
+      !offer
+    ) {
+      return false;
+    }
 
-      const stock =
-        Number(
-          forgeStocks?.[offer.id] || 0
-        );
-
-      if (stock <= 0) {
-        return false;
-      }
-
-      return spendResources(
-        myPlayer,
-        offer.cost
+    const stock =
+      Number(
+        forgeStocks?.[offer.id] || 0
       );
-    };
 
-  const handleForgeOfferSelect =
-    (offer) => {
-      if (
-        !canSelectForgeOffer(
-          offer
-        )
-      ) {
-        return;
-      }
+    if (stock <= 0) {
+      return false;
+    }
+
+    return spendResources(
+      myPlayer,
+      offer.cost
+    );
+  };
+
+const handleForgeOfferSelect = (offer) => {
+  if (
+    !isMyTurn ||
+    phase !== 'action' ||
+    forgeUsedThisTurn ||
+    !canSelectForgeOffer(offer)
+  ) {
+    return;
+  }
 
       setSelectedForgeOffer(
         offer
@@ -2322,11 +2348,15 @@ const [cardEffectSelecting, setCardEffectSelecting] =
       );
     };
 
-  const handleForgeDiceSelect =
-    (dieType, index) => {
-      if (!selectedForgeOffer) {
-        return;
-      }
+const handleForgeDiceSelect = (dieType, index) => {
+  if (
+    !isMyTurn ||
+    phase !== 'action' ||
+    forgeUsedThisTurn ||
+    !selectedForgeOffer
+  ) {
+    return;
+  }
 
       setSelectedForgeDice({
         dieType,
@@ -2364,9 +2394,12 @@ const [cardEffectSelecting, setCardEffectSelecting] =
       );
     };
 
-  const handleForgeExchange =
-    () => {
+const handleForgeExchange =
+  () => {
       if (
+        !isMyTurn ||
+        phase !== 'action' ||
+        forgeUsedThisTurn ||
         !selectedForgeOffer ||
         !selectedForgeDice
       ) {
@@ -2532,6 +2565,8 @@ if (
         })
       );
 
+setForgeUsedThisTurn(true);
+
       setSelectedForgeOffer(
         null
       );
@@ -2620,7 +2655,12 @@ useEffect(() => {
   
 const handleCardPurchase =
   () => {
-    if (!selectedCard) {
+    if (
+      !isMyTurn ||
+      phase !== 'action' ||
+      cardPurchasedThisTurn ||
+      !selectedCard
+    ) {
       return;
     }
 
@@ -2786,6 +2826,8 @@ const handleCardPurchase =
           ),
       })
     );
+
+setCardPurchasedThisTurn(true);
 
     const purchasedCardId =
       selectedCard.id;
@@ -4560,15 +4602,16 @@ const infoSummary =
             []
           );
 
-        setCurrentVivreCard(
-          first
-        );
+        
+setCurrentVivreCard(
+  first
+);
 
-        setPhase('dice');
+setPhase('setup');
 
-        setMessage(
-          'ラウンド1開始！全員がダイスを振ります。'
-        );
+setMessage(
+  'ゲーム設定を選んで、ゲームを開始してください。'
+);
       } catch (error) {
         console.error(
           '看板たぬき profile2.xlsx load failed',
@@ -4779,14 +4822,312 @@ setPlayers(
     );
   }
 
+useEffect(() => {
+  let cancelled = false;
+  let currentSocket = null;
+
+  async function connectSaikoro() {
+    const params = new URLSearchParams(
+      window.location.search
+    );
+
+    const roomId = String(
+      params.get('room') || ''
+    )
+      .replace(/\D/g, '')
+      .slice(0, 4);
+
+    if (roomId.length !== 4) {
+      setOnlineError(
+        '部屋番号を取得できません。フリールームから入り直してください。'
+      );
+      return;
+    }
+
+    try {
+      const response = await fetch('/api/me', {
+        cache: 'no-store',
+      });
+
+      if (!response.ok) {
+        throw new Error(
+          'ユーザー情報を取得できませんでした。'
+        );
+      }
+
+      const data = await response.json();
+
+      const user =
+        data?.user ??
+        data?.me ??
+        data ??
+        null;
+
+      if (!user) {
+        throw new Error(
+          'ログイン情報を取得できませんでした。'
+        );
+      }
+
+      if (cancelled) return;
+
+      const userId = String(
+        user.id ??
+        user.userId ??
+        user.user_id ??
+        ''
+      );
+
+      const name = String(
+        user.display_name ??
+        user.username ??
+        user.name ??
+        ''
+      ).trim();
+
+      if (!userId && !name) {
+        throw new Error(
+          'プレイヤーを識別できませんでした。'
+        );
+      }
+
+      const url =
+        process.env.NEXT_PUBLIC_SOCKET_URL ||
+        `${window.location.protocol}//${window.location.hostname}:4000`;
+
+      const socket = io(url, {
+        transports: ['websocket'],
+      });
+
+      currentSocket = socket;
+      socketRef.current = socket;
+
+      socket.on('connect', () => {
+        if (cancelled) return;
+
+        setSocketConnected(true);
+        setOnlineError('');
+
+        socket.emit('saikoro:join', {
+          roomId,
+          userId,
+          name,
+        });
+      });
+
+      socket.on('disconnect', () => {
+        if (cancelled) return;
+
+        setSocketConnected(false);
+      });
+
+      socket.on('connect_error', (error) => {
+        if (cancelled) return;
+
+        console.error(
+          '[saikoro] socket connection error',
+          error
+        );
+
+        setOnlineError(
+          'サーバーに接続できませんでした。'
+        );
+      });
+
+      socket.on('saikoro:error', (payload) => {
+        if (cancelled) return;
+
+        const errorMessage = String(
+          payload?.message ||
+          '看板たぬきでエラーが発生しました。'
+        );
+
+        console.error(
+          '[saikoro] server error',
+          errorMessage
+        );
+
+        setOnlineError(errorMessage);
+      });
+
+      socket.on('saikoro:state', (payload) => {
+
+      // サーバーのゲーム状態を画面に反映
+      if (
+        payload?.phase &&
+        payload.phase !== 'waiting'
+      ) {
+        setPhase(payload.phase);
+      }
+
+      if (Number.isFinite(Number(payload?.round))) {
+        setRound(Number(payload.round));
+      }
+
+      if (Number.isFinite(Number(payload?.turnPlayer))) {
+        setTurnPlayer(Number(payload.turnPlayer));
+      }
+
+      if (typeof payload?.message === 'string') {
+        setMessage(payload.message);
+      }
+
+      if (Array.isArray(payload?.players)) {
+        setPlayers((prev) => {
+          const serverPlayers = [
+            ...payload.players,
+          ].sort(
+            (a, b) =>
+              Number(a?.seat ?? 0) -
+              Number(b?.seat ?? 0)
+          );
+
+          return serverPlayers.map(
+            (serverPlayer, index) => {
+              const localPlayer =
+                prev.find(
+                  (item) =>
+                    Number(item?.seat) ===
+                    Number(serverPlayer?.seat)
+                ) || prev[index] || {};
+
+              return {
+                ...localPlayer,
+                ...serverPlayer,
+
+                // サーバー側の座席番号と名前を優先する
+                seat: Number.isFinite(
+                  Number(serverPlayer?.seat)
+                )
+                  ? Number(serverPlayer.seat)
+                  : index,
+
+                name:
+                  serverPlayer?.name ||
+                  `プレイヤー${index + 1}`,
+
+                resources: {
+                  ...localPlayer.resources,
+                  ...(serverPlayer.resources || {}),
+                },
+
+                maxResources: {
+                  ...localPlayer.maxResources,
+                  ...(serverPlayer.maxResources || {}),
+                },
+
+                cards: Array.isArray(
+                  serverPlayer.cards
+                )
+                  ? serverPlayer.cards
+                  : localPlayer.cards,
+
+                extraCharacterInfo: Array.isArray(
+                  serverPlayer.extraCharacterInfo
+                )
+                  ? serverPlayer.extraCharacterInfo
+                  : localPlayer.extraCharacterInfo,
+
+                vivreCardInfo:
+                  serverPlayer.vivreCardInfo &&
+                  typeof serverPlayer.vivreCardInfo === 'object'
+                    ? serverPlayer.vivreCardInfo
+                    : localPlayer.vivreCardInfo,
+              };
+            }
+          );
+        });
+      }
+
+
+        if (cancelled) return;
+
+        setOnlineState(payload);
+
+        const serverPlayers = Array.isArray(
+          payload?.players
+        )
+          ? payload.players
+          : [];
+
+        let myPlayer = serverPlayers.find(
+          (player) =>
+            userId &&
+            String(player?.id ?? '') === userId
+        );
+
+        if (!myPlayer && name) {
+          const sameName = serverPlayers.filter(
+            (player) =>
+              String(player?.name ?? '').trim() === name
+          );
+
+          if (sameName.length === 1) {
+            myPlayer = sameName[0];
+          }
+        }
+
+        if (myPlayer) {
+          setMySeat(Number(myPlayer.seat));
+        }
+      });
+    } catch (error) {
+      if (cancelled) return;
+
+      console.error(
+        '[saikoro] initialization error',
+        error
+      );
+
+      setOnlineError(
+        error?.message ||
+        '看板たぬきの接続準備に失敗しました。'
+      );
+    }
+  }
+
+  connectSaikoro();
+
+  return () => {
+    cancelled = true;
+
+    if (currentSocket) {
+      currentSocket.removeAllListeners();
+      currentSocket.disconnect();
+    }
+
+    if (socketRef.current === currentSocket) {
+      socketRef.current = null;
+    }
+  };
+}, []);
+
 
 function rollAllDice() {
+  // オンライン対戦では、サーバーにダイスを振るよう依頼する
   if (
-    phase !== 'dice' ||
-    diceRolling
+    socketRef.current?.connected &&
+    onlineState?.roomId
   ) {
+    if (
+      phase !== 'dice' ||
+      diceRolling
+    ) {
+      return;
+    }
+
+    socketRef.current.emit(
+      'saikoro:roll',
+      {
+        roomId: String(
+          onlineState.roomId
+        ),
+      }
+    );
+
     return;
   }
+
 
   setDiceRolling(true);
   setShowDiceResults(false);
@@ -5394,6 +5735,10 @@ function finishDicePhase(
   );
 
   if (
+    !(
+      socketRef.current?.connected &&
+      onlineState?.roomId
+    ) &&
     turnPlayer >= 1 &&
     turnPlayer <= 3
   ) {
@@ -5408,12 +5753,17 @@ const diceAutoTriggeredRef =
   useRef(false);
 
 useEffect(() => {
+  // オンライン対戦では各ブラウザが自動でダイスを振らない
   if (
-    phase !== 'dice'
+    socketRef.current?.connected &&
+    onlineState?.roomId
   ) {
-    diceAutoTriggeredRef.current =
-      false;
+    diceAutoTriggeredRef.current = false;
+    return;
+  }
 
+  if (phase !== 'dice') {
+    diceAutoTriggeredRef.current = false;
     return;
   }
 
@@ -5424,13 +5774,11 @@ useEffect(() => {
     return;
   }
 
-  diceAutoTriggeredRef.current =
-    true;
+  diceAutoTriggeredRef.current = true;
 
-  const timer =
-    setTimeout(() => {
-      rollAllDice();
-    }, 300);
+  const timer = setTimeout(() => {
+    rollAllDice();
+  }, 300);
 
   return () => {
     clearTimeout(timer);
@@ -5438,7 +5786,9 @@ useEffect(() => {
 }, [
   phase,
   diceRolling,
+  onlineState,
 ]);
+
 
 function hasCard(
   player,
@@ -6244,12 +6594,13 @@ function revealFavoriteFood(
 function handleBuyInfo(
   infoType
 ) {
-  if (
-    !isMyTurn ||
-    !currentVivreCard
-  ) {
-    return;
-  }
+if (
+  !isMyTurn ||
+  phase !== 'action' ||
+  !currentVivreCard
+) {
+  return;
+}
 
   // ====================================================
   // ビブカ情報購入は通常アクションとは別枠
@@ -6858,6 +7209,16 @@ function handleAnswerSubmit(event) {
 
       setWinner(0);
 
+      if (
+        finishGameIfWon(
+          0,
+          Number(players[0]?.extraCharacterCount || 0) + 1,
+          Number(players[0]?.vivreCardCount || 0)
+        )
+      ) {
+        return;
+      }
+
       setRevealResult({
         type: 'extra',
         name: character.name || '不明',
@@ -6962,6 +7323,9 @@ function startNextPlayerTurn() {
   );
 
 setTakaraUsedCount(0);
+
+setForgeUsedThisTurn(false);
+setCardPurchasedThisTurn(false);
 
   setPhase(
     'dice'
@@ -7073,6 +7437,16 @@ seat,
 
 
 );
+
+if (
+  finishGameIfWon(
+    seat,
+    Number(players[seat]?.extraCharacterCount || 0),
+    Number(players[seat]?.vivreCardCount || 0) + 1
+  )
+) {
+  return;
+}
 
 // 全プレイヤーの1枚ビブカ調査情報をリセット
 setPlayers((prev) =>
@@ -7649,6 +8023,73 @@ function handleEndMyTurn() {
     );
   }
 
+  function finishGameIfWon(seat, extraCount, vivreCount) {
+    if (gameFinishedRef.current) {
+      return true;
+    }
+
+    const extra = Number(extraCount || 0);
+    const vivre = Number(vivreCount || 0);
+    const total = extra + vivre;
+
+    if (
+      extra < 1 ||
+      vivre < 1 ||
+      total < victoryTarget
+    ) {
+      return false;
+    }
+
+    gameFinishedRef.current = true;
+    setGameWinner(seat);
+    setPhase('result');
+    setMessage(
+      `${players[seat]?.name || `${seat + 1}P`}が勝利しました！`
+    );
+
+    return true;
+  }
+
+  function handleStartGame() {
+    gameFinishedRef.current = false;
+    setGameWinner(null);
+
+    setPlayers(clonePlayers());
+    setRound(1);
+
+    const firstPlayer =
+      startingPlayerMode === 'random'
+        ? Math.floor(Math.random() * 4)
+        : Number(specifiedStartingPlayer);
+
+    setTurnPlayer(firstPlayer);
+    setAnswer('');
+    setAnswerMode(null);
+    setLastAnswer(null);
+    setRevealResult(null);
+    setWinner(null);
+    setDiceResult(null);
+    setDiceRolling(false);
+    setShowDiceResults(false);
+    setAllDiceResults({});
+    setActionUsed(false);
+    setAnswerUsed(false);
+    setAnswerAttempts(0);
+    setActionHistory([]);
+    setSelectedInfo(null);
+    setUsedVivreIds([]);
+
+    if (profiles.length > 0) {
+      setCurrentVivreCard(
+        chooseNewVivreCard(profiles, [])
+      );
+    }
+
+    setPhase('dice');
+    setMessage('ゲーム開始！全員がダイスを振ります。');
+  }
+
+
   function resetGame() {
     setPlayers(
       clonePlayers()
@@ -7773,6 +8214,245 @@ function handleEndMyTurn() {
 }}
           >
             再読み込み
+          </button>
+        </div>
+      </main>
+    );
+  }
+
+  if (phase === 'setup') {
+    return (
+      <main style={styles.page}>
+        <div
+          style={{
+            ...styles.gameShell,
+            maxWidth: 760,
+            margin: '40px auto',
+            padding: 28,
+          }}
+        >
+          <h1 style={styles.title}>
+            看板たぬき
+          </h1>
+
+          <h2>勝利目標</h2>
+
+          <p>
+            エクストラキャラとビブカの合計獲得数を選んでね。
+          </p>
+
+          <div style={{ display: 'flex', gap: 12 }}>
+            {[3, 5].map((target) => (
+              <button
+                key={target}
+                type="button"
+                onClick={() => setVictoryTarget(target)}
+                style={{
+                  ...styles.primaryButton,
+                  flex: 1,
+                  opacity: victoryTarget === target ? 1 : 0.55,
+                  border:
+                    victoryTarget === target
+                      ? '3px solid #fbbf24'
+                      : '1px solid #888',
+                }}
+              >
+                {target}点で勝利
+              </button>
+            ))}
+          </div>
+
+          <h2 style={{ marginTop: 28 }}>
+            先攻プレイヤー
+          </h2>
+
+          <div
+            style={{
+              display: 'flex',
+              gap: 12,
+              flexWrap: 'wrap',
+            }}
+          >
+            <button
+              type="button"
+              onClick={() => setStartingPlayerMode('random')}
+              style={{
+                ...styles.primaryButton,
+                opacity:
+                  startingPlayerMode === 'random' ? 1 : 0.55,
+              }}
+            >
+              ランダム
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setStartingPlayerMode('specified')}
+              style={{
+                ...styles.primaryButton,
+                opacity:
+                  startingPlayerMode === 'specified' ? 1 : 0.55,
+              }}
+            >
+              プレイヤーを指定
+            </button>
+          </div>
+
+          {startingPlayerMode === 'specified' && (
+            <div
+              style={{
+                display: 'flex',
+                gap: 8,
+                flexWrap: 'wrap',
+                marginTop: 16,
+              }}
+            >
+              {[0, 1, 2, 3].map((seat) => (
+                <button
+                  key={seat}
+                  type="button"
+                  onClick={() => setSpecifiedStartingPlayer(seat)}
+                  style={{
+                    ...styles.primaryButton,
+                    opacity:
+                      specifiedStartingPlayer === seat ? 1 : 0.55,
+                  }}
+                >
+                  {seat + 1}P
+                </button>
+              ))}
+            </div>
+          )}
+
+          <p style={{ marginTop: 24, lineHeight: 1.8 }}>
+            勝利するには、エクストラキャラとビブカをそれぞれ1枚以上獲得する必要があります。
+            合計獲得数が設定した目標点に到達するとゲーム終了です。
+          </p>
+
+          <button
+            type="button"
+            onClick={handleStartGame}
+            style={{
+              ...styles.primaryButton,
+              width: '100%',
+              minHeight: 64,
+              marginTop: 16,
+              fontSize: 24,
+            }}
+          >
+            ゲーム開始
+          </button>
+        </div>
+      </main>
+    );
+  }
+
+
+  if (phase === 'result') {
+    const rankedPlayers = [...players].sort((a, b) => {
+      const scoreA =
+        Number(a.extraCharacterCount || 0) +
+        Number(a.vivreCardCount || 0);
+
+      const scoreB =
+        Number(b.extraCharacterCount || 0) +
+        Number(b.vivreCardCount || 0);
+
+      return scoreB - scoreA;
+    });
+
+    const winnerPlayer = players.find(
+      (player) => player.seat === gameWinner
+    );
+
+    return (
+      <main style={styles.page}>
+        <div
+          style={{
+            ...styles.gameShell,
+            maxWidth: 800,
+            margin: '40px auto',
+            padding: 28,
+          }}
+        >
+          <h1 style={styles.title}>
+            ゲーム終了！
+          </h1>
+
+          <h2
+            style={{
+              textAlign: 'center',
+              marginTop: 24,
+            }}
+          >
+            🏆 {winnerPlayer?.name || `${Number(gameWinner) + 1}P`} の勝利！
+          </h2>
+
+          <p style={{ textAlign: 'center' }}>
+            勝利目標：{victoryTarget}点
+          </p>
+
+          <h2 style={{ marginTop: 28 }}>
+            最終ランキング
+          </h2>
+
+          {rankedPlayers.map((player, index) => {
+            const extra =
+              Number(player.extraCharacterCount || 0);
+
+            const vivre =
+              Number(player.vivreCardCount || 0);
+
+            const total = extra + vivre;
+
+            return (
+              <div
+                key={player.seat}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: 12,
+                  padding: '16px 12px',
+                  marginTop: 10,
+                  borderRadius: 12,
+                  border:
+                    player.seat === gameWinner
+                      ? '3px solid #fbbf24'
+                      : '1px solid #888',
+                  background:
+                    player.seat === gameWinner
+                      ? 'rgba(251, 191, 36, 0.12)'
+                      : 'transparent',
+                  flexWrap: 'wrap',
+                }}
+              >
+                <strong>
+                  {index + 1}位　{player.name}
+                  {player.seat === gameWinner ? ' 🏆' : ''}
+                </strong>
+
+                <span>エクストラ {extra}枚</span>
+
+                <span>ビブカ {vivre}枚</span>
+
+                <strong>合計 {total}点</strong>
+              </div>
+            );
+          })}
+
+          <button
+            type="button"
+            onClick={resetGame}
+            style={{
+              ...styles.primaryButton,
+              width: '100%',
+              minHeight: 60,
+              marginTop: 28,
+              fontSize: 22,
+            }}
+          >
+            設定に戻ってもう一度遊ぶ
           </button>
         </div>
       </main>
@@ -9516,15 +10196,26 @@ extraCharacterBoard.map(
           購入した文字は自分だけ公開
         </div>
 
-        <button
-          type="button"
-          onClick={() =>
-            setShowExtraCharacterShop(true)
+    {phase === 'action' && isMyTurn && (
+      <button
+        type="button"
+        onClick={() => {
+          if (
+            !isMyTurn ||
+            phase !== 'action'
+          ) {
+            return;
           }
-          style={styles.extraCharacterPurchaseButton}
-        >
-          🔍 文字を購入する
-        </button>
+
+          setShowExtraCharacterShop(true);
+        }}
+        style={styles.extraCharacterPurchaseButton}
+      >
+        🔍 文字を購入する
+      </button>
+    )}
+
+
       </div>
             </div>
           </section>
