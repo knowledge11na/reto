@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { io } from "socket.io-client";
 
@@ -64,7 +64,7 @@ const styles = {
   },
 };
 
-export default function HasteVoutePage() {
+function HasteVouteContent() {
   const searchParams = useSearchParams();
   const roomId = searchParams.get("room") || "";
   const socketRef = useRef(null);
@@ -727,5 +727,13 @@ export default function HasteVoutePage() {
         </section>
       )}
     </main>
+  );
+}
+
+export default function HasteVoutePage() {
+  return (
+    <Suspense fallback={<main style={styles.page}>読み込み中...</main>}>
+      <HasteVouteContent />
+    </Suspense>
   );
 }
