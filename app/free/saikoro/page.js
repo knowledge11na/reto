@@ -43,24 +43,24 @@ function createExtraCharacterBoard(description) {
 
 const INITIAL_RESOURCES = [
   {
-    berry: 12,
+    berry: 3,
     verse: 6,
     eternal: 6,
   },
   {
     berry: 2,
-    verse: 6,
-    eternal: 6,
+    verse: 0,
+    eternal: 0,
   },
   {
     berry: 1,
-    verse: 6,
-    eternal: 6,
+    verse: 0,
+    eternal: 0,
   },
   {
     berry: 0,
-    verse: 6,
-    eternal: 6,
+    verse: 0,
+    eternal: 0,
   },
 ];
 
@@ -3984,11 +3984,17 @@ setYomiyomiUsed(
     players[turnPlayer];
 
 const isMyTurn =
-  turnPlayer === 0 &&
-  (
-    phase === 'action' ||
-    phase === 'answer'
-  );
+(
+socketRef.current?.connected &&
+onlineState?.roomId
+? Number(turnPlayer) === Number(mySeat)
+: Number(turnPlayer) === 0
+) &&
+(
+phase === 'action' ||
+phase === 'answer'
+);
+
 
   const currentCardProfile =
     getCardProfile(
@@ -4953,12 +4959,25 @@ useEffect(() => {
       socket.on('saikoro:state', (payload) => {
 
       // サーバーのゲーム状態を画面に反映
-      if (
-        payload?.phase &&
-        payload.phase !== 'waiting'
-      ) {
-        setPhase(payload.phase);
-      }
+if (typeof payload?.phase === 'string') {
+  const nextPhase =
+    payload.phase === 'waiting'
+      ? 'setup'
+      : payload.phase;
+
+  setPhase(nextPhase);
+
+  console.log(
+    '[saikoro] server phase:',
+    payload.phase,
+    'client phase:',
+    nextPhase,
+    'turnPlayer:',
+    payload.turnPlayer,
+    'mySeat:',
+    mySeat
+  );
+}
 
       if (Number.isFinite(Number(payload?.round))) {
         setRound(Number(payload.round));
@@ -4970,6 +4989,36 @@ useEffect(() => {
 
       if (typeof payload?.message === 'string') {
         setMessage(payload.message);
+
+  // マルチ版：サーバーから届いた全員分のダイス結果を反映
+  
+
+  if (
+    payload?.diceResults &&
+    typeof payload.diceResults === 'object'
+  ) {
+    setAllDiceResults(payload.diceResults);
+
+    const myResult =
+      payload.diceResults[String(mySeat)] ??
+      payload.diceResults[mySeat] ??
+      null;
+
+    setDiceResult(myResult);
+
+    setShowDiceResults(
+      payload.phase === 'action' &&
+      myResult !== null
+    );
+  } else {
+    setAllDiceResults({});
+    setDiceResult(null);
+    setShowDiceResults(false);
+  }
+
+
+
+
       }
 
       if (Array.isArray(payload?.players)) {
@@ -5043,6 +5092,42 @@ useEffect(() => {
         if (cancelled) return;
 
         setOnlineState(payload);
+
+
+        if (
+          payload?.phase === 'action' &&
+          payload.diceResults &&
+          typeof payload.diceResults === 'object'
+        ) {
+          const receivedResults = payload.diceResults;
+
+          setAllDiceResults(receivedResults);
+          setImpactDialResults(receivedResults);
+
+          const currentSeat = Number(
+            payload.turnPlayer ?? 0
+          );
+
+          setDiceResult(
+            receivedResults[currentSeat] || null
+          );
+
+          setDiceRolling(false);
+          setShowDiceResults(
+            Object.values(receivedResults).some(
+              (result) => result != null
+            )
+          );
+        }
+
+        if (
+          payload?.phase === 'waiting' &&
+          socket.connected
+        ) {
+          socket.emit('saikoro:ready', {
+            roomId: String(payload.roomId || ''),
+          });
+        }
 
         const serverPlayers = Array.isArray(
           payload?.players
@@ -5644,86 +5729,28 @@ function finishDicePhase(
     return;
   }
 
+
   // ========================================
   // ダイスの資源を獲得
+  // オンラインではサーバー側で処理済み
   // ========================================
 
+  const isOnlineGame =
+    socketRef.current?.connected &&
+    onlineState?.roomId;
 
-  setPlayers((prev) =>
-    prev.map((player) => {
-      const result = results[player.seat];
-
-      if (!result) {
-        return player;
+  // オンラインではクライアント側で
+  // ラウンドやターンを勝手に変更しない
+  if (isOnlineGame) {
+    socketRef.current.emit(
+      'saikoro:finish-action',
+      {
+        roomId: onlineState.roomId,
       }
+    );
 
-      let next = {
-        ...player,
-        diceResult: {
-          a: result.a,
-          b: result.b,
-        },
-      };
-
-      const multiplier =
-        smileActivatedSeats.includes(player.seat)
-          ? 3
-          : 1;
-
-      const diceResults = [
-        result.a,
-        result.b,
-      ];
-
-      diceResults.forEach((diceResult) => {
-        if (!diceResult) {
-          return;
-        }
-
-        if (
-          diceResult.type === 'manemane' ||
-          diceResult.type === 'tact'
-        ) {
-          return;
-        }
-
-        const faces = Array.isArray(diceResult.faces)
-          ? diceResult.faces
-          : [
-              {
-                type: diceResult.type,
-                value: diceResult.value,
-              },
-            ];
-
-        faces.forEach((face) => {
-          if (
-            !face ||
-            !face.type ||
-            face.type === 'manemane' ||
-            face.type === 'tact'
-          ) {
-            return;
-          }
-
-          next = addResource(
-            next,
-            face.type,
-            Number(face.value || 0) * multiplier
-          );
-        });
-      });
-
-      return next;
-    })
-  );
-
-  setShowDiceResults(false);
-  setManemaneCopySelecting(false);
-  setManemaneCopyOptions([]);
-  setManemaneChoiceQueue([]);
-  setManemaneChoiceIndex(0);
-
+    return;
+  }
   setPhase('action');
   setActionUsed(false);
   setAnswerUsed(false);
@@ -5735,10 +5762,6 @@ function finishDicePhase(
   );
 
   if (
-    !(
-      socketRef.current?.connected &&
-      onlineState?.roomId
-    ) &&
     turnPlayer >= 1 &&
     turnPlayer <= 3
   ) {
@@ -5747,7 +5770,6 @@ function finishDicePhase(
     }, 300);
   }
 }
-
 
 const diceAutoTriggeredRef =
   useRef(false);
@@ -6098,70 +6120,59 @@ const applyStartTurnCardEffects = (
 };
 
 
+
 function startNextRound() {
+  const isOnlineGame =
+    socketRef.current?.connected &&
+    onlineState?.roomId;
+
+  // オンラインではクライアント側で
+  // ラウンドやターンを勝手に変更しない
+  if (isOnlineGame) {
+    socketRef.current.emit(
+      'saikoro:finish-action',
+      {
+        roomId: onlineState.roomId,
+      }
+    );
+
+    return;
+  }
+
   const nextRound =
     round + 1;
 
-  setRound(
-    nextRound
-  );
+  setRound(nextRound);
+  setTurnPlayer(0);
 
-  setTurnPlayer(
-    0
-  );
+  setNewsUsedCount(0);
+  setNewsSelecting(false);
+  setTakaraUsedCount(0);
 
-setNewsUsedCount(0);
-setNewsSelecting(false);
-
-setTakaraUsedCount(0);
-
-  setPhase(
-    'dice'
-  );
-
-  setActionUsed(
-    false
-  );
-
-  setAnswerUsed(
-    false
-  );
-
+  setPhase('dice');
+  setActionUsed(false);
+  setAnswerUsed(false);
   setAnswer('');
-
-  setLastAnswer(
-    null
-  );
+  setLastAnswer(null);
 
   setMessage(
     `ラウンド${nextRound}開始！全員がダイスを振ります。`
   );
 
-  setDiceResult(
-    null
-  );
+  setDiceResult(null);
+  setDiceRolling(false);
+  setShowDiceResults(false);
+  setAllDiceResults({});
 
-  setDiceRolling(
-    false
-  );
+  setCardEffectUsed({
+    yomiyomi: 0,
+    daiaru: false,
+    jikijiki: false,
+  });
 
-  setShowDiceResults(
-    false
-  );
-
-  setAllDiceResults(
-    {}
-  );
-
-setCardEffectUsed({
-  yomiyomi: 0,
-  daiaru: false,
-  jikijiki: false,
-});
-
-setJikijikiMode(null);
-setJikijikiTargetSeat(null);
-setJikijikiTargetType(null);
+  setJikijikiMode(null);
+  setJikijikiTargetSeat(null);
+  setJikijikiTargetType(null);
 
   setCardEffectMessage('');
 
@@ -7971,10 +7982,9 @@ addActionHistory(
   );
 }
 
+
 function handleEndMyTurn() {
-  if (
-    !isMyTurn
-  ) {
+  if (!isMyTurn) {
     return;
   }
 
@@ -7988,29 +7998,32 @@ function handleEndMyTurn() {
     return;
   }
 
-  setPhase(
-    'answer'
-  );
+  // オンライン対戦：サーバーに購入終了を通知する
+  if (
+    socketRef.current?.connected &&
+    onlineState?.roomId
+  ) {
+    socketRef.current.emit(
+      'saikoro:finish-action',
+      {
+        roomId: String(onlineState.roomId),
+      }
+    );
 
+    return;
+  }
+
+  // ローカル対戦：従来どおり画面を切り替える
+  setPhase('answer');
   setAnswer('');
-
-  setAnswerMode(
-    null
-  );
-
-  setAnswerUsed(
-    false
-  );
-
-  setLastAnswer(
-    null
-  );
+  setAnswerMode(null);
+  setAnswerUsed(false);
+  setLastAnswer(null);
 
   setMessage(
     '回答する項目を選んでください。'
   );
 }
-
   function handlePlayerClick(
     player
   ) {
@@ -8051,6 +8064,17 @@ function handleEndMyTurn() {
   }
 
   function handleStartGame() {
+    if (
+      socketRef.current?.connected &&
+      onlineState?.roomId
+    ) {
+      socketRef.current.emit('saikoro:start-request', {
+        roomId: String(onlineState.roomId),
+      });
+
+      setMessage('全員の準備完了を待っています。');
+      return;
+    }
     gameFinishedRef.current = false;
     setGameWinner(null);
 

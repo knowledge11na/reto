@@ -123,15 +123,27 @@ const FREE_GAMES = [
     available: true,
     rulePath: '/free/extra-poker/rules',
   },
-  {
-    id: 'saikoro',
-    name: '看板たぬき',
-    description: 'ダイスを強化しながら知識と戦略で競うゲーム',
-    minPlayers: 4,
-    maxPlayers: 4,
-    available: true,
-    rulePath: '/free/saikoro/rules',
-  },
+
+{
+id: 'haste-voute',
+name: 'ハステ・ヴォルテ',
+description: '多答問題を使った対戦ゲーム',
+minPlayers: 2,
+maxPlayers: 4,
+available: true,
+rulePath: '/free/tarou/rules',
+},
+// ======================================
+//  {
+//   id: 'saikoro',
+//    name: '看板たぬき',
+//    description: 'ダイスを強化しながら知識と戦略で競うゲーム',
+//    minPlayers: 4,
+//    maxPlayers: 4,
+//    available: true,
+//    rulePath: '/free/saikoro/rules',
+//  },
+// ======================================
 ];
 
 // ========================================
@@ -463,6 +475,7 @@ router.push(
 return;
 }
 
+
 // 看板たぬき
 if (gameId === 'saikoro') {
 router.push(
@@ -471,6 +484,13 @@ router.push(
 return;
 }
 
+// ハステ・ヴォルテ
+if (gameId === 'haste-voute') {
+  router.push(
+    `/free/tatou?room=${encodeURIComponent(roomId)}`
+  );
+  return;
+}
 
 setFreeError(
   `未対応のゲームです: ${gameId || '不明'}`

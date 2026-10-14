@@ -10077,40 +10077,50 @@ function saikoroShuffle(
 // 看板たぬき：部屋プレイヤー取得
 // ============================================================
 
-function saikoroGetPlayers(
-  game
-) {
-  const room =
-    freeRooms.get(
-      game.roomId
-    );
-
-  if (
-    !room
-  ) {
+function saikoroGetPlayers(game) {
+  if (!game) {
     return [];
   }
 
-  if (
-    room.players instanceof
-    Map
-  ) {
-    return Array.from(
-      room.players.values()
-    );
+  const room = freeRooms.get(String(game.roomId));
+
+  if (!room) {
+    return [];
   }
 
-  if (
-    Array.isArray(
-      room.players
-    )
-  ) {
-    return room.players;
-  }
+  const roomPlayers =
+    room.players instanceof Map
+      ? Array.from(room.players.values())
+      : Array.isArray(room.players)
+        ? room.players
+        : [];
 
-  return [];
+  return roomPlayers
+    .filter((player) => player && player.socketId)
+    .map((player, index) => {
+      const gamePlayer = game.players?.[player.socketId];
+
+      const savedSeat =
+        player.saikoroSeat ??
+        gamePlayer?.seat ??
+        index;
+
+      const seat = Number(savedSeat);
+
+      return {
+        ...player,
+        saikoroSeat:
+          Number.isInteger(seat) && seat >= 0
+            ? seat
+            : index,
+        playerNumber:
+          (Number.isInteger(seat) && seat >= 0
+            ? seat
+            : index) + 1,
+      };
+    })
+    .sort((a, b) => a.saikoroSeat - b.saikoroSeat);
 }
-
 
 // ============================================================
 // 看板たぬき：ゲームプレイヤー情報取得
@@ -10357,9 +10367,10 @@ function saikoroPublicPlayer(
   ) {
     return {
       seat:
-        Number(
-          player.playerNumber
-        ) - 1,
+Number(
+player.playerNumber
+) - 1,
+
 
       id:
         player.userId ??
@@ -10408,9 +10419,10 @@ function saikoroPublicPlayer(
 
   return {
     seat:
-      Number(
-        player.playerNumber
-      ) - 1,
+Number(
+player.playerNumber
+) - 1,
+
 
     id:
       player.userId ??
@@ -10530,8 +10542,13 @@ function saikoroBuildState(
           )
       ),
 
-    diceResults:
-      game.diceResults || {},
+
+    diceResults: Object.fromEntries(
+      players.map((player) => [
+        Number(player.playerNumber) - 1,
+        game.diceResults?.[player.socketId] || null,
+      ])
+    ),
 
     actionUsed:
       game.actionUsed || {},
@@ -10623,209 +10640,206 @@ function saikoroError(
 // 看板たぬき：ゲーム開始
 // ============================================================
 
-function saikoroStartGame(
-  game
-) {
-  const room =
-    freeRooms.get(
-      game.roomId
-    );
+function saikoroStartGame(game) {
+  console.trace('[saikoro] saikoroStartGame呼び出し', {
+    roomId: game?.roomId,
+    phase: game?.phase,
+    started: game?.started,
+    startRequested: game?.startRequested,
+  });
 
-  if (
-    !room
-  ) {
+  if (!game || game.started || game.phase !== 'waiting') {
     return false;
   }
 
-  const players =
-    saikoroGetPlayers(
-      game
-    );
-
-  if (
-    players.length !==
-    SAIKORO_MAX_PLAYERS
-  ) {
+  if (game.startRequested !== true) {
     return false;
   }
 
-  game.phase =
-    'dice';
+  const participants = saikoroGetPlayers(game);
 
-  game.round =
-    1;
+  if (participants.length !== SAIKORO_MAX_PLAYERS) {
+    game.message =
+      `ゲーム開始待ち：参加者 ${participants.length}/${SAIKORO_MAX_PLAYERS}人。`;
 
-  game.turnPlayer =
-    0;
+    saikoroBroadcastState(game);
+    return false;
+  }
 
-  game.diceResults =
-    {};
+  if (!(game.readyPlayers instanceof Set)) {
+    game.readyPlayers = new Set();
+  }
 
-  game.actionUsed =
-    {};
+  const allReady = participants.every((player) =>
+    game.readyPlayers.has(String(player.socketId))
+  );
 
-  game.extraActionUsed =
-    {};
+  if (!allReady) {
+    game.message = '全員の準備完了を待っています。';
+    saikoroBroadcastState(game);
+    return false;
+  }
 
-  game.answerTarget =
-    null;
+  // 席順を確定してからゲームデータを初期化する
+  participants.sort(
+    (a, b) => a.saikoroSeat - b.saikoroSeat
+  );
 
-  game.message =
-    'プレイヤー1のダイスフェーズです。全員でダイスを振ります。';
+  game.started = true;
+  game.phase = 'dice';
+  game.round = 1;
+  game.turnPlayer = 0;
+  game.diceResults = {};
+  game.actionUsed = {};
+  game.extraActionUsed = {};
+  game.answerTarget = null;
+  game.players = {};
 
-  game.players =
-    {};
+  participants.forEach((player, index) => {
+    const seat = player.saikoroSeat;
 
-  for (
-    const player of players
-  ) {
-    const seat =
-      Number(
-        player.playerNumber
-      ) - 1;
-
-    game.players[
-      player.socketId
-    ] = {
-      socketId:
-        player.socketId,
-
-      userId:
-        player.userId ??
-        null,
-
-      name:
-        player.name ||
-        `プレイヤー${
-          seat + 1
-        }`,
-
+    game.players[player.socketId] = {
+      socketId: player.socketId,
+      userId: player.userId ?? null,
+      name: player.name || `プレイヤー${seat + 1}`,
       seat,
 
       resources: {
-        berry:
-          saikoroInitialBerry(
-            player.playerNumber
-          ),
-
-        verse:
-          0,
-
-        eternal:
-          0,
+        berry: saikoroInitialBerry(seat + 1),
+        verse: 0,
+        eternal: 0,
       },
 
       maxResources: {
         ...SAIKORO_INITIAL_MAX_RESOURCES,
       },
 
-      diceA:
-        SAIKORO_INITIAL_DICE_A.map(
-          (face) => ({
-            ...face,
-          })
-        ),
+      diceA: SAIKORO_INITIAL_DICE_A.map((face) => ({
+        ...face,
+      })),
 
-      diceB:
-        SAIKORO_INITIAL_DICE_B.map(
-          (face) => ({
-            ...face,
-          })
-        ),
+      diceB: SAIKORO_INITIAL_DICE_B.map((face) => ({
+        ...face,
+      })),
 
       cards: [],
-
       extraCharacterInfo: [],
-
       vivreCardInfo: [],
-
-      extraCharacterCount:
-        0,
-
-      vivreCardCount:
-        0,
+      extraCharacterCount: 0,
+      vivreCardCount: 0,
     };
-  }
+  });
 
-  saikoroBroadcastState(
-    game
-  );
+  game.message = 'ゲーム開始！ 全員のダイスを振ります。';
 
-  console.log(
-    `[saikoro] game started room=${game.roomId}`
-  );
+  console.log('[saikoro] game started', {
+    roomId: game.roomId,
+    players: participants.map((player) => ({
+      seat: player.saikoroSeat,
+      socketId: player.socketId,
+      name: player.name,
+    })),
+  });
+
+  saikoroRollAllPlayers(game);
 
   return true;
 }
-
 
 // ============================================================
 // 看板たぬき：全員同時ダイス
 // ============================================================
 
 function saikoroRollAllPlayers(
-  game
+game
 ) {
-  const players =
-    saikoroGetPlayers(
-      game
-    );
+if (
+!game ||
+game.phase !== 'dice'
+) {
+return;
+}
 
-  game.diceResults =
-    {};
+const players =
+saikoroGetPlayers(game);
 
-  for (
-    const player of players
-  ) {
-    const gamePlayer =
-      saikoroGetGamePlayer(
-        game,
-        player.socketId
-      );
+if (
+players.length !== SAIKORO_MAX_PLAYERS
+) {
+return;
+}
 
-    if (
-      !gamePlayer
-    ) {
-      continue;
+const results = {};
+
+for (const player of players) {
+const gamePlayer =
+saikoroGetGamePlayer(
+game,
+player.socketId
+);
+
+
+if (!gamePlayer) {
+  console.error(
+    '[saikoro] game player missing',
+    {
+      roomId: game.roomId,
+      socketId: player.socketId,
+      seat: player.playerNumber - 1,
     }
-
-    const result =
-      saikoroRollPlayerDice(
-        gamePlayer
-      );
-
-    game.diceResults[
-      player.socketId
-    ] = result;
-
-    saikoroApplyDiceResult(
-      gamePlayer,
-      result
-    );
-  }
-
-  game.phase =
-    'action';
-
-  game.actionUsed =
-    {};
-
-  game.extraActionUsed =
-    {};
-
-  game.answerTarget =
-    null;
-
-  game.message =
-    `プレイヤー${
-      Number(
-        game.turnPlayer
-      ) + 1
-    }のアクションです。`;
-
-  saikoroBroadcastState(
-    game
   );
+
+  return;
+}
+
+results[player.socketId] =
+  saikoroRollPlayerDice(
+    gamePlayer
+  );
+
+}
+
+// 全員分の結果を確定してから資源を獲得する
+game.diceResults = results;
+
+for (const player of players) {
+const gamePlayer =
+saikoroGetGamePlayer(
+game,
+player.socketId
+);
+
+saikoroApplyDiceResult(
+  gamePlayer,
+  results[player.socketId]
+);
+
+
+}
+
+game.phase = 'action';
+
+game.actionUsed = {};
+
+game.extraActionUsed = {};
+
+game.answerTarget = null;
+
+game.message =
+`プレイヤー${Number(game.turnPlayer) + 1}のアクションです。`;
+
+console.log(
+'[saikoro] all players rolled',
+{
+roomId: game.roomId,
+round: game.round,
+turnPlayer: game.turnPlayer,
+seats: players.map(
+(player) => player.playerNumber - 1
+),
+}
+);
+saikoroBroadcastState(game);
 }
 
 
@@ -10894,9 +10908,7 @@ function saikoroNextTurn(
       nextIndex + 1
     }のダイスフェーズです。全員でダイスを振ります。`;
 
-  saikoroBroadcastState(
-    game
-  );
+saikoroRollAllPlayers(game);
 }
 
 
@@ -11046,57 +11058,58 @@ io.on(
           return;
         }
 
-        const player =
-          freePlayers[
-            playerIndex
-          ];
+       const player = freePlayers[playerIndex];
 
-        const oldSocketId =
-          player.socketId;
+const oldSocketId = player.socketId;
 
-        /*
-         * 看板たぬきは4人専用。
-         */
-        if (
-          playerIndex >=
-          SAIKORO_MAX_PLAYERS
-        ) {
-          saikoroError(
-            socket,
-            '看板たぬきは4人専用です。'
-          );
+// 最初に決めた席順を再接続後も維持する
+if (
+  player.saikoroSeat === undefined ||
+  player.saikoroSeat === null ||
+  !Number.isInteger(Number(player.saikoroSeat))
+) {
+  player.saikoroSeat = playerIndex;
+}
 
-          return;
-        }
+const savedSeat = Number(player.saikoroSeat);
 
-        /*
-         * 古いSocketがあれば切り離す。
-         */
-        if (
-          oldSocketId &&
-          oldSocketId !==
-            socket.id
-        ) {
-          const oldSocket =
-            io.sockets.sockets.get(
-              oldSocketId
-            );
+if (
+  savedSeat < 0 ||
+  savedSeat >= SAIKORO_MAX_PLAYERS
+) {
+  saikoroError(
+    socket,
+    '看板たぬきは4人専用です。'
+  );
 
-          if (
-            oldSocket
-          ) {
-            oldSocket.leave(
-              `free:${safeRoomId}`
-            );
-          }
-        }
+  return;
+}
 
-        /*
-         * Socket IDを更新。
-         */
-        player.socketId =
-          socket.id;
+// 古いSocketが残っている場合は部屋から切り離す
+if (oldSocketId && oldSocketId !== socket.id) {
+  const oldSocket = io.sockets.sockets.get(oldSocketId);
 
+  if (oldSocket) {
+    oldSocket.leave(`free:${safeRoomId}`);
+  }
+}
+
+// 部屋側の参加者情報を更新
+const wasHost =
+  String(room.hostSocketId) === String(oldSocketId);
+
+player.socketId = socket.id;
+player.saikoroSeat = savedSeat;
+
+// ホストが再接続した場合はホストIDも更新する
+if (wasHost) {
+  room.hostSocketId = socket.id;
+  console.log('[saikoro] host socket updated', {
+    roomId: safeRoomId,
+    oldSocketId,
+    newSocketId: socket.id,
+  });
+}
         /*
          * ゲーム取得。
          */
@@ -11135,6 +11148,10 @@ io.on(
 
             answerTarget:
               null,
+
+started: false,
+startRequested: false,
+readyPlayers: new Set(),
 
             message:
               '4人揃うまでお待ちください。',
@@ -11218,42 +11235,116 @@ io.on(
           `[saikoro] join room=${safeRoomId} socket=${socket.id} name=${player.name}`
         );
 
+  
         /*
-         * 4人揃っていなければ
-         * プレイヤー情報だけ作成。
+         * 参加者が揃っても自動では開始しない。
+         * ホストの開始要求と全員の準備完了を待つ。
          */
         if (
-          game.phase ===
-          'waiting'
+          game.phase === 'waiting'
         ) {
           const currentPlayers =
-            saikoroGetPlayers(
-              game
-            );
+            saikoroGetPlayers(game);
 
-          if (
-            currentPlayers.length <
-            SAIKORO_MAX_PLAYERS
-          ) {
-            game.message =
-              `4人揃うまでお待ちください。現在 ${currentPlayers.length}/${SAIKORO_MAX_PLAYERS}人`;
-          }
-
-          if (
-            currentPlayers.length ===
-            SAIKORO_MAX_PLAYERS
-          ) {
-            saikoroStartGame(
-              game
-            );
-
-            return;
-          }
+          game.message =
+            `ゲーム開始待ち：参加者 ${currentPlayers.length}/${SAIKORO_MAX_PLAYERS}人。全員の準備完了を待っています。`;
         }
 
-        saikoroBroadcastState(
-          game
+        saikoroBroadcastState(game);
+      }
+    );
+
+    // ========================================================
+    // 看板たぬき：画面の準備完了
+    // ========================================================
+
+    socket.on(
+      'saikoro:ready',
+      (payload) => {
+        const roomId = String(payload?.roomId || '')
+          .replace(/\D/g, '')
+          .slice(0, 4);
+
+        const game = saikoroGames.get(roomId);
+
+        if (
+          !game ||
+          game.phase !== 'waiting' ||
+          game.started
+        ) {
+          return;
+        }
+
+        const players = saikoroGetPlayers(game);
+
+        const isParticipant = players.some(
+          (player) =>
+            String(player.socketId) === String(socket.id)
         );
+
+        if (!isParticipant) {
+          return;
+        }
+
+        if (!(game.readyPlayers instanceof Set)) {
+          game.readyPlayers = new Set();
+        }
+
+        game.readyPlayers.add(String(socket.id));
+
+      }
+    );
+
+
+    // ========================================================
+    // 看板たぬき：ホストの開始要求
+    // ========================================================
+
+    socket.on(
+      'saikoro:start-request',
+      (payload) => {
+        const roomId = String(payload?.roomId || '')
+          .replace(/\D/g, '')
+          .slice(0, 4);
+
+        const game = saikoroGames.get(roomId);
+        const room = freeRooms.get(roomId);
+
+        if (
+          !game ||
+          !room ||
+          game.phase !== 'waiting' ||
+          game.started
+        ) {
+          return;
+        }
+
+        if (
+          String(room.hostSocketId) !== String(socket.id)
+        ) {
+          saikoroError(
+            socket,
+            'ゲームを開始できるのはホストだけです。'
+          );
+          return;
+        }
+
+console.log('[saikoro] start-request受信', {
+  roomId,
+  socketId: socket.id,
+  hostSocketId: room?.hostSocketId,
+  isHost:
+    String(room?.hostSocketId) === String(socket.id),
+  phase: game?.phase,
+  started: game?.started,
+  startRequestedBefore: game?.startRequested,
+});
+
+        game.startRequested = true;
+        game.message = '全員の準備完了を待っています。';
+
+        saikoroBroadcastState(game);
+        saikoroStartGame(game);
       }
     );
 
@@ -11922,23 +12013,35 @@ io.on(
          * 現段階では回答値を保存して
          * 次の実装につなげる。
          */
+
         game.answerTarget = {
-          socketId:
-            socket.id,
-
+          socketId: socket.id,
           target,
-
           answer,
         };
 
         game.message =
-          `プレイヤー${
-            gamePlayer.seat + 1
-          }が回答しました。`;
+          `プレイヤー${gamePlayer.seat + 1}が回答しました。`;
 
-        saikoroBroadcastState(
-          game
-        );
+        saikoroBroadcastState(game);
+
+        // 回答表示後、同じゲームが回答フェーズのままなら
+        // 次のプレイヤーへ進める
+        setTimeout(() => {
+          const currentGame =
+            saikoroGames.get(roomId);
+
+          if (
+            !currentGame ||
+            currentGame !== game ||
+            currentGame.phase !== 'answer' ||
+            currentGame.answerTarget?.socketId !== socket.id
+          ) {
+            return;
+          }
+
+          saikoroNextTurn(currentGame);
+        }, 1500);
       }
     );
 
@@ -11978,3 +12081,1021 @@ io.on(
     );
   }
 );
+
+ // ========================================================
+ // ========================================================
+ // 多答クイズ
+ // ========================================================
+ // ========================================================
+
+const hasteVouteGames = new Map();
+let hasteVouteQuestionsCache = null;
+let hasteVouteHandicapsCache = null;
+
+async function hasteVouteLoadExcelFirstColumn(fileName) {
+  const fs = await import("node:fs/promises");
+  const path = await import("node:path");
+  const xlsx = await import("xlsx");
+
+  const filePath = path.join(process.cwd(), "data", fileName);
+  const buffer = await fs.readFile(filePath);
+  const workbook = xlsx.read(buffer, { type: "buffer" });
+  const sheet = workbook.Sheets[workbook.SheetNames[0]];
+
+  return xlsx.utils.sheet_to_json(sheet, {
+    header: 1,
+    defval: "",
+  })
+    .map((row) => String(row?.[0] ?? "").trim())
+    .filter(Boolean)
+    .filter((value, index, list) => index === 0 || value !== list[index - 1]);
+}
+
+async function hasteVouteGetQuestions() {
+  if (!hasteVouteQuestionsCache) {
+    hasteVouteQuestionsCache =
+      await hasteVouteLoadExcelFirstColumn("questions.xlsx");
+  }
+  return hasteVouteQuestionsCache;
+}
+
+async function hasteVouteGetHandicaps() {
+  if (!hasteVouteHandicapsCache) {
+    hasteVouteHandicapsCache =
+      await hasteVouteLoadExcelFirstColumn("handicaps.xlsx");
+  }
+  return hasteVouteHandicapsCache;
+}
+
+function hasteVouteShuffle(list) {
+  const result = [...list];
+
+  for (let i = result.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [result[i], result[j]] = [result[j], result[i]];
+  }
+
+  return result;
+}
+
+function hasteVouteNormalizeAnswer(value) {
+  return String(value ?? "")
+    .normalize("NFKC")
+    .toLowerCase()
+    .replace(/[\s　]/g, "");
+}
+
+function hasteVouteGetFreeRoom(roomId) {
+  return freeRooms.get(String(roomId));
+}
+
+function hasteVouteGetLobbyPlayers(room) {
+  if (!room?.players) return [];
+
+  return [...room.players.entries()].map(([socketId, player]) => ({
+    socketId,
+    userId: String(
+      player?.userId ??
+      player?.id ??
+      player?.user_id ??
+      socketId
+    ),
+    name: String(
+      player?.name ??
+      player?.displayName ??
+      player?.username ??
+      "プレイヤー"
+    ),
+  }));
+}
+
+function hasteVoutePublicState(game, userId) {
+  const me = game.players.find(
+    (player) => player.userId === String(userId)
+  );
+
+  return {
+    roomId: game.roomId,
+    phase: game.phase,
+    targetScore: game.targetScore,
+    answerSeconds: game.answerSeconds,
+    deadline: game.deadline,
+    round: game.round,
+    turnUserId: game.players[game.turnIndex]?.userId ?? null,
+    turnPlayerName: game.players[game.turnIndex]?.name ?? null,
+    hostUserId: game.hostUserId,
+    players: game.players.map((player) => ({
+      userId: player.userId,
+      name: player.name,
+      score: player.score,
+      declaredNumber: player.declaredNumber,
+      acceptedCount: player.acceptedCount,
+      isConnected: Boolean(player.socketId),
+    })),
+    topic: game.topic,
+    declarations: game.declarationOrder.map((playerId) => {
+      const player = game.players.find((item) => item.userId === playerId);
+      return player
+        ? {
+            userId: player.userId,
+            name: player.name,
+            number: player.declaredNumber,
+          }
+        : null;
+    }).filter(Boolean),
+    answererUserId: game.answererUserId,
+    answererName:
+      game.players.find(
+        (player) => player.userId === game.answererUserId
+      )?.name ?? null,
+    ownAnswers: (me?.answers ?? [])
+      .map((answer, index) => ({
+        index,
+        text: answer.text,
+        used: answer.used,
+      }))
+      .filter((answer) => !answer.used),
+    currentReveal: game.currentReveal,
+    votes: game.votes,
+    voteCount: Object.keys(game.votes).length,
+    voterCount: game.players.filter(
+      (player) => player.userId !== game.answererUserId
+    ).length,
+    lastResult: game.lastResult,
+
+    handicapCards: game.handicapCards ?? [],
+
+    winnerUserId: game.winnerUserId,
+    error: game.error,
+  };
+}
+
+function hasteVouteBroadcastState(game) {
+  for (const player of game.players) {
+    if (!player.socketId) continue;
+
+    io.to(player.socketId).emit(
+      "haste-voute:state",
+      hasteVoutePublicState(game, player.userId)
+    );
+  }
+}
+
+function hasteVouteClearTimer(game) {
+  if (game.timer) {
+    clearTimeout(game.timer);
+    game.timer = null;
+  }
+}
+
+function hasteVouteFinishGame(game, winner) {
+  hasteVouteClearTimer(game);
+  game.phase = "finished";
+  game.winnerUserId = winner.userId;
+  game.lastResult = `${winner.name} の勝利！`;
+  hasteVouteBroadcastState(game);
+}
+
+
+
+function hasteVouteDrawHandicap(game) {
+  // すでに配布済み、または配布待ちなら何もしない
+  if (game.handicapDrawn || game.handicapPending) return;
+
+  const threshold = game.targetScore * 2 / 3;
+
+  // 目標点の2/3以上に到達したか確認
+  const crossed = game.players.some(
+    (player) => player.score >= threshold
+  );
+
+  if (!crossed) return;
+
+  // この時点では配らず、ラウンド終了まで待つ
+  game.handicapPending = true;
+
+  console.log("[haste-voute] ハンデカード配布待ち", {
+    round: game.round,
+    threshold,
+    players: game.players.map((player) => ({
+      name: player.name,
+      score: player.score,
+    })),
+  });
+}
+
+async function hasteVouteAwardHandicapAtRoundEnd(game) {
+  if (!game.handicapPending || game.handicapDrawn) return;
+
+  try {
+    const cards = await hasteVouteGetHandicaps();
+
+    if (!cards.length) {
+      console.error("[haste-voute] ハンデカードがありません。data/handicaps.xlsx を確認してください。");
+      return;
+    }
+
+    // ラウンド終了時点の最高得点を取得
+    const highestScore = Math.max(
+      ...game.players.map((player) => player.score)
+    );
+
+    // 最高得点が同点なら、その全員を対象にする
+    const leaders = game.players.filter(
+      (player) => player.score === highestScore
+    );
+
+    if (!leaders.length) return;
+
+    if (!game.handicapCards) {
+      game.handicapCards = [];
+    }
+
+    for (const leader of leaders) {
+      const card = cards[
+        Math.floor(Math.random() * cards.length)
+      ];
+
+      game.handicapCards.push({
+        userId: leader.userId,
+        name: leader.name,
+        card,
+      });
+    }
+
+    game.handicapPending = false;
+    game.handicapDrawn = true;
+
+    console.log("[haste-voute] ハンデカード配布完了", {
+      round: game.round,
+      highestScore,
+      recipients: leaders.map((player) => player.name),
+    });
+
+    hasteVouteBroadcastState(game);
+  } catch (error) {
+    console.error("[haste-voute] ハンデカード配布エラー", error);
+  }
+}
+
+function hasteVouteStartAnswerPhase(game) {
+  hasteVouteClearTimer(game);
+
+  game.phase = "answer";
+  game.topic =
+    game.questionDeck.shift() ??
+    game.allQuestions[
+      Math.floor(Math.random() * game.allQuestions.length)
+    ];
+
+  if (game.questionDeck.length === 0) {
+    game.questionDeck = hasteVouteShuffle(game.allQuestions);
+  }
+
+  game.round += 1;
+  game.deadline = Date.now() + game.answerSeconds * 1000;
+  game.lastResult = null;
+  game.currentReveal = null;
+  game.votes = {};
+  game.answererUserId = null;
+  game.declarationOrder = [];
+  game.declarationCursor = 0;
+
+
+  for (const player of game.players) {
+    player.answers = [];
+    player.declaredNumber = null;
+    player.acceptedCount = 0;
+    player.revealedCount = 0;
+  }
+
+  hasteVouteBroadcastState(game);
+
+  game.timer = setTimeout(() => {
+    if (game.phase !== "answer") return;
+
+    game.phase = "declare";
+    game.deadline = null;
+    hasteVouteBroadcastState(game);
+  }, game.answerSeconds * 1000);
+}
+
+
+
+function hasteVouteStartRevealPhase(game) {
+  const turnIndex = game.turnIndex;
+  const playerCount = game.players.length;
+
+  console.log("[haste-voute] 公開フェーズ開始前", {
+    round: game.round,
+    phase: game.phase,
+    players: game.players.map((player) => ({
+      name: player.name,
+      userId: player.userId,
+      declaredNumber: player.declaredNumber,
+      savedAnswerCount: player.answers.filter(
+        (answer) => !answer.used
+      ).length,
+    })),
+  });
+
+  // 全員が宣言していることを確認する
+  const undeclaredPlayers = game.players.filter(
+    (player) => player.declaredNumber === null
+  );
+
+  if (undeclaredPlayers.length > 0) {
+    console.error("[haste-voute] 未宣言のプレイヤーがいるため公開を開始できません", {
+      players: undeclaredPlayers.map((player) => player.name),
+    });
+
+    game.phase = "declare";
+    hasteVouteBroadcastState(game);
+    return;
+  }
+
+  // 全プレイヤーを宣言数の少ない順に並べる
+  // 同数の場合は現在の手番から時計回り
+  game.declarationOrder = [...game.players]
+    .sort((a, b) => {
+      if (a.declaredNumber !== b.declaredNumber) {
+        return a.declaredNumber - b.declaredNumber;
+      }
+
+      const aDistance =
+        (game.players.indexOf(a) - turnIndex + playerCount) %
+        playerCount;
+
+      const bDistance =
+        (game.players.indexOf(b) - turnIndex + playerCount) %
+        playerCount;
+
+      return aDistance - bDistance;
+    })
+    .map((player) => player.userId);
+
+  game.declarationCursor = 0;
+  game.answererUserId = null;
+  game.currentReveal = null;
+  game.votes = {};
+  game.phase = "reveal";
+
+  console.log("[haste-voute] 公開順を確定", {
+    round: game.round,
+    declarationOrder: game.declarationOrder,
+  });
+
+  hasteVouteAdvanceAnswerer(game);
+}
+
+
+
+function hasteVouteAdvanceAnswerer(game) {
+  game.currentReveal = null;
+  game.votes = {};
+
+  console.log("[haste-voute] 回答者の進行状況", {
+    round: game.round,
+    phase: game.phase,
+    declarationCursor: game.declarationCursor,
+    declarationOrder: game.declarationOrder,
+    players: game.players.map((player) => ({
+      name: player.name,
+      userId: player.userId,
+      declaredNumber: player.declaredNumber,
+      acceptedCount: player.acceptedCount,
+      savedAnswerCount: player.answers.filter(
+        (answer) => !answer.used
+      ).length,
+    })),
+  });
+
+  // 全プレイヤーの処理が終わった場合だけラウンド終了
+  if (game.declarationCursor >= game.declarationOrder.length) {
+    const winner = game.players.find(
+      (player) => player.score >= game.targetScore
+    );
+
+    if (winner) {
+      hasteVouteFinishGame(game, winner);
+      return;
+    }
+
+    game.phase = "round-end";
+    game.deadline = null;
+    game.answererUserId = null;
+    game.lastResult =
+      "全プレイヤーの回答公開が終了しました。次のお題へ進めます。";
+
+    void hasteVouteAwardHandicapAtRoundEnd(game);
+    hasteVouteBroadcastState(game);
+    return;
+  }
+
+  // 次の回答者を取得する
+  const nextUserId =
+    game.declarationOrder[game.declarationCursor];
+
+  const player = game.players.find(
+    (item) => item.userId === nextUserId
+  );
+
+  console.log("[haste-voute] 次の回答者", {
+    round: game.round,
+    declarationCursor: game.declarationCursor,
+    declarationOrderLength: game.declarationOrder.length,
+    nextUserId,
+    playerName: player?.name ?? null,
+    declaredNumber: player?.declaredNumber ?? null,
+    savedAnswerCount: player?.answers.filter(
+      (answer) => !answer.used
+    ).length ?? 0,
+  });
+
+  // 存在しないプレイヤーIDがあればログを残して次へ
+  if (!player) {
+    console.error("[haste-voute] 宣言順にプレイヤーが見つかりません", {
+      nextUserId,
+      declarationCursor: game.declarationCursor,
+      declarationOrder: game.declarationOrder,
+    });
+
+    game.declarationCursor += 1;
+    hasteVouteAdvanceAnswerer(game);
+    return;
+  }
+
+  game.answererUserId = player.userId;
+  player.acceptedCount = 0;
+  game.phase = "reveal";
+
+  // 0枚宣言なら公開不要。処理済みにして次へ
+  if (player.declaredNumber === 0) {
+    game.lastResult =
+      `${player.name} は0枚を宣言しました。0点です。`;
+
+    game.declarationCursor += 1;
+    hasteVouteAdvanceAnswerer(game);
+    return;
+  }
+
+  // 未公開の回答がなければ失敗扱い
+  if (!player.answers.some((answer) => !answer.used)) {
+    console.error("[haste-voute] 公開可能な回答が0件", {
+      round: game.round,
+      playerName: player.name,
+      declaredNumber: player.declaredNumber,
+      savedAnswerCount: player.answers.length,
+      declarationCursor: game.declarationCursor,
+    });
+
+    hasteVouteFailAnswerer(game);
+    return;
+  }
+
+  // ここまで来たら、必ず回答公開画面を配信する
+  game.lastResult =
+    `${player.name} の回答公開です。`;
+
+  hasteVouteBroadcastState(game);
+}
+
+function hasteVouteFailAnswerer(game) {
+  const player = game.players.find(
+    (item) => item.userId === game.answererUserId
+  );
+
+  if (player) {
+    player.score += 0;
+    game.lastResult =
+      `${player.name} は宣言した ${player.declaredNumber} 枚に届かず、0点です。`;
+  }
+
+  hasteVouteDrawHandicap(game);
+  game.declarationCursor += 1;
+  hasteVouteAdvanceAnswerer(game);
+}
+
+function hasteVouteRevealNext(game) {
+  const player = game.players.find(
+    (item) => item.userId === game.answererUserId
+  );
+
+  if (!player) return;
+
+  const available = player.answers
+    .map((answer, index) => ({ ...answer, index }))
+    .filter((answer) => !answer.used);
+
+  if (
+    player.acceptedCount >= player.declaredNumber
+  ) {
+    player.score += player.declaredNumber;
+
+    game.lastResult =
+      `${player.name} が ${player.declaredNumber} 点を獲得しました！`;
+
+    hasteVouteDrawHandicap(game);
+
+    if (player.score >= game.targetScore) {
+      hasteVouteFinishGame(game, player);
+      return;
+    }
+
+    game.declarationCursor += 1;
+    hasteVouteAdvanceAnswerer(game);
+    return;
+  }
+
+  if (!available.length) {
+    hasteVouteFailAnswerer(game);
+    return;
+  }
+
+  game.phase = "reveal";
+  game.currentReveal = null;
+  game.votes = {};
+  hasteVouteBroadcastState(game);
+}
+
+io.on("connection", (socket) => {
+  socket.on("haste-voute:join", async (payload = {}) => {
+    try {
+      const roomId = String(payload.roomId ?? "").trim();
+      const userId = String(payload.userId ?? "").trim();
+      const name = String(payload.name ?? "プレイヤー").trim();
+
+      if (!roomId || !userId) {
+        socket.emit("haste-voute:error", "部屋番号またはユーザー情報がありません。");
+        return;
+      }
+
+      const lobby = hasteVouteGetFreeRoom(roomId);
+
+      if (!lobby) {
+        socket.emit("haste-voute:error", "フリールームが見つかりません。ロビーから入り直してください。");
+        return;
+      }
+
+      const lobbyPlayers = hasteVouteGetLobbyPlayers(lobby);
+      const lobbyPlayer = lobbyPlayers.find(
+        (player) => player.userId === userId
+      );
+
+      if (!lobbyPlayer) {
+        socket.emit("haste-voute:error", "このフリールームの参加者ではありません。");
+        return;
+      }
+
+      let game = hasteVouteGames.get(roomId);
+
+      if (!game) {
+        const questions = await hasteVouteGetQuestions();
+
+        if (!questions.length) {
+          socket.emit("haste-voute:error", "data/questions.xlsx の1列目にお題がありません。");
+          return;
+        }
+
+        const host = lobbyPlayers.find(
+          (player) => player.socketId === lobby.hostSocketId
+        );
+
+        game = {
+          roomId,
+          hostUserId: String(lobby.hostUserId ?? host?.userId ?? userId),
+          players: lobbyPlayers.map((player) => ({
+            ...player,
+            score: 0,
+            answers: [],
+            declaredNumber: null,
+            acceptedCount: 0,
+            revealedCount: 0,
+          })),
+          phase: "setup",
+          targetScore: 40,
+          answerSeconds: 120,
+          deadline: null,
+          round: 0,
+          turnIndex: 0,
+          allQuestions: questions,
+          questionDeck: hasteVouteShuffle(questions),
+          declarationOrder: [],
+          declarationCursor: 0,
+          answererUserId: null,
+          currentReveal: null,
+          votes: {},
+          lastResult: null,
+ 
+
+handicapCards: [],
+handicapDrawn: false,
+handicapPending: false,
+
+
+          winnerUserId: null,
+          timer: null,
+        };
+
+        hasteVouteGames.set(roomId, game);
+      }
+
+      const player = game.players.find(
+        (item) => item.userId === userId
+      );
+
+      if (!player) {
+        socket.emit("haste-voute:error", "ゲーム参加者情報を取得できません。");
+        return;
+      }
+
+      if (player.socketId && player.socketId !== socket.id) {
+        const oldSocket = io.sockets.sockets.get(player.socketId);
+        if (oldSocket) {
+          oldSocket.leave(`haste-voute:${roomId}`);
+        }
+      }
+
+      player.socketId = socket.id;
+      player.name = name || player.name;
+      socket.data.hasteVouteRoomId = roomId;
+      socket.data.hasteVouteUserId = userId;
+      socket.join(`haste-voute:${roomId}`);
+
+      hasteVouteBroadcastState(game);
+    } catch (error) {
+      console.error("[haste-voute] join error", error);
+      socket.emit("haste-voute:error", "ゲームへの参加に失敗しました。");
+    }
+  });
+
+  socket.on("haste-voute:setup", (payload = {}) => {
+    const roomId = String(payload.roomId ?? "");
+    const game = hasteVouteGames.get(roomId);
+
+    if (!game || game.phase !== "setup") return;
+    if (socket.data.hasteVouteUserId !== game.hostUserId) return;
+
+    const targetScore = Number(payload.targetScore);
+    const answerSeconds = Number(payload.answerSeconds);
+
+    if (
+      !Number.isInteger(targetScore) ||
+      targetScore < 5 ||
+      targetScore > 500 ||
+      !Number.isInteger(answerSeconds) ||
+      answerSeconds < 30 ||
+      answerSeconds > 600
+    ) {
+      socket.emit("haste-voute:error", "勝利点は5～500点、制限時間は30～600秒で設定してください。");
+      return;
+    }
+
+    game.targetScore = targetScore;
+    game.answerSeconds = answerSeconds;
+    hasteVouteBroadcastState(game);
+  });
+
+  socket.on("haste-voute:start", (payload = {}) => {
+    const roomId = String(payload.roomId ?? "");
+    const game = hasteVouteGames.get(roomId);
+
+    if (!game || game.phase !== "setup") return;
+    if (socket.data.hasteVouteUserId !== game.hostUserId) return;
+
+    if (game.players.length < 2) {
+      socket.emit("haste-voute:error", "2人以上で開始してください。");
+      return;
+    }
+
+    hasteVouteStartAnswerPhase(game);
+  });
+
+
+socket.on("haste-voute:submit-answers", (payload = {}) => {
+  const roomId = String(payload.roomId ?? "");
+  const game = hasteVouteGames.get(roomId);
+
+  console.log("[haste-voute] 回答送信を受信", {
+    roomId,
+    phase: game?.phase ?? null,
+    socketUserId: socket.data.hasteVouteUserId ?? null,
+    answerText: String(payload.answers ?? ""),
+  });
+
+  if (!game || game.phase !== "answer") {
+    console.warn("[haste-voute] 回答を保存できません。ゲームが回答フェーズではありません。", {
+      roomId,
+      phase: game?.phase ?? null,
+    });
+    return;
+  }
+
+  const player = game.players.find(
+    (item) => item.userId === socket.data.hasteVouteUserId
+  );
+
+  if (!player || player.socketId !== socket.id) {
+    console.warn("[haste-voute] 回答を保存できません。プレイヤーが一致しません。", {
+      socketUserId: socket.data.hasteVouteUserId ?? null,
+      playerFound: Boolean(player),
+      socketMatches: player?.socketId === socket.id,
+    });
+    return;
+  }
+
+  const answers = String(payload.answers ?? "")
+    .split(/\r?\n/)
+    .map((text) => text.trim())
+    .filter(Boolean);
+
+  player.answers = answers.map((text) => ({
+    text: text.slice(0, 100),
+    used: false,
+  }));
+
+  console.log("[haste-voute] 回答を保存しました", {
+    playerName: player.name,
+    answerCount: player.answers.length,
+    answers: player.answers.map((answer) => answer.text),
+  });
+
+  hasteVouteBroadcastState(game);
+});
+
+
+  socket.on("haste-voute:declare", (payload = {}) => {
+    const roomId = String(payload.roomId ?? "");
+    const game = hasteVouteGames.get(roomId);
+    const userId = socket.data.hasteVouteUserId;
+    const number = Number(payload.number);
+
+    console.log("[haste-voute] 数字の宣言を受信", {
+      roomId,
+      phase: game?.phase ?? null,
+      userId: userId ?? null,
+      number,
+    });
+
+    if (!game || game.phase !== "declare") {
+      console.warn("[haste-voute] 宣言を拒否：フェーズが違います", {
+        phase: game?.phase ?? null,
+      });
+      return;
+    }
+
+    const player = game.players.find(
+      (item) => item.userId === userId
+    );
+
+    if (!player) {
+      console.warn("[haste-voute] 宣言を拒否：プレイヤーが見つかりません", {
+        userId,
+      });
+      return;
+    }
+
+    if (player.declaredNumber !== null) {
+      console.warn("[haste-voute] 宣言を拒否：すでに宣言済み", {
+        playerName: player.name,
+        declaredNumber: player.declaredNumber,
+      });
+      return;
+    }
+
+    if (
+      !Number.isInteger(number) ||
+      number < 0 ||
+      number > 100
+    ) {
+      console.warn("[haste-voute] 宣言を拒否：数字が不正です", {
+        number: payload.number,
+      });
+      return;
+    }
+
+    player.declaredNumber = number;
+
+    console.log("[haste-voute] 数字の宣言を保存", {
+      playerName: player.name,
+      number,
+    });
+
+    if (
+      game.players.every(
+        (item) => item.declaredNumber !== null
+      )
+    ) {
+      hasteVouteStartRevealPhase(game);
+      return;
+    }
+
+    hasteVouteBroadcastState(game);
+  });
+
+
+  socket.on("haste-voute:reveal", (payload = {}) => {
+    const roomId = String(payload.roomId ?? "");
+    const game = hasteVouteGames.get(roomId);
+    const userId = String(socket.data.hasteVouteUserId ?? "");
+
+    console.log("[haste-voute] カード公開リクエスト", {
+      roomId,
+      phase: game?.phase ?? null,
+      userId,
+      answererUserId: game?.answererUserId ?? null,
+      index: payload.index,
+    });
+
+    if (!game || game.phase !== "reveal") {
+      console.warn("[haste-voute] 公開できません：ゲームまたはフェーズが不正です");
+      return;
+    }
+
+    if (userId !== String(game.answererUserId ?? "")) {
+      console.warn("[haste-voute] 公開できません：回答者が一致しません");
+      return;
+    }
+
+    const player = game.players.find(
+      (item) => String(item.userId) === userId
+    );
+
+    if (!player || !player.socketId || player.socketId !== socket.id) {
+      console.warn("[haste-voute] 公開できません：プレイヤー情報が一致しません");
+      return;
+    }
+
+    const index = Number(payload.index);
+    const answer = player.answers[index];
+
+    if (
+      !Number.isInteger(index) ||
+      index < 0 ||
+      !answer ||
+      answer.used
+    ) {
+      console.warn("[haste-voute] 公開できません：カードが無効です", {
+        index,
+        answerFound: Boolean(answer),
+        used: answer?.used ?? null,
+      });
+      return;
+    }
+
+    answer.used = true;
+
+    game.currentReveal = {
+      text: answer.text,
+      answererUserId: player.userId,
+      answererName: player.name,
+    };
+
+    game.phase = "vote";
+    game.votes = {};
+
+    console.log("[haste-voute] カード公開成功", {
+      playerName: player.name,
+      answer: answer.text,
+    });
+
+    hasteVouteBroadcastState(game);
+  });
+
+
+  socket.on("haste-voute:remove-duplicate", (payload = {}) => {
+    const roomId = String(payload.roomId ?? "");
+    const game = hasteVouteGames.get(roomId);
+
+    if (!game || game.phase !== "vote" || !game.currentReveal) return;
+
+    const userId = socket.data.hasteVouteUserId;
+
+    if (!userId || userId === game.answererUserId) return;
+
+    const player = game.players.find(
+      (item) => item.userId === userId
+    );
+
+    const index = Number(payload.index);
+    const answer = player?.answers[index];
+
+    if (
+      !answer ||
+      answer.used ||
+      hasteVouteNormalizeAnswer(answer.text) !==
+        hasteVouteNormalizeAnswer(game.currentReveal.text)
+    ) {
+      return;
+    }
+
+    answer.used = true;
+    hasteVouteBroadcastState(game);
+  });
+
+  socket.on("haste-voute:vote", (payload = {}) => {
+    const roomId = String(payload.roomId ?? "");
+    const game = hasteVouteGames.get(roomId);
+
+    if (!game || game.phase !== "vote" || !game.currentReveal) return;
+
+    const userId = socket.data.hasteVouteUserId;
+
+    if (!userId || userId === game.answererUserId) return;
+    if (payload.vote !== "OK" && payload.vote !== "NG") return;
+    if (Object.prototype.hasOwnProperty.call(game.votes, userId)) return;
+
+    game.votes[userId] = payload.vote;
+
+    const voters = game.players.filter(
+      (player) => player.userId !== game.answererUserId
+    );
+
+    if (Object.keys(game.votes).length < voters.length) {
+      hasteVouteBroadcastState(game);
+      return;
+    }
+
+    const okCount = Object.values(game.votes).filter(
+      (vote) => vote === "OK"
+    ).length;
+
+    const passed = okCount > voters.length / 2;
+
+    if (passed) {
+      const answerer = game.players.find(
+        (player) => player.userId === game.answererUserId
+      );
+
+      if (answerer) {
+        answerer.acceptedCount += 1;
+        game.lastResult =
+          `「${game.currentReveal.text}」はOK！ (${answerer.acceptedCount}/${answerer.declaredNumber})`;
+      }
+
+      hasteVouteRevealNext(game);
+      return;
+    }
+
+    game.lastResult =
+      `「${game.currentReveal.text}」はNG。次の回答を公開してください。`;
+
+    game.currentReveal = null;
+    game.votes = {};
+    game.phase = "reveal";
+
+    const answerer = game.players.find(
+      (player) => player.userId === game.answererUserId
+    );
+
+    if (
+      !answerer?.answers.some((answer) => !answer.used)
+    ) {
+      hasteVouteFailAnswerer(game);
+      return;
+    }
+
+    hasteVouteBroadcastState(game);
+  });
+
+
+  socket.on("haste-voute:next-topic", (payload = {}) => {
+    const roomId = String(payload.roomId ?? "");
+    const game = hasteVouteGames.get(roomId);
+    const userId = socket.data.hasteVouteUserId;
+
+    if (!game || game.phase !== "round-end") return;
+
+    const player = game.players.find(
+      (item) => item.userId === userId
+    );
+
+    if (!player || player.socketId !== socket.id) return;
+
+    // 次のラウンドでは手番を時計回りに交代する
+    game.turnIndex =
+      (game.turnIndex + 1) % game.players.length;
+
+    hasteVouteStartAnswerPhase(game);
+  });
+
+
+
+  socket.on("disconnect", () => {
+    const roomId = socket.data.hasteVouteRoomId;
+    const userId = socket.data.hasteVouteUserId;
+    if (!roomId || !userId) return;
+
+    const game = hasteVouteGames.get(roomId);
+    if (!game) return;
+
+    const player = game.players.find(
+      (item) => item.userId === userId
+    );
+
+    if (player?.socketId === socket.id) {
+      player.socketId = null;
+      hasteVouteBroadcastState(game);
+    }
+  });
+});
