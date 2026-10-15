@@ -191,7 +191,6 @@ function createPlayer(index) {
     seat: index,
     id: `player-${index}`,
     name: index === 0 ? 'あなた' : `プレイヤー${index + 1}`,
-    isCpu: false,
 
     resources: {
       ...INITIAL_RESOURCES[index],
@@ -3688,13 +3687,13 @@ function handleNewsUse(resource) {
 
 
 function handleTactResourceUse(resource) {
-if (
-  !['dice', 'action', 'cpu'].includes(phase) ||
-  !tactResourceSelecting ||
-  tactResourceRemaining <= 0
-) {
-  return;
-}
+  if (
+    !['dice', 'action'].includes(phase) ||
+    !tactResourceSelecting ||
+    tactResourceRemaining <= 0
+  ) {
+    return;
+  }
 
   const allowedResources = [
     'berry',
@@ -4914,11 +4913,15 @@ useEffect(() => {
         setSocketConnected(true);
         setOnlineError('');
 
-        socket.emit('saikoro:join', {
-          roomId,
-          userId,
-          name,
-        });
+const playerSocketId =
+  new URLSearchParams(window.location.search).get('playerSocketId') || '';
+
+socket.emit('saikoro:join', {
+  roomId,
+  userId,
+  name,
+  playerSocketId,
+});
       });
 
       socket.on('disconnect', () => {
@@ -5331,38 +5334,6 @@ function startImpactDialForSeat(results, seat) {
     return;
   }
 
-  // CPUは所持している衝撃貝を必ず使用する
-  const nextResults = {
-    ...results,
-    [player.seat]: {
-      ...results[player.seat],
-    },
-  };
-
-  for (let i = 0; i < dialCount; i++) {
-    const dieType = Math.random() < 0.5 ? 'a' : 'b';
-
-    nextResults[player.seat][dieType] =
-      rollDice(
-        dieType === 'a'
-          ? player.diceA
-          : player.diceB
-      );
-  }
-
-  setImpactDialResults(nextResults);
-  setAllDiceResults(nextResults);
-
-  if (players[0]) {
-    setDiceResult(
-      nextResults[players[0].seat]
-    );
-  }
-
-  startImpactDialForSeat(
-    nextResults,
-    seat + 1
-  );
 }
 
 function handleImpactDialUse() {
@@ -5375,12 +5346,10 @@ function handleImpactDialUse() {
 
 function handleImpactDialSkip() {
   const results = impactDialResults;
-
   setImpactDialPrompt(false);
   setImpactDialChoosingDie(false);
   setImpactDialRemaining(0);
-
-  startImpactDialForSeat(results, 1);
+  finishDiceRoll(results);
 }
 
 function handleImpactDialReroll(dieType) {
@@ -5500,12 +5469,11 @@ function handleImpactDialReroll(dieType) {
 
       setImpactDialPrompt(false);
       setImpactDialChoosingDie(false);
-
       setMessage(
-        '衝撃貝を使い切りました。CPUの処理に進みます。'
+        '衝撃貝を使い切りました。'
       );
 
-      startImpactDialForSeat(nextResults, 1);
+      finishDiceRoll(nextResults);
     }, 1100);
 }
 
@@ -5760,56 +5728,7 @@ function finishDicePhase(
   setMessage(
     `${players[turnPlayer]?.name || 'プレイヤー1'}のターンです。`
   );
-
-  if (
-    turnPlayer >= 1 &&
-    turnPlayer <= 3
-  ) {
-    setTimeout(() => {
-      handleCpuTurn(turnPlayer);
-    }, 300);
-  }
 }
-
-const diceAutoTriggeredRef =
-  useRef(false);
-
-useEffect(() => {
-  // オンライン対戦では各ブラウザが自動でダイスを振らない
-  if (
-    socketRef.current?.connected &&
-    onlineState?.roomId
-  ) {
-    diceAutoTriggeredRef.current = false;
-    return;
-  }
-
-  if (phase !== 'dice') {
-    diceAutoTriggeredRef.current = false;
-    return;
-  }
-
-  if (
-    diceAutoTriggeredRef.current ||
-    diceRolling
-  ) {
-    return;
-  }
-
-  diceAutoTriggeredRef.current = true;
-
-  const timer = setTimeout(() => {
-    rollAllDice();
-  }, 300);
-
-  return () => {
-    clearTimeout(timer);
-  };
-}, [
-  phase,
-  diceRolling,
-  onlineState,
-]);
 
 
 function hasCard(
@@ -7017,37 +6936,42 @@ return player;
     );
   }
 
-  function finishAction() {
-    if (
-      !isMyTurn
-    ) {
-      return;
-    }
 
-    if (
-      !actionUsed
-    ) {
-      setMessage(
-        '先に1つアクションを選んでください。'
-      );
-
-      return;
-    }
-
-    setPhase(
-      'answer'
-    );
-
-    setAnswer('');
-
-    setAnswerUsed(
-      false
-    );
-
-    setMessage(
-      '回答フェーズです。1枚ビブカのキャラクター名を入力してください。'
-    );
+function finishAction() {
+  if (!isMyTurn) {
+    return;
   }
+
+  if (!actionUsed) {
+    setMessage(
+      '先に1つアクションを選んでください。'
+    );
+    return;
+  }
+
+  // オンライン対戦ではサーバーに回答フェーズへの移行を依頼
+  if (
+    socketRef.current?.connected &&
+    onlineState?.roomId
+  ) {
+    socketRef.current.emit(
+      'saikoro:finish-action',
+      {
+        roomId: String(onlineState.roomId),
+      }
+    );
+    return;
+  }
+
+  // ローカル対戦は従来どおり
+  setPhase('answer');
+  setAnswer('');
+  setAnswerUsed(false);
+
+  setMessage(
+    '回答フェーズです。1枚ビブカのキャラクター名を入力してください。'
+  );
+}
 
 
 function handleAnswerSubmit(event) {
@@ -7326,6 +7250,23 @@ function addActionHistory(
 }
 
 function startNextPlayerTurn() {
+  // オンライン対戦では、回答終了をサーバーに通知する
+  if (
+    socketRef.current?.connected &&
+    onlineState?.roomId
+  ) {
+    socketRef.current.emit(
+      'saikoro:answer',
+      {
+        roomId: String(onlineState.roomId),
+        target: 'extra',
+        answer: '',
+      }
+    );
+
+    return;
+  }
+
   const nextPlayer =
     (turnPlayer + 1) % 4;
 
@@ -7546,439 +7487,6 @@ function replaceVivreCard(options = {}) {
 
   setMessage(
     '新しい1枚ビブカが補充されました。あなたのターンです。'
-  );
-}
-
-  function runCpuAnswers() {
-    if (
-      !currentVivreCard
-    ) {
-      return;
-    }
-
-    const profile =
-      getCardProfile(
-        currentVivreCard
-      );
-
-    if (!profile) {
-      return;
-    }
-
-    const order = [
-      1,
-      2,
-      3,
-    ];
-
-    let winnerSeat =
-      null;
-
-    for (
-      const seat of order
-    ) {
-      const cpu =
-        players[seat];
-
-      if (!cpu) {
-        continue;
-      }
-
-      const chance =
-        0.18 +
-        round * 0.015;
-
-      const correct =
-        Math.random() <
-        chance;
-
-      const cpuAnswer =
-        correct
-          ? profile.name
-          : randomCpuAnswer(
-              profiles
-            );
-
-      setLastAnswer({
-        player:
-          cpu.name,
-        answer:
-          cpuAnswer,
-        correct,
-      });
-
-      if (
-        correct
-      ) {
-        winnerSeat =
-          seat;
-
-        break;
-      }
-    }
-
-    if (
-      winnerSeat !== null
-    ) {
-      handleVivreWin(
-        winnerSeat,
-        profile.name
-      );
-
-      return;
-    }
-
-    setMessage(
-      '全員不正解。次のターンへ進みます。'
-    );
-
-    setTimeout(
-      () => {
-        startNextRound();
-      },
-      1000
-    );
-  }
-
-  function randomCpuAnswer(
-    list
-  ) {
-    if (
-      !Array.isArray(list) ||
-      list.length === 0
-    ) {
-      return '？？？';
-    }
-
-    const profile =
-      randomChoice(
-        list
-      );
-
-    return (
-      profile?.name ||
-      '？？？'
-    );
-  }
-
-  function handleCpuTurn(
-  seat
-) {
-  const cpu =
-    players[seat];
-
-  if (!cpu) {
-    return;
-  }
-
-  setTurnPlayer(
-    seat
-  );
-
-  setPhase(
-    'cpu'
-  );
-
-  setMessage(
-    `${cpu.name}が行動しています……`
-  );
-
-addActionHistory(
-  `${cpu.name}が行動を開始`
-);
-
-  setTimeout(
-    () => {
-      /*
-       * ========================================================
-       * CPUが購入できる1枚ビブカ情報を全部購入する
-       * ========================================================
-       */
-
-      let workingPlayer =
-        players[seat];
-
-      let revealedCard =
-        currentVivreCard;
-
-      const boughtInfos = [];
-
-      const possibleInfos =
-        INFO_ORDER.filter(
-          (type) =>
-            !getKnownInfoForPlayer(
-              workingPlayer,
-              type
-            ) &&
-            canBuyInfo(
-              workingPlayer,
-              type
-            )
-        );
-
-      for (
-        const info of possibleInfos
-      ) {
-        const cost =
-          getInfoCost(
-            info
-          );
-
-        if (
-          !cost
-        ) {
-          continue;
-        }
-
-        if (
-          !canBuyInfo(
-            workingPlayer,
-            info
-          )
-        ) {
-          continue;
-        }
-
-        revealedCard =
-          applyLocalVivreReveal(
-            revealedCard,
-            info
-          );
-
-        workingPlayer =
-          applyCost(
-            workingPlayer,
-            cost
-          );
-
-        boughtInfos.push(
-          info
-        );
-      }
-
-      /*
-       * CPUのエクストラ情報購入
-       *
-       * ベリー3で買える
-       * ランダム公開を、
-       * ベリーが足りなくなるまで行う。
-       */
-  let cpuExtraRandomCount = 0;
-
-  /*
-   * CPUのエクストラ情報購入
-   * 公開した文字番号もプレイヤーに保存する
-   */
-  let cpuExtraIndexes = Array.isArray(
-    workingPlayer?.extraCharacterRevealedIndexes
-  )
-    ? [...workingPlayer.extraCharacterRevealedIndexes]
-    : [];
-
-  while (
-    Number(workingPlayer?.resources?.berry || 0) >= 3
-  ) {
-    const knownIndexes = new Set(
-      cpuExtraIndexes.map(Number)
-    );
-
-    const hiddenIndexes =
-      extraCharacterBoard
-        .filter(
-          (entry) =>
-            !entry.revealed &&
-            !knownIndexes.has(Number(entry.index))
-        )
-        .map((entry) => entry.index);
-
-    if (hiddenIndexes.length === 0) {
-      break;
-    }
-
-    const randomIndex = randomChoice(hiddenIndexes);
-
-    if (randomIndex == null) {
-      break;
-    }
-
-    workingPlayer = applyCost(
-      workingPlayer,
-      {
-        berry: 3,
-        verse: 0,
-        eternal: 0,
-      }
-    );
-
-    // 購入した文字番号を保存
-    cpuExtraIndexes.push(randomIndex);
-
-    cpuExtraRandomCount += 1;
-  }
-
-  workingPlayer = {
-    ...workingPlayer,
-    extraRandomCount:
-      Number(workingPlayer.extraRandomCount || 0) +
-      cpuExtraRandomCount,
-    extraCharacterRevealedIndexes: [
-      ...new Set([
-        ...cpuExtraIndexes.map(Number),
-      ]),
-    ],
-  };
-
-      /*
-       * CPUが購入した情報をまとめて保存する
-       */
-if (
-  boughtInfos.length > 0 ||
-  cpuExtraRandomCount > 0
-) {
-        const finalCard =
-          revealedCard;
-
-       const finalPlayer =
-  workingPlayer;
-
-updatePlayer(
-  seat,
-  (player) => ({
-    ...finalPlayer,
-
-    vivreCardInfo: {
-      ...(player.vivreCardInfo || {}),
-      ...Object.fromEntries(
-        boughtInfos.map(
-          (info) => [
-            info,
-            finalCard?.revealedInfo?.[
-              info
-            ],
-          ]
-        )
-      ),
-    },
-
-    extraRandomCount:
-      Number(
-        finalPlayer
-          .extraRandomCount ||
-        0
-      ),
-  })
-);
-
-        // 黒電伝虫：CPUが購入した情報を他のプレイヤーへ共有
-        for (const info of boughtInfos) {
-          applyKuroDenDenMushi(
-            seat,
-            info,
-            finalCard?.revealedInfo,
-            finalCard
-          );
-        }
-
-
-        setMessage(
-          `${cpu.name}がビブカ情報を${boughtInfos.length}個購入しました。`
-        );
-
-addActionHistory(
-  `${cpu.name}が1枚ビブカ情報を${boughtInfos.length}個購入`
-);
-
-      } else {
-        setMessage(
-          `${cpu.name}は購入できる情報がありませんでした。`
-        );
-      }
-
-      /*
-       * ========================================================
-       * CPU回答
-       * ========================================================
-       */
-
-      setTimeout(
-        () => {
-          const profile =
-            getCardProfile(
-              revealedCard
-            );
-
-          const cpuAnswer =
-            'ルフィ';
-
-          const correct =
-            normalizeAnswerText(
-              cpuAnswer
-            ) ===
-            normalizeAnswerText(
-              profile?.name || ''
-            );
-
-          setLastAnswer({
-            player:
-              cpu.name,
-            answer:
-              cpuAnswer,
-            correct,
-          });
-
-addActionHistory(
-  `${cpu.name}が「${cpuAnswer}」と回答`
-);
-
-          /*
-           * 正解ならそのまま勝利処理
-           */
-          if (
-            correct
-          ) {
-addActionHistory(
-  `${cpu.name}の回答は正解`
-);
-            handleVivreWin(
-              seat,
-              cpuAnswer
-            );
-
-            return;
-          }
-
-          /*
-           * 不正解なら次のプレイヤーへ
-           *
-           * ここでは直接
-           * handleCpuTurn(next)
-           * を呼ばない。
-           *
-           * startNextPlayerTurn()
-           * → 次のプレイヤーのダイス
-           * → CPUならhandleCpuTurn()
-           *
-           * という一本の流れにする。
-           */
-          setMessage(
-            `${cpu.name}の回答「${cpuAnswer}」は不正解。`
-          );
-
-addActionHistory(
-  `${cpu.name}の回答は不正解`
-);
-
-          setTimeout(
-            () => {
-              startNextPlayerTurn();
-            },
-            700
-          );
-        },
-        700
-      );
-    },
-    900
   );
 }
 
@@ -8546,10 +8054,8 @@ return (
               : phase === 'action'
                 ? `${currentPlayer?.name || ''} のアクション`
                 : phase === 'answer'
-                  ? '回答フェーズ'
-                  : phase === 'cpu'
-                    ? 'CPU思考中'
-                    : phase === 'reveal'
+                  ? '回答フェーズ'                  
+                     : phase === 'reveal'
                       ? '正解！'
                       : ''}
           </div>
@@ -9387,20 +8893,16 @@ rolling={
                           : {}),
                       }}
                     >
-                     <div
-  style={
-    styles.infoValue
-  }
->
-<div
-  style={
-    styles.infoValue
-  }
->
-  {item.value}
-</div>
-</div>
+
+                      <div
+                        style={
+                          styles.infoValue
+                        }
+                      >
+                        {item.value}
+                      </div>
                     </div>
+
                   )
                 )}
               </div>
@@ -12749,71 +12251,6 @@ selectedCard ? (
           )}
         </div>
 
-        <div
-          style={
-            styles.bottomCard
-          }
-        >
-          <div
-            style={
-              styles.bottomTitle
-            }
-          >
-            テスト状況
-          </div>
-
-          <div
-            style={
-              styles.testStatus
-            }
-          >
-            <div>
-              ビブカ獲得：
-              <strong>
-                {myPlayer
-                  ?.vivreCardCount ??
-                  0}
-              </strong>
-              枚
-            </div>
-
-            <div>
-              CPU合計：
-              <strong>
-                {players
-                  .slice(1)
-                  .reduce(
-                    (
-                      total,
-                      player
-                    ) =>
-                      total +
-                      Number(
-                        player
-                          .vivreCardCount ||
-                          0
-                      ),
-                    0
-                  )}
-              </strong>
-              枚
-            </div>
-
-            <button
-              type="button"
-              onClick={
-                resetGame
-              }
-              style={
-                styles.resetButton
-              }
-            >
-              テストをリセット
-            </button>
-          </div>
-        </div>
-      </section>
-
       <section
         style={{
           marginTop: 12,
@@ -12881,10 +12318,12 @@ selectedCard ? (
             )
           )}
         </div>
+
       </section>
-    </div>
+    </section>
 
     {showInfoShop && (
+
       <Modal
         title="1枚ビブカの情報を購入"
         onClose={() =>
@@ -12903,7 +12342,7 @@ selectedCard ? (
             あなたにだけ
           </strong>
           公開されます。
-          CPUが知っている情報とは別管理です。
+          
         </div>
 
         <div
@@ -14003,10 +13442,10 @@ onClick={() =>
   </div>
 )}
 
+      </div>
   </main>
 );
 }
-
 
 function ResourceBox({
   type,
@@ -15930,11 +15369,6 @@ answerInput: {
   outline: 'none',
   boxSizing: 'border-box',
 },
-  cpuThinking: {
-    color: '#fff',
-    fontWeight: '800',
-    fontSize: '14px',
-  },
 
   diceRollingOverlay: {
     position: 'relative',
@@ -16133,28 +15567,6 @@ answerInput: {
   emptyText: {
     color: '#94846e',
     fontSize: '10px',
-  },
-
-  testStatus: {
-    display: 'grid',
-    gap: '7px',
-    fontSize: '11px',
-    color: '#756149',
-  },
-
-  resetButton: {
-    marginTop: '5px',
-    border:
-      '1px solid #a58e68',
-    background:
-      '#f7efd9',
-    color: '#58452e',
-    borderRadius: '6px',
-    padding:
-      '7px 11px',
-    fontSize: '10px',
-    fontWeight: '800',
-    cursor: 'pointer',
   },
 
   loading: {

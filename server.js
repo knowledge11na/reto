@@ -10006,33 +10006,40 @@ const SAIKORO_INITIAL_MAX_RESOURCES = {
 // 看板たぬき：初期ベリー
 // ============================================================
 
-function saikoroInitialBerry(
-  playerNumber
-) {
-  const number =
-    Number(
-      playerNumber
-    );
+const SAIKORO_INITIAL_RESOURCES = [
+  {
+    berry: 3,
+    verse: 6,
+    eternal: 6,
+  },
+  {
+    berry: 2,
+    verse: 0,
+    eternal: 0,
+  },
+  {
+    berry: 1,
+    verse: 0,
+    eternal: 0,
+  },
+  {
+    berry: 0,
+    verse: 0,
+    eternal: 0,
+  },
+];
 
-  if (
-    number === 1
-  ) {
-    return 3;
-  }
+function saikoroInitialResources(playerNumber) {
+  const number = Number(playerNumber);
+  const resources = SAIKORO_INITIAL_RESOURCES[number - 1];
 
-  if (
-    number === 2
-  ) {
-    return 2;
-  }
-
-  if (
-    number === 3
-  ) {
-    return 1;
-  }
-
-  return 0;
+  return {
+    ...(resources || {
+      berry: 0,
+      verse: 0,
+      eternal: 0,
+    }),
+  };
 }
 
 
@@ -10572,46 +10579,52 @@ function saikoroBuildState(
 // 看板たぬき：状態を全員へ送信
 // ============================================================
 
-function saikoroBroadcastState(
-  game
-) {
-  const players =
-    saikoroGetPlayers(
-      game
-    );
+function saikoroBroadcastState(game) {
+  const players = saikoroGetPlayers(game);
 
-  if (
-    !players.length
-  ) {
+  console.log('[saikoro] state送信開始', {
+    roomId: game?.roomId,
+    phase: game?.phase,
+    started: game?.started,
+    participantCount: players.length,
+    participants: players.map((player) => ({
+      socketId: String(player.socketId),
+      seat: player.seat,
+      playerNumber: player.playerNumber,
+    })),
+  });
+
+  if (!players.length) {
+    console.log('[saikoro] state送信中止：参加者なし', {
+      roomId: game?.roomId,
+    });
     return;
   }
 
-  const state =
-    saikoroBuildState(
-      game
-    );
+  const state = saikoroBuildState(game);
 
-  for (
-    const player of players
-  ) {
-    const targetSocket =
-      io.sockets.sockets.get(
-        player.socketId
-      );
+  for (const player of players) {
+    const socketId = String(player.socketId);
+    const targetSocket = io.sockets.sockets.get(socketId);
 
-    if (
-      !targetSocket
-    ) {
+    if (!targetSocket) {
+      console.log('[saikoro] state送信スキップ：Socketなし', {
+        roomId: game.roomId,
+        socketId,
+      });
       continue;
     }
 
-    targetSocket.emit(
-      'saikoro:state',
-      state
-    );
+    targetSocket.emit('saikoro:state', state);
+
+    console.log('[saikoro] state送信完了', {
+      roomId: game.roomId,
+      socketId,
+      phase: state?.phase,
+      started: state?.started,
+    });
   }
 }
-
 
 // ============================================================
 // 看板たぬき：エラー送信
@@ -10657,6 +10670,20 @@ function saikoroStartGame(game) {
   }
 
   const participants = saikoroGetPlayers(game);
+
+  console.log('[saikoro] start-check', {
+    roomId: game.roomId,
+    participantCount: participants.length,
+    requiredPlayers: SAIKORO_MAX_PLAYERS,
+    participants: participants.map((player) => ({
+      socketId: String(player.socketId),
+      seat: player.saikoroSeat,
+      name: player.name,
+    })),
+    readyPlayers: Array.from(
+      game.readyPlayers instanceof Set ? game.readyPlayers : []
+    ).map(String),
+  });
 
   if (participants.length !== SAIKORO_MAX_PLAYERS) {
     game.message =
@@ -10705,7 +10732,7 @@ function saikoroStartGame(game) {
       seat,
 
       resources: {
-        berry: saikoroInitialBerry(seat + 1),
+        resources: saikoroInitialResources(seat + 1),
         verse: 0,
         eternal: 0,
       },
@@ -10741,7 +10768,7 @@ function saikoroStartGame(game) {
     })),
   });
 
-  saikoroRollAllPlayers(game);
+  saikoroBroadcastState(game);
 
   return true;
 }
@@ -10908,7 +10935,7 @@ function saikoroNextTurn(
       nextIndex + 1
     }のダイスフェーズです。全員でダイスを振ります。`;
 
-saikoroRollAllPlayers(game);
+  saikoroBroadcastState(game);
 }
 
 
@@ -10969,90 +10996,76 @@ io.on(
           return;
         }
 
+
         const incomingUserId =
           payload?.userId != null
-            ? String(
-                payload.userId
-              )
+            ? String(payload.userId)
             : '';
 
         const incomingName =
-          String(
-            payload?.name ||
-              ''
-          ).trim();
+          String(payload?.name || '').trim();
+
+        const lobbySocketId =
+          String(payload?.playerSocketId || '').trim();
 
         const freePlayers =
-          room.players instanceof
-          Map
-            ? Array.from(
-                room.players.values()
-              )
-            : Array.isArray(
-                room.players
-              )
+          room.players instanceof Map
+            ? Array.from(room.players.values())
+            : Array.isArray(room.players)
               ? room.players
               : [];
 
-        let playerIndex =
-          freePlayers.findIndex(
+        let playerIndex = -1;
+
+        // ロビーで確定したSocket IDを最優先で使う。
+        // 指定されている場合は、別の同一ユーザーの席へ
+        // フォールバックしない。
+        if (lobbySocketId) {
+          playerIndex = freePlayers.findIndex(
             (item) =>
-              item.socketId ===
-              socket.id
+              String(item.socketId) === lobbySocketId
+          );
+        } else {
+          // playerSocketIdがない旧画面・再接続用の処理
+          playerIndex = freePlayers.findIndex(
+            (item) =>
+              String(item.socketId) === String(socket.id)
           );
 
-        if (
-          playerIndex < 0 &&
-          incomingUserId
-        ) {
-          playerIndex =
-            freePlayers.findIndex(
-              (item) =>
-                item.userId !=
-                  null &&
-                String(
-                  item.userId
-                ) ===
-                  incomingUserId
-            );
-        }
-
-        if (
-          playerIndex < 0 &&
-          incomingName
-        ) {
-          const sameName =
-            freePlayers.filter(
-              (item) =>
-                String(
-                  item.name ||
-                    ''
-                ).trim() ===
-                incomingName
-            );
-
-          if (
-            sameName.length ===
-            1
-          ) {
-            playerIndex =
-              freePlayers.findIndex(
-                (item) =>
-                  String(
-                    item.name ||
-                      ''
-                  ).trim() ===
-                  incomingName
+          if (playerIndex < 0 && incomingUserId) {
+            const sameUser = freePlayers
+              .map((item, index) => ({ item, index }))
+              .filter(
+                ({ item }) =>
+                  item.userId != null &&
+                  String(item.userId) === incomingUserId
               );
+
+            if (sameUser.length === 1) {
+              playerIndex = sameUser[0].index;
+            }
+          }
+
+          if (playerIndex < 0 && incomingName) {
+            const sameName = freePlayers
+              .map((item, index) => ({ item, index }))
+              .filter(
+                ({ item }) =>
+                  String(item.name || '').trim() === incomingName
+              );
+
+            if (sameName.length === 1) {
+              playerIndex = sameName[0].index;
+            }
           }
         }
 
-        if (
-          playerIndex < 0
-        ) {
+        if (playerIndex < 0) {
           saikoroError(
             socket,
-            'この部屋の参加者ではありません。'
+            lobbySocketId
+              ? 'ロビーの参加者情報を確認できません。ロビーから入り直してください。'
+              : '参加者を特定できません。ロビーから入り直してください。'
           );
 
           return;
@@ -11209,6 +11222,18 @@ readyPlayers: new Set(),
           }
         }
 
+// 再接続前の準備完了状態を新しいSocket IDへ引き継ぐ
+if (oldSocketId && oldSocketId !== socket.id) {
+  if (!(game.readyPlayers instanceof Set)) {
+    game.readyPlayers = new Set();
+  }
+
+  if (game.readyPlayers.has(String(oldSocketId))) {
+    game.readyPlayers.delete(String(oldSocketId));
+    game.readyPlayers.add(String(socket.id));
+  }
+}
+
         /*
          * ゲーム開始済みで新規参加は不可。
          */
@@ -11258,7 +11283,7 @@ readyPlayers: new Set(),
     // 看板たぬき：画面の準備完了
     // ========================================================
 
-    socket.on(
+        socket.on(
       'saikoro:ready',
       (payload) => {
         const roomId = String(payload?.roomId || '')
@@ -11267,11 +11292,26 @@ readyPlayers: new Set(),
 
         const game = saikoroGames.get(roomId);
 
+        console.log('[saikoro] ready受信', {
+          roomId,
+          socketId: socket.id,
+          gameExists: Boolean(game),
+          phase: game?.phase,
+          started: game?.started,
+        });
+
         if (
           !game ||
           game.phase !== 'waiting' ||
           game.started
         ) {
+          console.log('[saikoro] ready拒否：ゲーム状態', {
+            roomId,
+            socketId: socket.id,
+            gameExists: Boolean(game),
+            phase: game?.phase,
+            started: game?.started,
+          });
           return;
         }
 
@@ -11283,6 +11323,13 @@ readyPlayers: new Set(),
         );
 
         if (!isParticipant) {
+          console.log('[saikoro] ready拒否：参加者不一致', {
+            roomId,
+            socketId: socket.id,
+            participantSocketIds: players.map(
+              (player) => String(player.socketId)
+            ),
+          });
           return;
         }
 
@@ -11290,7 +11337,21 @@ readyPlayers: new Set(),
           game.readyPlayers = new Set();
         }
 
+
         game.readyPlayers.add(String(socket.id));
+
+        console.log('[saikoro] ready登録完了', {
+          roomId,
+          socketId: socket.id,
+          readyCount: game.readyPlayers.size,
+          readyPlayers: Array.from(game.readyPlayers),
+        });
+
+        // ホストが先に開始要求を送っていた場合、
+        // 最後のプレイヤーの準備完了をきっかけに開始を再判定する。
+        if (game.startRequested) {
+          saikoroStartGame(game);
+        }
 
       }
     );
@@ -12175,8 +12236,14 @@ function hasteVoutePublicState(game, userId) {
   );
 
   return {
-    roomId: game.roomId,
-    phase: game.phase,
+roomId:
+  game.roomId,
+
+phase:
+  game.phase,
+
+started:
+  Boolean(game.started),
     targetScore: game.targetScore,
     answerSeconds: game.answerSeconds,
     deadline: game.deadline,

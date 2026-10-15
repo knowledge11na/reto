@@ -133,17 +133,16 @@ maxPlayers: 4,
 available: true,
 rulePath: '/free/tarou/rules',
 },
-// ======================================
-//  {
-//   id: 'saikoro',
-//    name: '看板たぬき',
-//    description: 'ダイスを強化しながら知識と戦略で競うゲーム',
-//    minPlayers: 4,
-//    maxPlayers: 4,
-//    available: true,
-//    rulePath: '/free/saikoro/rules',
-//  },
-// ======================================
+
+{
+  id: 'saikoro',
+    name: '看板たぬき',
+    description: 'ダイスを強化しながら知識と戦略で競うゲーム',
+    minPlayers: 4,
+    maxPlayers: 4,
+    available: true,
+    rulePath: '/free/saikoro/rules',
+  },
 ];
 
 // ========================================
@@ -478,10 +477,10 @@ return;
 
 // 看板たぬき
 if (gameId === 'saikoro') {
-router.push(
-`/free/saikoro?room=${encodeURIComponent(roomId)}`
-);
-return;
+  router.push(
+    `/free/saikoro?room=${encodeURIComponent(roomId)}&playerSocketId=${encodeURIComponent(s.id)}`
+  );
+  return;
 }
 
 // ハステ・ヴォルテ
