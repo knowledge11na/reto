@@ -131,7 +131,7 @@ description: '多答問題を使った対戦ゲーム',
 minPlayers: 2,
 maxPlayers: 4,
 available: true,
-rulePath: '/free/tarou/rules',
+rulePath: '/free/tatou/rules',
 },
 
 {
