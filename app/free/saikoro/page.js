@@ -44,8 +44,8 @@ function createExtraCharacterBoard(description) {
 const INITIAL_RESOURCES = [
   {
     berry: 3,
-    verse: 6,
-    eternal: 6,
+    verse: 0,
+    eternal: 0,
   },
   {
     berry: 2,
@@ -256,6 +256,25 @@ function rollDice(dice) {
     ...dice[index],
     index,
   };
+}
+
+function normalizeOnlineDiceResults(results) {
+  return Object.fromEntries(
+    Object.entries(results || {}).map(([seat, result]) => [
+      seat,
+      result
+        ? {
+            ...result,
+            a: result.a?.face
+              ? { ...result.a.face, index: result.a.index }
+              : result.a,
+            b: result.b?.face
+              ? { ...result.b.face, index: result.b.index }
+              : result.b,
+          }
+        : result,
+    ])
+  );
 }
 
 function addResource(player, type, value) {
@@ -1662,10 +1681,17 @@ const [onlineState, setOnlineState] =
 const [mySeat, setMySeat] =
   useState(null);
 
+const syncedVivreProfileKeyRef = useRef('');
+const syncedExtraCharacterKeyRef = useRef('');
+
 const [onlineError, setOnlineError] =
   useState('');
 
 const socketRef = useRef(null);
+const playerStateSyncKeyRef = useRef('');
+
+
+const autoRollKeyRef = useRef('');
 
 
 const [extraCharacter, setExtraCharacter] =
@@ -1778,6 +1804,9 @@ const [answerMode, setAnswerMode] = useState(null);
     useRef(null);
 
   const diceRollIntervalRef =
+    useRef(null);
+
+  const diceAnimationKeyRef =
     useRef(null);
 
   const [showDiceResults, setShowDiceResults] =
@@ -2233,6 +2262,10 @@ const [tactResourceSelecting, setTactResourceSelecting] =
   useState(false);
 
 const [pendingDiceResults, setPendingDiceResults] = useState(null);
+const [pendingOnlineDiceEffects, setPendingOnlineDiceEffects] = useState(null);
+const [pendingResourceDiceResults, setPendingResourceDiceResults] = useState(null);
+const resourceResultsHandledRef = useRef('');
+const effectsFinishedKeyRef = useRef('');
 
 const [tactResourceRemaining, setTactResourceRemaining] =
   useState(0);
@@ -2465,7 +2498,7 @@ const handleForgeExchange =
             );
 
           const player =
-            next[0];
+            next[mySeatIndex];
 
           if (
             !Array.isArray(
@@ -2541,7 +2574,7 @@ if (
             index
           ] = newFace;
 
-          next[0] =
+          next[mySeatIndex] =
             updatedPlayer;
 
           return next;
@@ -2565,6 +2598,10 @@ if (
       );
 
 setForgeUsedThisTurn(true);
+
+      addActionHistory(
+        `${myPlayer?.name || `プレイヤー${mySeatIndex + 1}`}が鍛造で${selectedForgeOffer.id}をサイコロ${dieType}の${index + 1}面に適用`
+      );
 
       setSelectedForgeOffer(
         null
@@ -2592,9 +2629,20 @@ function addActionHistory(
     return;
   }
 
+  if (
+    socketRef.current?.connected &&
+    onlineState?.roomId
+  ) {
+    socketRef.current.emit('saikoro:history', {
+      roomId: String(onlineState.roomId),
+      text,
+    });
+    return;
+  }
+
   setActionHistory(
     (history) => [
-      ...history.slice(-4),
+      ...history.slice(-99),
       {
         id:
           `${Date.now()}-${Math.random()}`,
@@ -2718,6 +2766,20 @@ const handleCardPurchase =
       return;
     }
 
+    if (
+      socketRef.current?.connected &&
+      onlineState?.roomId
+    ) {
+      socketRef.current.emit('saikoro:buy-card', {
+        roomId: String(onlineState.roomId),
+        cardId: selectedCard.id,
+      });
+      setSelectedCard(null);
+      setShowCardConfirm(false);
+      setMessage(`${selectedCard.name}の購入を処理しています……`);
+      return;
+    }
+
 
     setPlayers((prev) => {
       const next =
@@ -2755,7 +2817,7 @@ const handleCardPurchase =
         }));
 
       const player =
-        next[0];
+        next[mySeatIndex];
 
       const updatedPlayer =
         applyCost(
@@ -2804,7 +2866,7 @@ const handleCardPurchase =
         };
       }
 
-      next[0] =
+      next[mySeatIndex] =
         updatedPlayer;
 
       return next;
@@ -2833,6 +2895,10 @@ setCardPurchasedThisTurn(true);
 
     const purchasedCardName =
       selectedCard.name;
+
+    addActionHistory(
+      `${myPlayer?.name || `プレイヤー${mySeatIndex + 1}`}が「${purchasedCardName}」を購入`
+    );
 
     setMessage(
       `${purchasedCardName}を入手しました！`
@@ -3040,7 +3106,7 @@ function handleManemaneExchange() {
       prev.map(
         (player, playerIndex) => {
           if (
-            playerIndex !== 0
+            playerIndex !== mySeatIndex
           ) {
             return player;
           }
@@ -3178,7 +3244,7 @@ function handleTactExchange() {
 
   setPlayers((prev) =>
     prev.map((player, playerIndex) => {
-      if (playerIndex !== 0) {
+      if (playerIndex !== mySeatIndex) {
         return player;
       }
 
@@ -3232,7 +3298,7 @@ function handleManemaneCopySelect(option) {
 
   setPlayers((prev) =>
     prev.map((player, index) => {
-      if (index !== 0) {
+      if (index !== mySeatIndex) {
         return player;
       }
 
@@ -3293,13 +3359,15 @@ function handleJikijikiTargetSelect(
     ) ||
     seat < 0 ||
     seat >= players.length ||
-    seat === 0
+    seat === mySeatIndex
   ) {
     return;
   }
 
   const targetPlayer =
-    players[seat];
+    players.find(
+      (player) => Number(player?.seat) === seat
+    );
 
   if (
     !targetPlayer
@@ -3342,7 +3410,9 @@ function handleJikijikiTypeSelect(
     );
 
   const targetPlayer =
-    players[seat];
+    players.find(
+      (player) => Number(player?.seat) === seat
+    );
 
   if (
     !targetPlayer
@@ -3422,7 +3492,7 @@ function handleJikijikiTypeSelect(
 
     setPlayers((prev) => {
       const next = [...prev];
-      const me = next[0];
+      const me = next[mySeatIndex];
 
       if (!me) {
         return prev;
@@ -3435,7 +3505,7 @@ function handleJikijikiTypeSelect(
           ? me.extraCharacterRevealedIndexes.map(Number)
           : [];
 
-      next[0] = {
+      next[mySeatIndex] = {
         ...me,
         extraCharacterRevealedIndexes: [
           ...new Set([
@@ -3452,6 +3522,41 @@ function handleJikijikiTypeSelect(
       sourceIndexes.length > 0
         ? `${targetPlayer.name}の公開済みエクストラ情報を${sourceIndexes.length}文字コピーしました。`
         : `${targetPlayer.name}にはコピーできる公開済み文字がありません。`
+    );
+
+    if (sourceIndexes.length > 0) {
+      addActionHistory(
+        `${myPlayer?.name || `プレイヤー${mySeatIndex + 1}`}がジキジキの実で${targetPlayer.name}のエクストラ情報をコピー`
+      );
+    }
+  }
+
+  if (
+    type === 'vivre'
+  ) {
+    setPlayers((prev) => {
+      const next = [...prev];
+
+      if (!next[mySeatIndex]) {
+        return prev;
+      }
+
+      next[mySeatIndex] = {
+        ...next[mySeatIndex],
+        vivreCardInfo: {
+          ...(targetPlayer.vivreCardInfo || {}),
+        },
+      };
+
+      return next;
+    });
+
+    setMessage(
+      `${targetPlayer.name}の1枚ビブカ情報をコピーしました。`
+    );
+
+    addActionHistory(
+      `${myPlayer?.name || `プレイヤー${mySeatIndex + 1}`}がジキジキの実で${targetPlayer.name}のビブカ情報をコピー`
     );
   }
 
@@ -3526,7 +3631,7 @@ function handleTakaraUse() {
   setTimeout(() => {
     setPlayers((prev) => {
       return prev.map((player, index) => {
-        if (index !== 0) {
+        if (index !== mySeatIndex) {
           return player;
         }
 
@@ -3557,6 +3662,9 @@ function handleTakaraUse() {
 
     setMessage(
       `食糧宝船のミニダイス！ベリーを${gold}個獲得しました。`
+    );
+    addActionHistory(
+      `${myPlayer?.name || `プレイヤー${mySeatIndex + 1}`}が食糧宝船でベリーを${gold}個獲得`
     );
   }, 1500);
 }
@@ -3649,7 +3757,7 @@ function handleNewsUse(resource) {
 
   setPlayers((prev) =>
     prev.map((player, index) => {
-      if (index !== 0) {
+      if (index !== mySeatIndex) {
         return player;
       }
 
@@ -3682,6 +3790,9 @@ function handleNewsUse(resource) {
 
   setMessage(
     `ニュース・クーで${resourceNames[resource]}を1個獲得しました！`
+  );
+  addActionHistory(
+    `${myPlayer?.name || `プレイヤー${mySeatIndex + 1}`}がニュース・クーで${resourceNames[resource]}を1個獲得`
   );
 }
 
@@ -3722,7 +3833,7 @@ function handleTactResourceUse(resource) {
 
   setPlayers((prev) =>
     prev.map((player, index) => {
-      if (index !== 0) {
+      if (index !== mySeatIndex) {
         return player;
       }
 
@@ -3754,6 +3865,10 @@ function handleTactResourceUse(resource) {
   };
 
   const remaining = tactResourceRemaining - 1;
+
+  addActionHistory(
+    `${myPlayer?.name || `プレイヤー${mySeatIndex + 1}`}が魔法の天候棒で${resourceNames[resource]}を${gained}個獲得`
+  );
 
   setTactResourceRemaining(remaining);
 
@@ -3920,7 +4035,7 @@ if (
       (prev) =>
         prev.map(
           (player, index) => {
-            if (index !== 0) {
+            if (index !== mySeatIndex) {
               return player;
             }
 
@@ -3976,8 +4091,21 @@ setYomiyomiUsed(
   const [lastAnswer, setLastAnswer] =
     useState(null);
 
+  const mySeatIndex =
+    mySeat == null || !Number.isInteger(Number(mySeat))
+      ? 0
+      : Number(mySeat);
+
   const myPlayer =
-    players[0];
+    players.find(
+      (player) => Number(player.seat) === mySeatIndex
+    ) || players[0];
+
+  const diceDisplayPlayer =
+    players.find(
+      (player) =>
+        Number(player.seat) === Number(mySeat)
+    ) || myPlayer;
 
   const currentPlayer =
     players[turnPlayer];
@@ -3993,6 +4121,48 @@ onlineState?.roomId
 phase === 'action' ||
 phase === 'answer'
 );
+
+useEffect(() => {
+  if (
+    !socketConnected ||
+    !onlineState?.started ||
+    !onlineState?.roomId ||
+    !myPlayer
+  ) {
+    return;
+  }
+
+  const playerState = {
+    resources: myPlayer.resources,
+    maxResources: myPlayer.maxResources,
+    diceA: myPlayer.diceA,
+    diceB: myPlayer.diceB,
+    cards: myPlayer.cards,
+    extraCharacterInfo: myPlayer.extraCharacterInfo,
+    extraCharacterRevealedIndexes: myPlayer.extraCharacterRevealedIndexes,
+    extraSpecifiedCount: myPlayer.extraSpecifiedCount,
+    extraRandomCount: myPlayer.extraRandomCount,
+    extraCharacterCount: myPlayer.extraCharacterCount,
+    vivreCardInfo: myPlayer.vivreCardInfo,
+    vivreCardCount: myPlayer.vivreCardCount,
+  };
+  const syncKey = `${onlineState.roomId}:${JSON.stringify(playerState)}`;
+
+  if (playerStateSyncKeyRef.current === syncKey) {
+    return;
+  }
+
+  playerStateSyncKeyRef.current = syncKey;
+  socketRef.current?.emit('saikoro:player-state', {
+    roomId: String(onlineState.roomId),
+    playerState,
+  });
+}, [
+  myPlayer,
+  onlineState?.roomId,
+  onlineState?.started,
+  socketConnected,
+]);
 
 
   const currentCardProfile =
@@ -4077,20 +4247,19 @@ useEffect(() => {
           : [],
     }));
 
-    if (!next[0]) {
+    if (!next[mySeatIndex]) {
       return prev;
     }
 
     const revealedSet = new Set(
-      next[0].extraCharacterRevealedIndexes
+      next[mySeatIndex].extraCharacterRevealedIndexes
     );
-
     const newIndexes = selectedIndexes.filter(
       (index) => !revealedSet.has(index)
     );
 
-    next[0].extraCharacterRevealedIndexes = [
-      ...next[0].extraCharacterRevealedIndexes,
+    next[mySeatIndex].extraCharacterRevealedIndexes = [
+      ...next[mySeatIndex].extraCharacterRevealedIndexes,
       ...newIndexes,
     ];
 
@@ -4290,7 +4459,7 @@ const infoSummary =
     }
 
     const currentPlayer =
-      players[0];
+      myPlayer;
 
     if (!currentPlayer) {
       return;
@@ -4338,25 +4507,25 @@ const infoSummary =
               })
             );
 
-          next[0] =
+          next[mySeatIndex] =
             applyCost(
-              next[0],
+              next[mySeatIndex],
               cost
             );
 
 
-      next[0] = {
-        ...next[0],
+      next[mySeatIndex] = {
+        ...next[mySeatIndex],
         extraRandomCount:
           Number(
-            next[0].extraRandomCount || 0
+            next[mySeatIndex].extraRandomCount || 0
           ) + 1,
         extraCharacterRevealedIndexes: [
           ...(
             Array.isArray(
-              next[0].extraCharacterRevealedIndexes
+              next[mySeatIndex].extraCharacterRevealedIndexes
             )
-              ? next[0].extraCharacterRevealedIndexes
+              ? next[mySeatIndex].extraCharacterRevealedIndexes
               : []
           ),
           randomIndex,
@@ -4447,7 +4616,7 @@ const infoSummary =
     }
 
     const currentPlayer =
-      players[0];
+      myPlayer;
 
     if (!currentPlayer) {
       return;
@@ -4485,27 +4654,27 @@ const infoSummary =
         })
       );
 
-    next[0] =
+    next[mySeatIndex] =
       applyCost(
-        next[0],
+        next[mySeatIndex],
         cost
       );
 
     const previousIndexes =
       Array.isArray(
-        next[0]
+        next[mySeatIndex]
           .extraCharacterRevealedIndexes
       )
-        ? next[0]
+        ? next[mySeatIndex]
             .extraCharacterRevealedIndexes
         : [];
 
-    next[0] = {
-      ...next[0],
+    next[mySeatIndex] = {
+      ...next[mySeatIndex],
 
       extraSpecifiedCount:
         Number(
-          next[0]
+          next[mySeatIndex]
             .extraSpecifiedCount ||
           0
         ) + 1,
@@ -4959,9 +5128,50 @@ socket.emit('saikoro:join', {
         setOnlineError(errorMessage);
       });
 
+      socket.on('saikoro:kuroden-triggered', (payload) => {
+        if (cancelled) return;
+
+        setMessage(
+          String(payload?.message || '黒電伝虫が発動しました。')
+        );
+      });
+
+      socket.on('saikoro:card-purchased', (payload) => {
+        if (cancelled) return;
+
+        const cardId = String(payload?.cardId || '');
+        const cardName = String(payload?.cardName || cardId);
+        setCardPurchasedThisTurn(true);
+        setMessage(`${cardName}を入手しました！`);
+
+        if (cardId === 'jikijiki') {
+          setCardEffectUsed((prev) => ({ ...prev, jikijiki: true }));
+          setJikijikiTargetSeat(null);
+          setJikijikiTargetType(null);
+          setJikijikiMode('target');
+        }
+
+        if (cardId === 'manemane') {
+          setManemaneSelectedDice([]);
+          setManemanePendingFaces([]);
+          setManemaneConfirming(false);
+          setManemaneSelecting(true);
+          setMessage('マネマネの実：マネマネマスにする自分のダイス面を2つ選択してください。');
+        }
+
+        if (cardId === 'tact') {
+          setTactSelectedDice([]);
+          setTactPendingFaces([]);
+          setTactConfirming(false);
+          setTactSelecting(true);
+          setMessage('魔法の天候棒：天候棒マスにする自分のダイス面を2つ選んでください。');
+        }
+      });
+
       socket.on('saikoro:state', (payload) => {
 
       // サーバーのゲーム状態を画面に反映
+
 if (typeof payload?.phase === 'string') {
   const nextPhase =
     payload.phase === 'waiting'
@@ -4969,6 +5179,48 @@ if (typeof payload?.phase === 'string') {
       : payload.phase;
 
   setPhase(nextPhase);
+
+  if (nextPhase === 'result') {
+    const winnerSeat = Number(payload.winnerSeat);
+    if (Number.isInteger(winnerSeat)) {
+      setGameWinner(winnerSeat);
+      gameFinishedRef.current = true;
+    }
+  }
+
+  // 新しいダイスフェーズに入ったら、
+  // 前のターンのアニメーション状態をリセットする
+  if (payload.phase === 'dice') {
+    diceAnimationKeyRef.current = null;
+    resourceResultsHandledRef.current = '';
+    effectsFinishedKeyRef.current = '';
+    setPendingOnlineDiceEffects(null);
+    setPendingResourceDiceResults(null);
+    setWinner(null);
+    setRevealResult(null);
+    setLastAnswer(null);
+    setAnswerAttempts(0);
+    setTakaraUsedCount(0);
+    setNewsUsedCount(0);
+    setYomiyomiUsed(0);
+    setForgeUsedThisTurn(false);
+    setCardPurchasedThisTurn(false);
+    setDiceRolling(false);
+    setShowDiceResults(false);
+    setDiceResult(null);
+    setAllDiceResults({});
+    setImpactDialResults({});
+
+    if (diceRollIntervalRef.current) {
+      clearInterval(diceRollIntervalRef.current);
+      diceRollIntervalRef.current = null;
+    }
+
+    if (diceRollTimerRef.current) {
+      clearTimeout(diceRollTimerRef.current);
+      diceRollTimerRef.current = null;
+    }
+  }
 
   console.log(
     '[saikoro] server phase:',
@@ -4986,42 +5238,16 @@ if (typeof payload?.phase === 'string') {
         setRound(Number(payload.round));
       }
 
+      if (Number.isFinite(Number(payload?.victoryTarget))) {
+        setVictoryTarget(Number(payload.victoryTarget));
+      }
+
       if (Number.isFinite(Number(payload?.turnPlayer))) {
         setTurnPlayer(Number(payload.turnPlayer));
       }
 
       if (typeof payload?.message === 'string') {
         setMessage(payload.message);
-
-  // マルチ版：サーバーから届いた全員分のダイス結果を反映
-  
-
-  if (
-    payload?.diceResults &&
-    typeof payload.diceResults === 'object'
-  ) {
-    setAllDiceResults(payload.diceResults);
-
-    const myResult =
-      payload.diceResults[String(mySeat)] ??
-      payload.diceResults[mySeat] ??
-      null;
-
-    setDiceResult(myResult);
-
-    setShowDiceResults(
-      payload.phase === 'action' &&
-      myResult !== null
-    );
-  } else {
-    setAllDiceResults({});
-    setDiceResult(null);
-    setShowDiceResults(false);
-  }
-
-
-
-
       }
 
       if (Array.isArray(payload?.players)) {
@@ -5096,31 +5322,180 @@ if (typeof payload?.phase === 'string') {
 
         setOnlineState(payload);
 
+        if (Array.isArray(payload?.actionHistory)) {
+          setActionHistory(payload.actionHistory);
+        }
+
+        if (
+          payload?.cardStocks &&
+          typeof payload.cardStocks === 'object'
+        ) {
+          setCardStocks(payload.cardStocks);
+        }
+
+        if (
+          payload?.resourcesReady === true &&
+          payload.diceResults &&
+          typeof payload.diceResults === 'object'
+        ) {
+          const resourceKey = `${payload.roomId}:${payload.round}:${payload.turnPlayer}`;
+          if (resourceResultsHandledRef.current !== resourceKey) {
+            resourceResultsHandledRef.current = resourceKey;
+            setPendingResourceDiceResults(
+              normalizeOnlineDiceResults(payload.diceResults)
+            );
+          }
+        }
+
+        if (payload?.lastAnswer) {
+          setLastAnswer({
+            player: payload.lastAnswer.playerName,
+            answer: payload.lastAnswer.answer,
+            correct: payload.lastAnswer.correct === true,
+          });
+
+          if (payload.lastAnswer.correct === true) {
+            setWinner(Number(payload.lastAnswer.seat));
+            setRevealResult({
+              type: payload.lastAnswer.target,
+              name: payload.lastAnswer.targetName,
+              player: Number(payload.lastAnswer.seat),
+            });
+          }
+        }
+
+        if (
+          payload?.currentVivreProfile &&
+          typeof payload.currentVivreProfile === 'object'
+        ) {
+          const profile = payload.currentVivreProfile;
+          const profileKey = String(
+            profile.id ?? profile.number ?? profile.name ?? ''
+          );
+
+          if (
+            profileKey &&
+            syncedVivreProfileKeyRef.current !== profileKey
+          ) {
+            syncedVivreProfileKeyRef.current = profileKey;
+            setCurrentVivreCard({
+              ...createVivreCardState(profile),
+              revealedInfo: createInitialInfoState(),
+              cardInstanceId: profileKey,
+            });
+            setPlayers((prev) =>
+              prev.map((player) => ({
+                ...player,
+                vivreCardInfo: {},
+              }))
+            );
+          }
+        }
+
+        if (
+          payload?.extraCharacter &&
+          typeof payload.extraCharacter === 'object'
+        ) {
+          const character = payload.extraCharacter;
+          const characterKey = String(
+            character.id ?? character.number ?? character.name ?? ''
+          );
+
+          if (
+            characterKey &&
+            syncedExtraCharacterKeyRef.current !== characterKey
+          ) {
+            syncedExtraCharacterKeyRef.current = characterKey;
+            setExtraCharacter(character);
+            setExtraCharacterBoard(
+              createExtraCharacterBoard(character.description)
+            );
+            setPlayers((prev) =>
+              prev.map((player) => ({
+                ...player,
+                extraCharacterRevealedIndexes: [],
+              }))
+            );
+          }
+        }
+
 
         if (
           payload?.phase === 'action' &&
           payload.diceResults &&
           typeof payload.diceResults === 'object'
         ) {
-          const receivedResults = payload.diceResults;
+          const animationKey = `${payload.roomId}:${payload.round}:${payload.turnPlayer}`;
 
-          setAllDiceResults(receivedResults);
-          setImpactDialResults(receivedResults);
+          if (diceAnimationKeyRef.current !== animationKey) {
+            diceAnimationKeyRef.current = animationKey;
 
-          const currentSeat = Number(
-            payload.turnPlayer ?? 0
-          );
+            const receivedResults = normalizeOnlineDiceResults(
+              payload.diceResults
+            );
 
-          setDiceResult(
-            receivedResults[currentSeat] || null
-          );
+            if (diceRollIntervalRef.current) {
+              clearInterval(diceRollIntervalRef.current);
+            }
 
-          setDiceRolling(false);
-          setShowDiceResults(
-            Object.values(receivedResults).some(
-              (result) => result != null
-            )
-          );
+            if (diceRollTimerRef.current) {
+              clearTimeout(diceRollTimerRef.current);
+            }
+
+            setDiceRolling(true);
+            setShowDiceResults(false);
+            setDiceResult(null);
+            setAllDiceResults({});
+
+            let tick = 0;
+            diceRollIntervalRef.current = setInterval(() => {
+              tick += 1;
+              setDice3DRotation({
+                a: {
+                  x: tick * 55 + Math.random() * 40,
+                  y: tick * 65 + Math.random() * 40,
+                  z: Math.random() * 40 - 20,
+                },
+                b: {
+                  x: tick * 60 + Math.random() * 40,
+                  y: -tick * 70 + Math.random() * 40,
+                  z: Math.random() * 40 - 20,
+                },
+              });
+            }, 90);
+
+            diceRollTimerRef.current = setTimeout(() => {
+              if (diceRollIntervalRef.current) {
+                clearInterval(diceRollIntervalRef.current);
+                diceRollIntervalRef.current = null;
+              }
+
+              diceRollTimerRef.current = null;
+              setDice3DRotation({
+                a: { x: 0, y: 0, z: 0 },
+                b: { x: 0, y: 0, z: 0 },
+              });
+              setAllDiceResults(receivedResults);
+              setImpactDialResults(receivedResults);
+
+              const currentSeat = Number(payload.turnPlayer ?? 0);
+              setDiceResult(
+                receivedResults[String(currentSeat)] ??
+                  receivedResults[currentSeat] ??
+                  null
+              );
+              setDiceRolling(false);
+              setShowDiceResults(
+                Object.values(receivedResults).some(
+                  (result) => result != null
+                )
+              );
+              setPendingOnlineDiceEffects({
+                key: animationKey,
+                results: receivedResults,
+              });
+            }, 1200);
+          }
         }
 
         if (
@@ -5140,9 +5515,20 @@ if (typeof payload?.phase === 'string') {
 
         let myPlayer = serverPlayers.find(
           (player) =>
-            userId &&
-            String(player?.id ?? '') === userId
+            String(player?.socketId ?? '') ===
+            String(socket.id)
         );
+
+        if (!myPlayer && userId) {
+          const sameUser = serverPlayers.filter(
+            (player) =>
+              String(player?.id ?? '') === userId
+          );
+
+          if (sameUser.length === 1) {
+            myPlayer = sameUser[0];
+          }
+        }
 
         if (!myPlayer && name) {
           const sameName = serverPlayers.filter(
@@ -5204,12 +5590,44 @@ function rollAllDice() {
       return;
     }
 
+    // オンラインでもダイス回転アニメーションを開始
+    setDiceRolling(true);
+    setShowDiceResults(false);
+    setDiceResult(null);
+    setAllDiceResults({});
+    setImpactDialResults({});
+
+    setMessage(
+      '🎲 全員のサイコロを振っています……'
+    );
+
+    let tick = 0;
+
+    if (diceRollIntervalRef.current) {
+      clearInterval(diceRollIntervalRef.current);
+    }
+
+    diceRollIntervalRef.current = setInterval(() => {
+      tick += 1;
+
+      setDice3DRotation({
+        a: {
+          x: tick * 55 + Math.random() * 40,
+          y: tick * 65 + Math.random() * 40,
+          z: Math.random() * 40 - 20,
+        },
+        b: {
+          x: tick * 60 + Math.random() * 40,
+          y: -tick * 70 + Math.random() * 40,
+          z: Math.random() * 40 - 20,
+        },
+      });
+    }, 90);
+
     socketRef.current.emit(
       'saikoro:roll',
       {
-        roomId: String(
-          onlineState.roomId
-        ),
+        roomId: String(onlineState.roomId),
       }
     );
 
@@ -5275,7 +5693,7 @@ function rollAllDice() {
     setImpactDialResults(results);
     setAllDiceResults(results);
 
-    const mySeat = players[0]?.seat;
+    const mySeat = mySeatIndex;
     setDiceResult(results[mySeat] || null);
 
     setDice3DRotation({
@@ -5295,6 +5713,77 @@ function rollAllDice() {
     }, 1200);
   }, 1200);
 }
+
+
+useEffect(() => {
+  if (
+    !socketRef.current?.connected ||
+    !onlineState?.roomId ||
+    phase !== 'dice'
+  ) {
+    return;
+  }
+
+  if (Number(turnPlayer) !== Number(mySeat)) {
+    return;
+  }
+
+  const rollKey = `${onlineState.roomId}:${round}:${turnPlayer}`;
+
+  if (autoRollKeyRef.current === rollKey) {
+    return;
+  }
+
+  autoRollKeyRef.current = rollKey;
+  applyStartTurnCardEffects(mySeatIndex);
+  window.setTimeout(rollAllDice, 100);
+}, [
+  phase,
+  turnPlayer,
+  mySeat,
+  round,
+  onlineState?.roomId,
+]);
+
+useEffect(() => {
+  if (!pendingOnlineDiceEffects) {
+    return;
+  }
+
+  if (
+    socketRef.current?.connected &&
+    (
+      !onlineState?.roomId ||
+      phase !== 'action'
+    )
+  ) {
+    setPendingOnlineDiceEffects(null);
+    return;
+  }
+
+  startImpactDialForSeat(
+    pendingOnlineDiceEffects.results,
+    0
+  );
+  setPendingOnlineDiceEffects(null);
+}, [
+  pendingOnlineDiceEffects,
+  players,
+  mySeatIndex,
+  onlineState?.roomId,
+  phase,
+]);
+
+useEffect(() => {
+  if (!pendingResourceDiceResults) {
+    return;
+  }
+
+  finishDiceRoll(pendingResourceDiceResults, true);
+  setPendingResourceDiceResults(null);
+}, [pendingResourceDiceResults]);
+
+
 
 function startImpactDialForSeat(results, seat) {
   if (seat >= players.length) {
@@ -5320,8 +5809,12 @@ function startImpactDialForSeat(results, seat) {
     return;
   }
 
-  // 人間プレイヤーは、使用するかどうかを選ぶ
-  if (seat === 0) {
+  if (seat !== mySeatIndex) {
+    startImpactDialForSeat(results, seat + 1);
+    return;
+  }
+
+  if (seat === mySeatIndex) {
     setImpactDialResults(results);
     setImpactDialRemaining(dialCount);
     setImpactDialPrompt(true);
@@ -5362,7 +5855,7 @@ function handleImpactDialReroll(dieType) {
     return;
   }
 
-  const player = players[0];
+  const player = myPlayer;
 
   if (!player) {
     return;
@@ -5478,7 +5971,25 @@ function handleImpactDialReroll(dieType) {
 }
 
 
-function finishDiceRoll(results) {
+function finishDiceRoll(results, resourcesReady = false) {
+  if (
+    socketRef.current?.connected &&
+    onlineState?.roomId &&
+    !resourcesReady
+  ) {
+    const ownResults = results?.[mySeatIndex];
+    if (!ownResults) {
+      return;
+    }
+
+    socketRef.current.emit('saikoro:reroll-finished', {
+      roomId: String(onlineState.roomId),
+      results: ownResults,
+    });
+    setMessage('全員の再抽選結果を待っています……');
+    return;
+  }
+
   setImpactDialPrompt(false);
   setImpactDialChoosingDie(false);
   setImpactDialRemaining(0);
@@ -5486,7 +5997,7 @@ function finishDiceRoll(results) {
   setImpactDialResults(results);
   setAllDiceResults(results);
 
-  const mySeat = players[0]?.seat;
+  const mySeat = mySeatIndex;
   const myResult = results[mySeat];
 
   setDiceResult(myResult || null);
@@ -5505,7 +6016,7 @@ function finishDiceRoll(results) {
 
   // 天候棒で獲得できる資源が1つもない場合はスキップ
   const humanPlayer =
-    players[0];
+    myPlayer;
 
   const canGainAnyTactResource =
     Number(humanPlayer?.resources?.berry || 0) <
@@ -5547,7 +6058,7 @@ function finishDiceRoll(results) {
 }
 
 function finishDiceRollAfterTact(results) {
-  const mySeat = players[0]?.seat;
+  const mySeat = mySeatIndex;
   const myResult = results[mySeat];
 
 console.log('[天候棒チェック]', {
@@ -5569,7 +6080,7 @@ console.log('[天候棒チェック]', {
     const copyOptions = [];
 
     players.forEach((player, playerIndex) => {
-      if (playerIndex === 0) {
+      if (playerIndex === mySeatIndex) {
         return;
       }
 
@@ -5710,13 +6221,23 @@ function finishDicePhase(
   // オンラインではクライアント側で
   // ラウンドやターンを勝手に変更しない
   if (isOnlineGame) {
-    socketRef.current.emit(
-      'saikoro:finish-action',
-      {
-        roomId: onlineState.roomId,
-      }
-    );
+    if (
+      onlineState.phase !== 'action' ||
+      onlineState.resourcesReady !== true
+    ) {
+      return;
+    }
 
+    const effectsKey = `${onlineState.roomId}:${round}:${mySeatIndex}`;
+    if (effectsFinishedKeyRef.current === effectsKey) {
+      return;
+    }
+
+    effectsFinishedKeyRef.current = effectsKey;
+    socketRef.current.emit('saikoro:effects-finished', {
+      roomId: String(onlineState.roomId),
+    });
+    setMessage('自分のダイス効果が完了しました。ほかのプレイヤーを待っています……');
     return;
   }
   setPhase('action');
@@ -5792,79 +6313,6 @@ const applyStartTurnCardEffects = (
 
   let changed = false;
   const messages = [];
-
-  /*
-   * ニュース・クー
-   *
-   * 「好きな資源を1つ」
-   *
-   * 自分のターン開始時に
-   * どの資源をもらうか選択する。
-   */
-  if (
-    hasCard(
-      player,
-      'news'
-    )
-  ) {
-    const answer =
-      window.prompt(
-        'ニュース・クー\n\n' +
-        '獲得する資源を選択してください。\n\n' +
-        '1：ベリー\n' +
-        '2：ヴァース\n' +
-        '3：永久指針'
-      );
-
-    let resourceType =
-      null;
-
-    if (answer === '1') {
-      resourceType = 'berry';
-    }
-
-    if (answer === '2') {
-      resourceType = 'verse';
-    }
-
-    if (answer === '3') {
-      resourceType = 'eternal';
-    }
-
-    if (resourceType) {
-      const current =
-        Number(
-          nextPlayers[seat]
-            .resources?.[
-              resourceType
-            ] || 0
-        );
-
-      const max =
-        Number(
-          nextPlayers[seat]
-            .maxResources?.[
-              resourceType
-            ] || 0
-        );
-
-      if (current < max) {
-        nextPlayers[seat].resources[
-          resourceType
-        ] =
-          Math.min(
-            max,
-            current + 1
-          );
-
-        changed = true;
-
-        messages.push(
-          `ニュース・クーで${RESOURCE_NAMES[resourceType]}を1個獲得しました。`
-        );
-      }
-    }
-  }
 
   /*
    * バラバラの実
@@ -6048,6 +6496,13 @@ function startNextRound() {
   // オンラインではクライアント側で
   // ラウンドやターンを勝手に変更しない
   if (isOnlineGame) {
+    if (
+      Number(turnPlayer) !== mySeatIndex ||
+      onlineState.phase !== 'action'
+    ) {
+      return;
+    }
+
     socketRef.current.emit(
       'saikoro:finish-action',
       {
@@ -6181,11 +6636,54 @@ function getDiceFinalRotation(faceIndex) {
 }
 
 
+  function canRevealVivreInfo(card, infoType) {
+    const profile = getCardProfile(card);
+    const revealed = card?.revealedInfo || {};
+
+    if (infoType === 'nameLength') {
+      return revealed.nameLength == null;
+    }
+
+    if (infoType === 'favoriteFood') {
+      return (revealed.favoriteFood?.length ?? 0) <
+        getFavoriteFoodCharacters(profile?.favoriteFood).length;
+    }
+
+    if (infoType === 'height' || infoType === 'age') {
+      const value = infoType === 'height' ? profile?.height : profile?.age;
+      return (revealed[infoType]?.length ?? 0) < getDigitItems(value).length;
+    }
+
+    if (infoType === 'family') {
+      const family = getFamilyItems(profile);
+      return revealed.family == null ||
+        (Array.isArray(revealed.family) &&
+          revealed.family.length < Math.max(1, family.length));
+    }
+
+    if (infoType === 'blood') {
+      return !revealed.blood && Boolean(profile?.blood);
+    }
+
+    if (infoType === 'origin') {
+      return !revealed.origin && Boolean(profile?.bornSea || profile?.bornPlace);
+    }
+
+    if (infoType === 'gender') {
+      return !revealed.gender && Boolean(profile?.gender);
+    }
+
+    return false;
+  }
+
   function canBuyInfo(
     player,
     infoType
   ) {
-    if (!player) {
+    if (
+      !player ||
+      !canRevealVivreInfo(currentVivreCard, infoType)
+    ) {
       return false;
     }
 
@@ -6537,6 +7035,13 @@ if (
   // 1ターンに何回でも購入可能
   // ====================================================
 
+  if (!canRevealVivreInfo(currentVivreCard, infoType)) {
+    setMessage(
+      `「${getInfoLabel(infoType)}」は取得できる情報の上限に達しています。`
+    );
+    return;
+  }
+
   if (
     !canBuyInfo(
       myPlayer,
@@ -6593,7 +7098,7 @@ if (
   // ====================================================
 
   updatePlayer(
-    0,
+    mySeatIndex,
     (player) => {
       const previousInfo =
         player?.vivreCardInfo ||
@@ -6765,13 +7270,19 @@ if (
     nextCard
   );
 
-
-  applyKuroDenDenMushi(
-    0,
-    infoType,
-    nextRevealedInfo,
-    nextCard
+  addActionHistory(
+    `${myPlayer?.name || `プレイヤー${mySeatIndex + 1}`}がビブカ情報「${getInfoLabel(infoType)}」を取得`
   );
+
+
+  if (!socketRef.current?.connected) {
+    applyKuroDenDenMushi(
+      mySeatIndex,
+      infoType,
+      nextRevealedInfo,
+      nextCard
+    );
+  }
 
 
 
@@ -6977,6 +7488,8 @@ function finishAction() {
 function handleAnswerSubmit(event) {
   event.preventDefault();
 
+  const answeringSeat = Number(mySeat ?? 0);
+
   console.log('[ANSWER DEBUG]', {
     phase,
     turnPlayer,
@@ -6988,7 +7501,7 @@ function handleAnswerSubmit(event) {
 
   if (
     phase !== 'answer' ||
-    turnPlayer !== 0 ||
+    Number(turnPlayer) !== answeringSeat ||
     !answerMode
   ) {
     return;
@@ -7002,7 +7515,7 @@ function handleAnswerSubmit(event) {
 
   // バクバクの実の所持枚数に応じて回答回数を決定
   const bakubakuCount =
-    (players[0]?.cards || []).filter(
+    (players[answeringSeat]?.cards || []).filter(
       (card) => card.id === 'bakubaku'
     ).length;
 
@@ -7046,8 +7559,15 @@ function handleAnswerSubmit(event) {
       ? isCorrectVivreAnswer(currentVivreCard, input)
       : isSimpleAnswerCorrect(currentVivreCard, input);
 
+    socketRef.current?.emit('saikoro:answer-result', {
+      roomId: String(onlineState?.roomId || ''),
+      target: 'vivre',
+      answer: input,
+      correct,
+    });
+
     setLastAnswer({
-      player: 'あなた',
+      player: players[answeringSeat]?.name || 'プレイヤー',
       answer: input,
       correct,
     });
@@ -7055,7 +7575,7 @@ function handleAnswerSubmit(event) {
     setAnswerUsed(true);
 
     if (correct) {
-      handleVivreWin(0, input, {
+      handleVivreWin(answeringSeat, input, {
         continueAnswering: hasMoreAttempts,
         finishTurn: true,
       });
@@ -7113,8 +7633,15 @@ function handleAnswerSubmit(event) {
       normalizedInput === normalizedExtraName
     );
 
+    socketRef.current?.emit('saikoro:answer-result', {
+      roomId: String(onlineState?.roomId || ''),
+      target: 'extra',
+      answer: input,
+      correct,
+    });
+
     setLastAnswer({
-      player: 'あなた',
+      player: players[answeringSeat]?.name || 'プレイヤー',
       answer: input,
       correct,
     });
@@ -7124,7 +7651,7 @@ function handleAnswerSubmit(event) {
     if (correct) {
       const character = extraCharacter;
 
-      updatePlayer(0, (player) => ({
+      updatePlayer(answeringSeat, (player) => ({
         ...player,
 
         extraCharacterCount:
@@ -7142,13 +7669,13 @@ function handleAnswerSubmit(event) {
         ],
       }));
 
-      setWinner(0);
+      setWinner(answeringSeat);
 
       if (
         finishGameIfWon(
-          0,
-          Number(players[0]?.extraCharacterCount || 0) + 1,
-          Number(players[0]?.vivreCardCount || 0)
+          answeringSeat,
+          Number(players[answeringSeat]?.extraCharacterCount || 0) + 1,
+          Number(players[answeringSeat]?.vivreCardCount || 0)
         )
       ) {
         return;
@@ -7157,7 +7684,7 @@ function handleAnswerSubmit(event) {
       setRevealResult({
         type: 'extra',
         name: character.name || '不明',
-        player: 0,
+        player: answeringSeat,
       });
 
       setMessage(
@@ -7169,6 +7696,10 @@ function handleAnswerSubmit(event) {
 
       const nextExtraCharacter =
         randomChoice(extraCharacters);
+
+      syncSaikoroTargets({
+        extraCharacter: nextExtraCharacter,
+      });
 
       setExtraCharacter(nextExtraCharacter);
 
@@ -7237,9 +7768,20 @@ function addActionHistory(
     return;
   }
 
+  if (
+    socketRef.current?.connected &&
+    onlineState?.roomId
+  ) {
+    socketRef.current.emit('saikoro:history', {
+      roomId: String(onlineState.roomId),
+      text,
+    });
+    return;
+  }
+
   setActionHistory(
     (history) => [
-      ...history.slice(-49),
+      ...history.slice(-99),
       {
         id:
           `${Date.now()}-${Math.random()}`,
@@ -7249,7 +7791,24 @@ function addActionHistory(
   );
 }
 
-function startNextPlayerTurn() {
+function syncSaikoroTargets(targets = {}) {
+  if (
+    !socketRef.current?.connected ||
+    !onlineState?.roomId
+  ) {
+    return;
+  }
+
+  socketRef.current.emit('saikoro:targets-updated', {
+    roomId: String(onlineState.roomId),
+    currentVivreProfile:
+      targets.currentVivreProfile ?? getCardProfile(currentVivreCard),
+    extraCharacter:
+      targets.extraCharacter ?? extraCharacter,
+  });
+}
+
+function startNextPlayerTurn(targets = {}) {
   // オンライン対戦では、回答終了をサーバーに通知する
   if (
     socketRef.current?.connected &&
@@ -7261,6 +7820,10 @@ function startNextPlayerTurn() {
         roomId: String(onlineState.roomId),
         target: 'extra',
         answer: '',
+        currentVivreProfile:
+          targets.currentVivreProfile ?? getCardProfile(currentVivreCard),
+        extraCharacter:
+          targets.extraCharacter ?? extraCharacter,
       }
     );
 
@@ -7454,6 +8017,10 @@ function replaceVivreCard(options = {}) {
     nextUsed
   );
 
+  syncSaikoroTargets({
+    currentVivreProfile: getCardProfile(nextCard),
+  });
+
   setUsedVivreIds(nextUsed);
   setCurrentVivreCard(nextCard);
 
@@ -7472,7 +8039,9 @@ function replaceVivreCard(options = {}) {
         '新しい1枚ビブカが補充されました。残りの回答権を使えます。回答先を選んでください。'
       );
     } else {
-      startNextPlayerTurn();
+      startNextPlayerTurn({
+        currentVivreProfile: getCardProfile(nextCard),
+      });
     }
 
     return;
@@ -7493,6 +8062,14 @@ function replaceVivreCard(options = {}) {
 
 function handleEndMyTurn() {
   if (!isMyTurn) {
+    return;
+  }
+
+  if (
+    socketRef.current?.connected &&
+    onlineState?.effectsReady !== true
+  ) {
+    setMessage('全員のダイス効果処理が終わるまでお待ちください。');
     return;
   }
 
@@ -7578,6 +8155,9 @@ function handleEndMyTurn() {
     ) {
       socketRef.current.emit('saikoro:start-request', {
         roomId: String(onlineState.roomId),
+        currentVivreProfile: getCardProfile(currentVivreCard),
+        extraCharacter,
+        victoryTarget,
       });
 
       setMessage('全員の準備完了を待っています。');
@@ -8071,7 +8651,7 @@ return (
         {players.map(
           (player) => {
             const isMe =
-              player.seat === 0;
+              player.seat === mySeatIndex;
 
             const isTurn =
               player.seat ===
@@ -8367,7 +8947,7 @@ return (
 <Dice3D
   label="サイコロA"
   dice={
-    myPlayer?.diceA ||
+    diceDisplayPlayer?.diceA ||
     INITIAL_DICE_A
   }
 rotation={
@@ -8383,7 +8963,7 @@ rotation={
     yomiyomiRolling &&
     yomiyomiRollingType === 'a'
       ? yomiyomiRollResult
-      : allDiceResults?.[0]?.a
+      : allDiceResults?.[diceDisplayPlayer?.seat]?.a
   }
 rolling={
   diceRolling ||
@@ -8404,7 +8984,7 @@ rolling={
 <Dice3D
   label="サイコロB"
   dice={
-    myPlayer?.diceB ||
+    diceDisplayPlayer?.diceB ||
     INITIAL_DICE_B
   }
  rotation={
@@ -8420,7 +9000,7 @@ rolling={
     yomiyomiRolling &&
     yomiyomiRollingType === 'b'
       ? yomiyomiRollResult
-      : allDiceResults?.[0]?.b
+      : allDiceResults?.[diceDisplayPlayer?.seat]?.b
   }
   rolling={
   diceRolling ||
@@ -8454,7 +9034,7 @@ rolling={
       <DiceFaceList
         title=""
         dice={
-          myPlayer?.diceB ||
+          diceDisplayPlayer?.diceB ||
           INITIAL_DICE_B
         }
       />
@@ -9140,7 +9720,7 @@ rolling={
             { name: 'bottom', transform: 'rotateX(-90deg) translateZ(56px)' },
           ].map((face, index) => {
             const faceGold =
-              index === 0 && takaraResult !== null
+              index === mySeatIndex && takaraResult !== null
                 ? takaraResult
                 : index === 1
                   ? 3
@@ -9269,18 +9849,21 @@ rolling={
   </div>
 )}
 
-{revealResult && (
+{(revealResult || lastAnswer) && (
   <div
-    style={
-      styles.winPanel
-    }
+    style={{
+      ...styles.winPanel,
+      background: lastAnswer?.correct === false ? '#fee2e2' : '#dcfce7',
+      borderColor: lastAnswer?.correct === false ? '#dc2626' : '#16a34a',
+      color: lastAnswer?.correct === false ? '#7f1d1d' : '#14532d',
+    }}
   >
     <div
       style={
         styles.winTitle
       }
     >
-      正解！
+      {lastAnswer?.correct === false ? '不正解' : '正解！'}
     </div>
 
     <div
@@ -9288,21 +9871,19 @@ rolling={
         styles.winAnswer
       }
     >
-      「
-      {
-        revealResult.name
-      }
-      」
+      「{revealResult?.name || lastAnswer?.answer || ''}」
     </div>
 
     <div>
-      {
-        players[
-          revealResult.player
-        ]?.name
-      }
-      が獲得しました
+      {lastAnswer?.player || players[revealResult?.player]?.name || 'プレイヤー'}さんが
+      「{lastAnswer?.answer || revealResult?.name || ''}」と回答しました
     </div>
+
+    {revealResult && lastAnswer?.correct !== false && (
+      <div>
+        {players[revealResult.player]?.name || 'プレイヤー'}が獲得しました
+      </div>
+    )}
   </div>
             )}
 
@@ -9656,9 +10237,9 @@ extraCharacterBoard.map(
     const isMyRevealed =
       new Set(
         Array.isArray(
-          players[0]?.extraCharacterRevealedIndexes
+          myPlayer?.extraCharacterRevealedIndexes
         )
-          ? players[0].extraCharacterRevealedIndexes
+          ? myPlayer.extraCharacterRevealedIndexes
           : []
       ).has(
         item.index
@@ -9762,12 +10343,20 @@ extraCharacterBoard.map(
   'action' &&  isMyTurn && (
     <button
       type="button"
+      disabled={
+        Boolean(socketRef.current?.connected) &&
+        onlineState?.effectsReady !== true
+      }
       onClick={
         handleEndMyTurn
       }
       style={{
         ...styles.primaryButton,
-        opacity: 1,
+        opacity:
+          socketRef.current?.connected &&
+          onlineState?.effectsReady !== true
+            ? 0.5
+            : 1,
         margin: '0 auto',
       }}
     >
@@ -11980,25 +12569,24 @@ selectedCard ? (
               marginTop: 22,
             }}
           >
-            {players.map(
-              (player, index) => {
-                if (
-                  index === 0 ||
-                  !player
-                ) {
-                  return null;
-                }
+            {Array.from(
+              new Map(
+                players
+                  .filter(Boolean)
+                  .map((player) => [Number(player.seat), player])
+              ).values()
+            )
+              .filter((player) => Number(player.seat) !== mySeatIndex)
+              .map((player) => {
+                const seat = Number(player.seat);
 
                 return (
                   <button
-                    key={
-                      player.id ||
-                      index
-                    }
+                    key={`jikijiki-target-${seat}`}
                     type="button"
                     onClick={() =>
                       handleJikijikiTargetSelect(
-                        index
+                        seat
                       )
                     }
                     style={{
@@ -12016,12 +12604,11 @@ selectedCard ? (
                   >
                     {player.name ||
                       `プレイヤー${
-                        index + 1
+                        seat + 1
                       }`}
                   </button>
                 );
-              }
-            )}
+              })}
           </div>
 
           <button

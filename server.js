@@ -10001,6 +10001,21 @@ const SAIKORO_INITIAL_MAX_RESOURCES = {
     6,
 };
 
+const SAIKORO_CARD_CATALOG = {
+  dorudoru: { name: 'ドルドルの実', cost: { verse: 1 } },
+  yomiyomi: { name: 'ヨミヨミの実', cost: { verse: 2 } },
+  jikijiki: { name: 'ジキジキの実', cost: { verse: 3 } },
+  manemane: { name: 'マネマネの実', cost: { verse: 4 } },
+  bakubaku: { name: 'バクバクの実', cost: { verse: 5 } },
+  barabara: { name: 'バラバラの実', cost: { verse: 6 } },
+  daiaru: { name: '衝撃貝', cost: { eternal: 1 } },
+  takara: { name: '食糧宝船', cost: { eternal: 2 } },
+  smile: { name: 'SMILE', cost: { eternal: 3 } },
+  news: { name: 'ニュース・クー', cost: { eternal: 4 } },
+  tact: { name: '魔法の天候棒', cost: { eternal: 5 } },
+  kuroden: { name: '黒電伝虫', cost: { eternal: 6 } },
+};
+
 
 // ============================================================
 // 看板たぬき：初期ベリー
@@ -10009,8 +10024,8 @@ const SAIKORO_INITIAL_MAX_RESOURCES = {
 const SAIKORO_INITIAL_RESOURCES = [
   {
     berry: 3,
-    verse: 6,
-    eternal: 6,
+    verse: 0,
+    eternal: 0,
   },
   {
     berry: 2,
@@ -10292,61 +10307,58 @@ function saikoroApplyDiceResult(
     return;
   }
 
-  const results = [
-    result.a,
-    result.b,
-  ];
-
-  for (
-    const item of results
-  ) {
-    if (
-      !item?.face
-    ) {
-      continue;
+  const applyFace = (face) => {
+    if (!face) {
+      return;
     }
 
-    const type =
-      item.face.type;
-
-    const value =
-      Number(
-        item.face.value
-      ) || 0;
+    if (face.type === 'combo' && Array.isArray(face.faces)) {
+      for (const component of face.faces) {
+        applyFace(component);
+      }
+      return;
+    }
 
     if (
-      type ===
-      'berry'
+      ['berry', 'verse', 'eternal'].includes(face.type)
     ) {
       saikoroAddResource(
         player,
-        'berry',
-        value
+        face.type,
+        Number(face.value) || 0
       );
     }
+  };
 
-    if (
-      type ===
-      'verse'
-    ) {
-      saikoroAddResource(
-        player,
-        'verse',
-        value
-      );
-    }
-
-    if (
-      type ===
-      'eternal'
-    ) {
-      saikoroAddResource(
-        player,
-        'eternal',
-        value
-      );
-    }
+  for (const item of [result.a, result.b]) {
+    applyFace(item?.face ?? item);
   }
+}
+
+function saikoroHistoryFace(item) {
+  const face = item?.face ?? item;
+  if (!face) return 'なし';
+
+  if (
+    (face.type === 'combo' || face.type === 'choice') &&
+    Array.isArray(face.faces)
+  ) {
+    const separator = face.type === 'choice' ? ' OR ' : ' + ';
+    return face.faces
+      .map((part) => saikoroHistoryFace(part))
+      .join(separator);
+  }
+
+  if (face.type === 'manemane') return 'マネマネ';
+  if (face.type === 'tact') return '天候棒';
+
+  const name = {
+    berry: 'ベリー',
+    verse: 'ヴァース',
+    eternal: '永久指針',
+  }[face.type] || face.type;
+
+  return `${name}${face.value != null ? ` ${face.value}` : ''}`;
 }
 
 
@@ -10373,6 +10385,9 @@ function saikoroPublicPlayer(
     !gamePlayer
   ) {
     return {
+      socketId:
+        player.socketId,
+
       seat:
 Number(
 player.playerNumber
@@ -10414,7 +10429,13 @@ player.playerNumber
 
       extraCharacterInfo: [],
 
-      vivreCardInfo: [],
+      extraCharacterRevealedIndexes: [],
+
+      extraSpecifiedCount: 0,
+
+      extraRandomCount: 0,
+
+      vivreCardInfo: {},
 
       extraCharacterCount:
         0,
@@ -10425,6 +10446,9 @@ player.playerNumber
   }
 
   return {
+    socketId:
+      player.socketId,
+
     seat:
 Number(
 player.playerNumber
@@ -10489,10 +10513,22 @@ player.playerNumber
         ...gamePlayer.extraCharacterInfo,
       ],
 
-    vivreCardInfo:
+    extraCharacterRevealedIndexes:
       [
-        ...gamePlayer.vivreCardInfo,
+        ...(gamePlayer.extraCharacterRevealedIndexes || []),
       ],
+
+    extraSpecifiedCount:
+      Number(gamePlayer.extraSpecifiedCount ?? 0),
+
+    extraRandomCount:
+      Number(gamePlayer.extraRandomCount ?? 0),
+
+    vivreCardInfo:
+      gamePlayer.vivreCardInfo &&
+      typeof gamePlayer.vivreCardInfo === 'object'
+        ? { ...gamePlayer.vivreCardInfo }
+        : {},
 
     extraCharacterCount:
       Number(
@@ -10540,6 +10576,32 @@ function saikoroBuildState(
           1
       ),
 
+    started:
+      Boolean(game.started),
+
+    victoryTarget:
+      Number(game.victoryTarget ?? 3),
+
+    winnerSeat:
+      game.winnerSeat ?? null,
+
+    resourcesReady:
+      game.resourcesReady === true,
+
+    effectsReady:
+      game.effectsReady === true,
+
+    actionHistory:
+      Array.isArray(game.actionHistory)
+        ? game.actionHistory
+        : [],
+
+    cardStocks:
+      game.cardStocks || {},
+
+    lastAnswer:
+      game.lastAnswer ?? null,
+
     players:
       players.map(
         (player) =>
@@ -10556,6 +10618,12 @@ function saikoroBuildState(
         game.diceResults?.[player.socketId] || null,
       ])
     ),
+
+    currentVivreProfile:
+      game.currentVivreProfile ?? null,
+
+    extraCharacter:
+      game.extraCharacter ?? null,
 
     actionUsed:
       game.actionUsed || {},
@@ -10720,6 +10788,17 @@ function saikoroStartGame(game) {
   game.actionUsed = {};
   game.extraActionUsed = {};
   game.answerTarget = null;
+  game.winnerSeat = null;
+  game.lastAnswer = null;
+  game.awardedAnswers = new Set();
+  game.resourcesReady = false;
+  game.effectsReady = false;
+  game.effectsFinished = new Set();
+  game.rerollResults = {};
+  game.actionHistory = [];
+  game.cardStocks = Object.fromEntries(
+    Object.keys(SAIKORO_CARD_CATALOG).map((cardId) => [cardId, 2])
+  );
   game.players = {};
 
   participants.forEach((player, index) => {
@@ -10731,11 +10810,9 @@ function saikoroStartGame(game) {
       name: player.name || `プレイヤー${seat + 1}`,
       seat,
 
-      resources: {
-        resources: saikoroInitialResources(seat + 1),
-        verse: 0,
-        eternal: 0,
-      },
+resources: {
+  ...saikoroInitialResources(seat + 1),
+},
 
       maxResources: {
         ...SAIKORO_INITIAL_MAX_RESOURCES,
@@ -10751,13 +10828,20 @@ function saikoroStartGame(game) {
 
       cards: [],
       extraCharacterInfo: [],
-      vivreCardInfo: [],
+      extraCharacterRevealedIndexes: [],
+      extraSpecifiedCount: 0,
+      extraRandomCount: 0,
+      vivreCardInfo: {},
       extraCharacterCount: 0,
       vivreCardCount: 0,
     };
   });
 
   game.message = 'ゲーム開始！ 全員のダイスを振ります。';
+  game.actionHistory.push({
+    id: `${Date.now()}-${Math.random()}`,
+    text: `ゲーム開始。勝利目標 ${game.victoryTarget ?? 3}点`,
+  });
 
   console.log('[saikoro] game started', {
     roomId: game.roomId,
@@ -10828,21 +10912,20 @@ results[player.socketId] =
 
 // 全員分の結果を確定してから資源を獲得する
 game.diceResults = results;
+game.rerollResults = {};
+game.resourcesReady = false;
+game.effectsReady = false;
+game.effectsFinished = new Set();
 
 for (const player of players) {
-const gamePlayer =
-saikoroGetGamePlayer(
-game,
-player.socketId
-);
-
-saikoroApplyDiceResult(
-  gamePlayer,
-  results[player.socketId]
-);
-
-
+  const result = results[player.socketId];
+  game.actionHistory ||= [];
+  game.actionHistory.push({
+    id: `${Date.now()}-${Math.random()}`,
+    text: `${player.name}がダイスを振りました（A: ${saikoroHistoryFace(result.a)} / B: ${saikoroHistoryFace(result.b)}）`,
+  });
 }
+game.actionHistory = game.actionHistory.slice(-100);
 
 game.phase = 'action';
 
@@ -10918,8 +11001,25 @@ function saikoroNextTurn(
   game.phase =
     'dice';
 
+  const nextPlayer = players.find(
+    (player) => Number(player.playerNumber) - 1 === nextIndex
+  );
+  if (nextPlayer) {
+    game.actionHistory ||= [];
+    game.actionHistory.push({
+      id: `${Date.now()}-${Math.random()}`,
+      text: `${nextPlayer.name}のターン開始`,
+    });
+    game.actionHistory = game.actionHistory.slice(-100);
+  }
+
   game.diceResults =
     {};
+
+  game.rerollResults = {};
+  game.resourcesReady = false;
+  game.effectsReady = false;
+  game.effectsFinished = new Set();
 
   game.actionUsed =
     {};
@@ -10929,6 +11029,8 @@ function saikoroNextTurn(
 
   game.answerTarget =
     null;
+
+  game.lastAnswer = null;
 
   game.message =
     `プレイヤー${
@@ -11390,6 +11492,68 @@ if (oldSocketId && oldSocketId !== socket.id) {
           return;
         }
 
+        if (
+          payload?.currentVivreProfile &&
+          typeof payload.currentVivreProfile === 'object'
+        ) {
+          const previousId = String(
+            game.currentVivreProfile?.id ??
+            game.currentVivreProfile?.number ??
+            game.currentVivreProfile?.name ??
+            ''
+          );
+          const nextId = String(
+            payload.currentVivreProfile.id ??
+            payload.currentVivreProfile.number ??
+            payload.currentVivreProfile.name ??
+            ''
+          );
+
+          if (previousId && nextId !== previousId) {
+            for (const player of Object.values(game.players || {})) {
+              player.vivreCardInfo = {};
+            }
+          }
+
+          game.currentVivreProfile = payload.currentVivreProfile;
+        }
+
+        if (
+          payload?.extraCharacter &&
+          typeof payload.extraCharacter === 'object'
+        ) {
+          const previousId = String(
+            game.extraCharacter?.id ??
+            game.extraCharacter?.number ??
+            game.extraCharacter?.name ??
+            ''
+          );
+          const nextId = String(
+            payload.extraCharacter.id ??
+            payload.extraCharacter.number ??
+            payload.extraCharacter.name ??
+            ''
+          );
+
+          if (previousId && nextId !== previousId) {
+            for (const player of Object.values(game.players || {})) {
+              player.extraCharacterInfo = [];
+              player.extraCharacterRevealedIndexes = [];
+              player.extraSpecifiedCount = 0;
+              player.extraRandomCount = 0;
+            }
+          }
+
+          game.extraCharacter = payload.extraCharacter;
+        }
+
+        const victoryTarget = Number(payload?.victoryTarget);
+        if (Number.isInteger(victoryTarget) && victoryTarget > 0) {
+          game.victoryTarget = victoryTarget;
+        }
+        game.winnerSeat = null;
+        game.lastAnswer = null;
+
 console.log('[saikoro] start-request受信', {
   roomId,
   socketId: socket.id,
@@ -11741,33 +11905,76 @@ console.log('[saikoro] start-request受信', {
               ''
           );
 
-        if (
-          !cardId
-        ) {
+        const catalogCard = SAIKORO_CARD_CATALOG[cardId];
+
+        if (!catalogCard) {
           saikoroError(
             socket,
-            'カードが指定されていません。'
+            '指定されたカードは購入できません。'
           );
 
           return;
         }
 
-        /*
-         * カード価格・効果・残り枚数は
-         * 今後カード専用モジュールで処理する。
-         */
+        const stock = Number(game.cardStocks?.[cardId] ?? 0);
+        if (stock <= 0) {
+          saikoroError(socket, 'このカードは売り切れです。');
+          return;
+        }
+
+        const cost = catalogCard.cost;
+        const canAfford = Object.entries(cost).every(
+          ([type, amount]) =>
+            Number(gamePlayer.resources?.[type] ?? 0) >= Number(amount)
+        );
+
+        if (!canAfford) {
+          saikoroError(socket, 'カード購入に必要な資源が足りません。');
+          return;
+        }
+
+        for (const [type, amount] of Object.entries(cost)) {
+          gamePlayer.resources[type] =
+            Number(gamePlayer.resources[type] ?? 0) - Number(amount);
+        }
+
+        gamePlayer.cards ||= [];
+        gamePlayer.cards.push({
+          id: cardId,
+          name: catalogCard.name,
+          image: `/saikoro/${cardId}.png`,
+          description: '',
+        });
+
+        if (cardId === 'dorudoru') {
+          gamePlayer.maxResources.berry += 4;
+          gamePlayer.maxResources.verse += 3;
+          gamePlayer.maxResources.eternal += 3;
+        }
+
+        game.cardStocks[cardId] = stock - 1;
         game.actionUsed[
           socket.id
         ] = true;
 
         game.message =
-          `プレイヤー${
-            gamePlayer.seat + 1
-          }がカードを選択しました。`;
+          `${gamePlayer.name}が「${catalogCard.name}」を購入しました。`;
+
+        game.actionHistory ||= [];
+        game.actionHistory.push({
+          id: `${Date.now()}-${Math.random()}`,
+          text: `${gamePlayer.name}が「${catalogCard.name}」を購入`,
+        });
+        game.actionHistory = game.actionHistory.slice(-100);
 
         saikoroBroadcastState(
           game
         );
+
+        socket.emit('saikoro:card-purchased', {
+          cardId,
+          cardName: catalogCard.name,
+        });
       }
     );
 
@@ -11900,6 +12107,271 @@ console.log('[saikoro] start-request受信', {
     // ========================================================
 
     socket.on(
+      'saikoro:history',
+      (payload) => {
+        const roomId = String(payload?.roomId || '')
+          .replace(/\D/g, '')
+          .slice(0, 4);
+        const game = saikoroGames.get(roomId);
+        const player = saikoroGetGamePlayer(game, socket.id);
+        const text = String(payload?.text || '').trim().slice(0, 200);
+
+        if (!game?.started || !player || !text) {
+          return;
+        }
+
+        game.actionHistory ||= [];
+        game.actionHistory.push({
+          id: `${Date.now()}-${Math.random()}`,
+          text,
+        });
+        game.actionHistory = game.actionHistory.slice(-100);
+        saikoroBroadcastState(game);
+      }
+    );
+
+    socket.on(
+      'saikoro:player-state',
+      (payload) => {
+        const roomId = String(payload?.roomId || '')
+          .replace(/\D/g, '')
+          .slice(0, 4);
+        const game = saikoroGames.get(roomId);
+        const player = saikoroGetGamePlayer(game, socket.id);
+        const state = payload?.playerState;
+
+        if (
+          !game?.started ||
+          !player ||
+          !state ||
+          typeof state !== 'object'
+        ) {
+          return;
+        }
+
+        for (const type of ['berry', 'verse', 'eternal']) {
+          const value = Number(state.resources?.[type]);
+          const max = Number(state.maxResources?.[type]);
+
+          if (Number.isFinite(value)) {
+            player.resources[type] = Math.max(0, value);
+          }
+
+          if (Number.isFinite(max)) {
+            player.maxResources[type] = Math.max(0, max);
+          }
+        }
+
+        for (const key of ['diceA', 'diceB']) {
+          if (Array.isArray(state[key])) {
+            player[key] = state[key].slice(0, 6).map((face) => ({ ...face }));
+          }
+        }
+
+        for (const key of [
+          'cards',
+          'extraCharacterInfo',
+          'extraCharacterRevealedIndexes',
+        ]) {
+          if (Array.isArray(state[key])) {
+            player[key] = state[key].map((item) =>
+              item && typeof item === 'object' ? { ...item } : item
+            );
+          }
+        }
+
+        const previousVivreInfo = player.vivreCardInfo || {};
+        const nextVivreInfo =
+          state.vivreCardInfo && typeof state.vivreCardInfo === 'object'
+            ? { ...state.vivreCardInfo }
+            : previousVivreInfo;
+        const shareableInfoTypes = [
+          'nameLength',
+          'favoriteFood',
+          'height',
+          'age',
+          'blood',
+          'origin',
+          'gender',
+          'family',
+        ];
+        const changedInfoType = shareableInfoTypes.find(
+          (type) =>
+            nextVivreInfo[type] != null &&
+            JSON.stringify(nextVivreInfo[type]) !==
+              JSON.stringify(previousVivreInfo[type])
+        );
+
+        player.vivreCardInfo = nextVivreInfo;
+
+        for (const key of [
+          'extraCharacterCount',
+          'extraSpecifiedCount',
+          'extraRandomCount',
+          'vivreCardCount',
+        ]) {
+          const value = Number(state[key]);
+          if (Number.isFinite(value)) {
+            player[key] = Math.max(0, Math.floor(value));
+          }
+        }
+
+        const victoryTarget = Number(game.victoryTarget ?? 3);
+        const totalCards =
+          Number(player.extraCharacterCount ?? 0) +
+          Number(player.vivreCardCount ?? 0);
+
+        if (
+          game.phase !== 'result' &&
+          Number(player.extraCharacterCount ?? 0) > 0 &&
+          Number(player.vivreCardCount ?? 0) > 0 &&
+          totalCards >= victoryTarget
+        ) {
+          game.phase = 'result';
+          game.winnerSeat = Number(player.seat);
+          game.message = `${player.name}が勝利しました！`;
+        }
+
+        const privateNotices = [];
+
+        if (changedInfoType) {
+          for (const [socketId, target] of Object.entries(game.players || {})) {
+            if (
+              socketId === socket.id ||
+              !Array.isArray(target.cards)
+            ) {
+              continue;
+            }
+
+            const kurodenCount = target.cards.filter(
+              (card) => card?.id === 'kuroden'
+            ).length;
+            const existingInfo = target.vivreCardInfo || {};
+
+            if (
+              kurodenCount === 0 ||
+              existingInfo[changedInfoType] != null ||
+              Math.random() >= Math.min(kurodenCount * 0.3, 0.6)
+            ) {
+              continue;
+            }
+
+            target.vivreCardInfo = {
+              ...existingInfo,
+              [changedInfoType]: nextVivreInfo[changedInfoType],
+            };
+
+            if (
+              changedInfoType === 'height' ||
+              changedInfoType === 'age'
+            ) {
+              const lengthKey = `${changedInfoType}Length`;
+              target.vivreCardInfo[lengthKey] =
+                nextVivreInfo[lengthKey];
+            }
+
+            privateNotices.push({
+              socketId,
+              infoType: changedInfoType,
+            });
+          }
+        }
+
+        saikoroBroadcastState(game);
+
+        const infoLabels = {
+          nameLength: '名前の文字数',
+          favoriteFood: '好物',
+          height: '身長',
+          age: '年齢',
+          blood: '血液型',
+          origin: '出身',
+          gender: '性別',
+          family: '家族',
+        };
+
+        for (const notice of privateNotices) {
+          io.to(notice.socketId).emit('saikoro:kuroden-triggered', {
+            message: `黒電伝虫が発動し、「${infoLabels[notice.infoType]}」の情報を入手しました。`,
+          });
+        }
+      }
+    );
+
+    socket.on(
+      'saikoro:reroll-finished',
+      (payload) => {
+        const roomId = String(payload?.roomId || '')
+          .replace(/\D/g, '')
+          .slice(0, 4);
+        const game = saikoroGames.get(roomId);
+        const player = saikoroGetGamePlayer(game, socket.id);
+        const results = payload?.results;
+
+        if (
+          !game ||
+          game.phase !== 'action' ||
+          game.resourcesReady ||
+          !player ||
+          !results ||
+          typeof results !== 'object'
+        ) {
+          return;
+        }
+
+        game.rerollResults[socket.id] = {
+          a: results.a ?? null,
+          b: results.b ?? null,
+        };
+
+        const players = saikoroGetPlayers(game);
+        if (!players.every((item) => game.rerollResults[item.socketId])) {
+          return;
+        }
+
+        game.diceResults = { ...game.rerollResults };
+        for (const item of players) {
+          const gamePlayer = saikoroGetGamePlayer(game, item.socketId);
+          saikoroApplyDiceResult(
+            gamePlayer,
+            game.diceResults[item.socketId]
+          );
+        }
+
+        game.resourcesReady = true;
+        saikoroBroadcastState(game);
+      }
+    );
+
+    socket.on(
+      'saikoro:effects-finished',
+      (payload) => {
+        const roomId = String(payload?.roomId || '')
+          .replace(/\D/g, '')
+          .slice(0, 4);
+        const game = saikoroGames.get(roomId);
+        const player = saikoroGetGamePlayer(game, socket.id);
+
+        if (
+          !game ||
+          game.phase !== 'action' ||
+          !game.resourcesReady ||
+          !player
+        ) {
+          return;
+        }
+
+        game.effectsFinished.add(socket.id);
+        const players = saikoroGetPlayers(game);
+        game.effectsReady = players.every((item) =>
+          game.effectsFinished.has(item.socketId)
+        );
+
+        saikoroBroadcastState(game);
+      }
+    );
+
+    socket.on(
       'saikoro:finish-action',
       (payload) => {
         const roomId =
@@ -11945,11 +12417,6 @@ console.log('[saikoro] start-request受信', {
             game.turnPlayer
           )
         ) {
-          saikoroError(
-            socket,
-            '自分のターンではありません。'
-          );
-
           return;
         }
 
@@ -11965,11 +12432,26 @@ console.log('[saikoro] start-request受信', {
           return;
         }
 
+        if (!game.effectsReady) {
+          saikoroError(
+            socket,
+            '全員のダイス効果処理が終わるまでお待ちください。'
+          );
+          return;
+        }
+
         game.phase =
           'answer';
 
         game.answerTarget =
           null;
+
+        game.actionHistory ||= [];
+        game.actionHistory.push({
+          id: `${Date.now()}-${Math.random()}`,
+          text: `${gamePlayer.name}が回答フェーズへ進みました`,
+        });
+        game.actionHistory = game.actionHistory.slice(-100);
 
         game.message =
           `プレイヤー${
@@ -11986,6 +12468,210 @@ console.log('[saikoro] start-request受信', {
     // ========================================================
     // 回答
     // ========================================================
+
+    socket.on(
+      'saikoro:answer-result',
+      (payload) => {
+        const roomId = String(payload?.roomId || '')
+          .replace(/\D/g, '')
+          .slice(0, 4);
+        const game = saikoroGames.get(roomId);
+        const player = saikoroGetGamePlayer(game, socket.id);
+
+        if (
+          !game ||
+          game.phase !== 'answer' ||
+          !player ||
+          Number(player.seat) !== Number(game.turnPlayer)
+        ) {
+          return;
+        }
+
+        const target = payload?.target === 'vivre' ? 'vivre' : 'extra';
+        const targetCard = target === 'vivre'
+          ? game.currentVivreProfile
+          : game.extraCharacter;
+        const targetName = String(targetCard?.name ?? '');
+        const answer = String(payload?.answer ?? '').slice(0, 100);
+        const normalizeAnswer = (value) => String(value ?? '')
+          .normalize('NFKC')
+          .trim()
+          .toLowerCase()
+          .replace(/[\s　]+/g, '')
+          .replace(/・/g, '');
+        const normalizedAnswer = normalizeAnswer(answer);
+        let correct = false;
+
+        if (target === 'vivre' && targetName) {
+          const parts = targetName.split(/[-・\s　]+/).filter(Boolean);
+          const candidates = [targetName, ...parts];
+          if (parts.length > 0) {
+            candidates.push(parts[parts.length - 1]);
+          }
+          correct = candidates.some(
+            (candidate) => normalizeAnswer(candidate) === normalizedAnswer
+          );
+        } else if (targetName) {
+          const normalizedTarget = normalizeAnswer(targetName)
+            .replace(/（.*?）|\(.*?\)/g, '');
+          correct = Boolean(
+            normalizedAnswer &&
+            normalizedTarget &&
+            normalizedAnswer.replace(/（.*?）|\(.*?\)/g, '') === normalizedTarget
+          );
+        }
+
+        game.lastAnswer = {
+          seat: Number(player.seat),
+          playerName: player.name,
+          target,
+          answer,
+          correct,
+          targetName,
+        };
+
+        game.actionHistory ||= [];
+        game.actionHistory.push({
+          id: `${Date.now()}-${Math.random()}`,
+          text: `${player.name}が「${answer}」と回答しました（${correct ? '正解' : '不正解'}）`,
+        });
+        game.actionHistory = game.actionHistory.slice(-100);
+
+        if (correct) {
+          const awardKey = `${socket.id}:${target}:${normalizeAnswer(targetName)}:${normalizedAnswer}`;
+          if (!(game.awardedAnswers instanceof Set)) {
+            game.awardedAnswers = new Set();
+          }
+
+          if (!game.awardedAnswers.has(awardKey)) {
+            game.awardedAnswers.add(awardKey);
+
+            if (target === 'vivre') {
+              player.vivreCardCount = Number(player.vivreCardCount ?? 0) + 1;
+              player.cards.push({
+                id: `vivre-${targetCard.id ?? targetCard.number ?? targetName}`,
+                type: 'vivre',
+                name: targetName,
+                profile: targetCard,
+              });
+
+              for (const gamePlayer of Object.values(game.players || {})) {
+                gamePlayer.vivreCardInfo = {};
+              }
+            } else {
+              player.extraCharacterCount = Number(player.extraCharacterCount ?? 0) + 1;
+              player.cards.push({
+                id: `extra-${targetCard.id ?? targetCard.number ?? targetName}`,
+                type: 'extra',
+                name: targetName,
+                description: targetCard.description ?? '',
+                character: targetCard,
+              });
+            }
+
+            const victoryTarget = Number(game.victoryTarget ?? 3);
+            const totalCards =
+              Number(player.extraCharacterCount ?? 0) +
+              Number(player.vivreCardCount ?? 0);
+
+            if (
+              Number(player.extraCharacterCount ?? 0) > 0 &&
+              Number(player.vivreCardCount ?? 0) > 0 &&
+              totalCards >= victoryTarget
+            ) {
+              game.phase = 'result';
+              game.winnerSeat = Number(player.seat);
+              game.message = `${player.name}が勝利しました！`;
+            }
+          }
+        }
+
+        saikoroBroadcastState(game);
+      }
+    );
+
+    socket.on(
+      'saikoro:targets-updated',
+      (payload) => {
+        const roomId = String(payload?.roomId || '')
+          .replace(/\D/g, '')
+          .slice(0, 4);
+        const game = saikoroGames.get(roomId);
+        const gamePlayer = saikoroGetGamePlayer(game, socket.id);
+
+        if (
+          !game ||
+          game.phase !== 'answer' ||
+          !gamePlayer ||
+          Number(gamePlayer.seat) !== Number(game.turnPlayer)
+        ) {
+          return;
+        }
+
+        if (
+          payload?.currentVivreProfile &&
+          typeof payload.currentVivreProfile === 'object'
+        ) {
+          const previousProfileId = String(
+            game.currentVivreProfile?.id ??
+            game.currentVivreProfile?.number ??
+            game.currentVivreProfile?.name ??
+            ''
+          );
+          const nextProfileId = String(
+            payload.currentVivreProfile.id ??
+            payload.currentVivreProfile.number ??
+            payload.currentVivreProfile.name ??
+            ''
+          );
+
+          if (
+            previousProfileId &&
+            nextProfileId !== previousProfileId
+          ) {
+            for (const player of Object.values(game.players || {})) {
+              player.vivreCardInfo = {};
+            }
+          }
+
+          game.currentVivreProfile = payload.currentVivreProfile;
+        }
+
+        if (
+          payload?.extraCharacter &&
+          typeof payload.extraCharacter === 'object'
+        ) {
+          const previousCharacterId = String(
+            game.extraCharacter?.id ??
+            game.extraCharacter?.number ??
+            game.extraCharacter?.name ??
+            ''
+          );
+          const nextCharacterId = String(
+            payload.extraCharacter.id ??
+            payload.extraCharacter.number ??
+            payload.extraCharacter.name ??
+            ''
+          );
+
+          if (
+            previousCharacterId &&
+            nextCharacterId !== previousCharacterId
+          ) {
+            for (const player of Object.values(game.players || {})) {
+              player.extraCharacterInfo = [];
+              player.extraCharacterRevealedIndexes = [];
+              player.extraSpecifiedCount = 0;
+              player.extraRandomCount = 0;
+            }
+          }
+
+          game.extraCharacter = payload.extraCharacter;
+        }
+
+        saikoroBroadcastState(game);
+      }
+    );
 
     socket.on(
       'saikoro:answer',
