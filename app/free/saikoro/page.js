@@ -1827,6 +1827,9 @@ const [answerMode, setAnswerMode] = useState(null);
   const [showForgeConfirm, setShowForgeConfirm] =
     useState(false);
 
+  const [forgeSubmitting, setForgeSubmitting] =
+    useState(false);
+
 const [forgeUsedThisTurn, setForgeUsedThisTurn] =
   useState(false);
 
@@ -2266,6 +2269,7 @@ const [pendingOnlineDiceEffects, setPendingOnlineDiceEffects] = useState(null);
 const [pendingResourceDiceResults, setPendingResourceDiceResults] = useState(null);
 const resourceResultsHandledRef = useRef('');
 const effectsFinishedKeyRef = useRef('');
+const smileNoticeKeyRef = useRef('');
 
 const [tactResourceRemaining, setTactResourceRemaining] =
   useState(0);
@@ -2432,9 +2436,25 @@ const handleForgeExchange =
         !isMyTurn ||
         phase !== 'action' ||
         forgeUsedThisTurn ||
+        forgeSubmitting ||
         !selectedForgeOffer ||
         !selectedForgeDice
       ) {
+        return;
+      }
+
+      if (
+        socketRef.current?.connected &&
+        onlineState?.roomId
+      ) {
+        setForgeSubmitting(true);
+        socketRef.current.emit('saikoro:forge-face', {
+          roomId: String(onlineState.roomId),
+          offerId: selectedForgeOffer.id,
+          die: selectedForgeDice.dieType,
+          faceIndex: selectedForgeDice.index,
+        });
+        setMessage('鍛造を処理しています……');
         return;
       }
 
@@ -2599,9 +2619,11 @@ if (
 
 setForgeUsedThisTurn(true);
 
-      addActionHistory(
-        `${myPlayer?.name || `プレイヤー${mySeatIndex + 1}`}が鍛造で${selectedForgeOffer.id}をサイコロ${dieType}の${index + 1}面に適用`
-      );
+      if (!socketRef.current?.connected) {
+        addActionHistory(
+          `${myPlayer?.name || `プレイヤー${mySeatIndex + 1}`}が鍛造で${selectedForgeOffer.id}をサイコロ${dieType}の${index + 1}面に適用`
+        );
+      }
 
       setSelectedForgeOffer(
         null
@@ -2700,6 +2722,45 @@ useEffect(() => {
   setYomiyomiSelecting(false);
 }, [turnPlayer]);
   
+function completeCardPurchaseUi(card) {
+  if (!card) return;
+
+  setCardPurchasedThisTurn(true);
+  setMessage(`${card.name}を入手しました！`);
+  setSelectedCard(null);
+  setShowCardConfirm(false);
+
+  if (!socketRef.current?.connected) {
+    addActionHistory(
+      `${myPlayer?.name || `プレイヤー${mySeatIndex + 1}`}が「${card.name}」を購入`
+    );
+  }
+
+  if (card.id === 'jikijiki') {
+    setCardEffectUsed((prev) => ({ ...prev, jikijiki: true }));
+    setJikijikiTargetSeat(null);
+    setJikijikiTargetType(null);
+    setJikijikiMode('target');
+    setMessage('ジキジキの実：情報を入手するプレイヤーを選択してください。');
+  }
+
+  if (card.id === 'manemane') {
+    setManemaneSelectedDice([]);
+    setManemanePendingFaces([]);
+    setManemaneConfirming(false);
+    setManemaneSelecting(true);
+    setMessage('マネマネの実：マネマネマスにする自分のダイス面を2つ選択してください。');
+  }
+
+  if (card.id === 'tact') {
+    setTactSelectedDice([]);
+    setTactPendingFaces([]);
+    setTactConfirming(false);
+    setTactSelecting(true);
+    setMessage('魔法の天候棒：天候棒マスにする自分のダイス面を2つ選んでください。');
+  }
+}
+
 const handleCardPurchase =
   () => {
     if (
@@ -2774,8 +2835,6 @@ const handleCardPurchase =
         roomId: String(onlineState.roomId),
         cardId: selectedCard.id,
       });
-      setSelectedCard(null);
-      setShowCardConfirm(false);
       setMessage(`${selectedCard.name}の購入を処理しています……`);
       return;
     }
@@ -2888,96 +2947,7 @@ const handleCardPurchase =
       })
     );
 
-setCardPurchasedThisTurn(true);
-
-    const purchasedCardId =
-      selectedCard.id;
-
-    const purchasedCardName =
-      selectedCard.name;
-
-    addActionHistory(
-      `${myPlayer?.name || `プレイヤー${mySeatIndex + 1}`}が「${purchasedCardName}」を購入`
-    );
-
-    setMessage(
-      `${purchasedCardName}を入手しました！`
-    );
-
-    setSelectedCard(null);
-    setShowCardConfirm(false);
-
-    /*
-     * ジキジキの実は購入直後に
-     * 効果の対象選択へ移る。
-     *
-     * 効果は1ゲーム中1回だけ。
-     */
-    if (
-      purchasedCardId ===
-      'jikijiki'
-    ) {
-      setCardEffectUsed(
-        (prev) => ({
-          ...prev,
-
-          jikijiki:
-            true,
-        })
-      );
-
-      setJikijikiTargetSeat(
-        null
-      );
-
-      setJikijikiTargetType(
-        null
-      );
-
-      setJikijikiMode(
-        'target'
-      );
-
-      setMessage(
-        'ジキジキの実：情報を入手するプレイヤーを選択してください。'
-      );
-    }
-
-if (
-  purchasedCardId ===
-  'manemane'
-) {
-  setManemaneSelectedDice(
-    []
-  );
-
-  setManemanePendingFaces(
-    []
-  );
-
-  setManemaneConfirming(
-    false
-  );
-
-  setManemaneSelecting(
-    true
-  );
-
-  setMessage(
-    'マネマネの実：マネマネマスにする自分のダイス面を2つ選択してください。'
-  );
-}
-
-    if (purchasedCardId === 'tact') {
-      setTactSelectedDice([]);
-      setTactPendingFaces([]);
-      setTactConfirming(false);
-      setTactSelecting(true);
-
-      setMessage(
-        '魔法の天候棒：天候棒マスにする自分のダイス面を2つ選んでください。'
-      );
-    }
+    completeCardPurchaseUi(selectedCard);
   };
 
 
@@ -3296,19 +3266,34 @@ function handleManemaneCopySelect(option) {
     return;
   }
 
-  setPlayers((prev) =>
-    prev.map((player, index) => {
-      if (index !== mySeatIndex) {
-        return player;
-      }
+  if (
+    socketRef.current?.connected &&
+    onlineState?.roomId
+  ) {
+    socketRef.current.emit('saikoro:manemane-copy', {
+      roomId: String(onlineState.roomId),
+      targetSeat: option.seat,
+      die: option.dieType,
+    });
+  } else {
+    setPlayers((prev) =>
+      prev.map((player, index) => {
+        if (index !== mySeatIndex) {
+          return player;
+        }
 
-      return addResource(
-        player,
-        result.type,
-        result.value
-      );
-    })
-  );
+        return addResource(
+          player,
+          result.type,
+          result.value
+        );
+      })
+    );
+
+    addActionHistory(
+      `${myPlayer?.name || `プレイヤー${mySeatIndex + 1}`}がマネマネでプレイヤー${option.seat + 1}のダイス${option.dieType}をコピー`
+    );
+  }
 
   const nextChoiceIndex =
     manemaneChoiceIndex + 1;
@@ -4031,36 +4016,43 @@ if (
     /*
      * 実際のゲーム結果を反映
      */
-    setPlayers(
-      (prev) =>
-        prev.map(
-          (player, index) => {
-            if (index !== mySeatIndex) {
-              return player;
-            }
+    if (
+      socketRef.current?.connected &&
+      onlineState?.roomId
+    ) {
+      socketRef.current.emit('saikoro:yomiyomi-reroll', {
+        roomId: String(onlineState.roomId),
+        die: diceType,
+        result,
+      });
+    } else {
+      setPlayers(
+        (prev) =>
+          prev.map(
+            (player, index) => {
+              if (index !== mySeatIndex) {
+                return player;
+              }
 
-            let next = {
-              ...player,
+              let next = {
+                ...player,
+                diceResult: {
+                  ...(player.diceResult || {}),
+                  [diceType]: result,
+                },
+              };
 
-              diceResult: {
-                ...(player.diceResult ||
-                  {}),
-                [diceType]:
-                  result,
-              },
-            };
-
-            next =
-              addResource(
+              next = addResource(
                 next,
                 result.type,
                 result.value
               );
 
-            return next;
-          }
-        )
-    );
+              return next;
+            }
+          )
+      );
+    }
 
     setYomiyomiRolling(
       false
@@ -4082,6 +4074,12 @@ setYomiyomiUsed(
           : 'B'
       }を振り直しました。`
     );
+
+    if (!socketRef.current?.connected) {
+      addActionHistory(
+        `${myPlayer?.name || `プレイヤー${mySeatIndex + 1}`}がヨミヨミの実でダイス${diceType.toUpperCase()}を振り直しました（${RESOURCE_NAMES[result.type] || result.type} ${result.value ?? ''}）`
+      );
+    }
   }, 1800);
 }
 
@@ -4555,6 +4553,10 @@ const infoSummary =
         'エクストラキャラをランダムで1文字公開しました。'
       );
 
+      addActionHistory(
+        `${myPlayer?.name || `プレイヤー${mySeatIndex + 1}`}がエクストラ情報をランダム購入（ベリー3）`
+      );
+
       return;
     }
 
@@ -4737,6 +4739,10 @@ const infoSummary =
 
     setMessage(
       `${purchaseName}を使って、選択した文字を公開しました。`
+    );
+
+    addActionHistory(
+      `${myPlayer?.name || `プレイヤー${mySeatIndex + 1}`}がエクストラ情報を指定購入（${purchaseName}、${item.char}）`
     );
   };
 
@@ -5097,6 +5103,7 @@ socket.emit('saikoro:join', {
         if (cancelled) return;
 
         setSocketConnected(false);
+        setForgeSubmitting(false);
       });
 
       socket.on('connect_error', (error) => {
@@ -5128,44 +5135,53 @@ socket.emit('saikoro:join', {
         setOnlineError(errorMessage);
       });
 
+      socket.on('saikoro:card-purchase-result', (payload) => {
+        if (cancelled) return;
+
+        if (!payload?.ok) {
+          setMessage(
+            String(payload?.message || 'カードを購入できませんでした。')
+          );
+          return;
+        }
+
+        const card = CARD_OFFERS.find(
+          (offer) => offer.id === payload.cardId
+        );
+        completeCardPurchaseUi(card);
+      });
+
+      socket.on('saikoro:forge-result', (payload) => {
+        if (cancelled) return;
+
+        setForgeSubmitting(false);
+
+        if (!payload?.ok) {
+          setMessage(
+            String(payload?.message || '鍛造できませんでした。')
+          );
+          return;
+        }
+
+        setForgeUsedThisTurn(true);
+        setSelectedForgeOffer(null);
+        setSelectedForgeDice(null);
+        setShowForgeConfirm(false);
+        setMessage('鍛造が完了しました。');
+      });
+
+      socket.on('saikoro:history-updated', (payload) => {
+        if (Array.isArray(payload?.actionHistory)) {
+          setActionHistory(payload.actionHistory);
+        }
+      });
+
       socket.on('saikoro:kuroden-triggered', (payload) => {
         if (cancelled) return;
 
         setMessage(
           String(payload?.message || '黒電伝虫が発動しました。')
         );
-      });
-
-      socket.on('saikoro:card-purchased', (payload) => {
-        if (cancelled) return;
-
-        const cardId = String(payload?.cardId || '');
-        const cardName = String(payload?.cardName || cardId);
-        setCardPurchasedThisTurn(true);
-        setMessage(`${cardName}を入手しました！`);
-
-        if (cardId === 'jikijiki') {
-          setCardEffectUsed((prev) => ({ ...prev, jikijiki: true }));
-          setJikijikiTargetSeat(null);
-          setJikijikiTargetType(null);
-          setJikijikiMode('target');
-        }
-
-        if (cardId === 'manemane') {
-          setManemaneSelectedDice([]);
-          setManemanePendingFaces([]);
-          setManemaneConfirming(false);
-          setManemaneSelecting(true);
-          setMessage('マネマネの実：マネマネマスにする自分のダイス面を2つ選択してください。');
-        }
-
-        if (cardId === 'tact') {
-          setTactSelectedDice([]);
-          setTactPendingFaces([]);
-          setTactConfirming(false);
-          setTactSelecting(true);
-          setMessage('魔法の天候棒：天候棒マスにする自分のダイス面を2つ選んでください。');
-        }
       });
 
       socket.on('saikoro:state', (payload) => {
@@ -5322,8 +5338,21 @@ if (typeof payload?.phase === 'string') {
 
         setOnlineState(payload);
 
-        if (Array.isArray(payload?.actionHistory)) {
-          setActionHistory(payload.actionHistory);
+        const ownSeat = payload?.players?.find(
+          (player) => String(player?.socketId) === String(socket.id)
+        )?.seat;
+        const smileKey = `${payload?.roomId}:${payload?.round}:${payload?.turnPlayer}`;
+
+        if (
+          Array.isArray(payload?.smileActivatedSeats) &&
+          payload.smileActivatedSeats.includes(Number(ownSeat)) &&
+          smileNoticeKeyRef.current !== smileKey
+        ) {
+          smileNoticeKeyRef.current = smileKey;
+          setCardEffectMessage('SMILEが発動しました。');
+          window.setTimeout(() => {
+            setCardEffectMessage('');
+          }, 1000);
         }
 
         if (
@@ -5331,6 +5360,17 @@ if (typeof payload?.phase === 'string') {
           typeof payload.cardStocks === 'object'
         ) {
           setCardStocks(payload.cardStocks);
+        }
+
+        if (
+          payload?.forgeStocks &&
+          typeof payload.forgeStocks === 'object'
+        ) {
+          setForgeStocks(payload.forgeStocks);
+        }
+
+        if (Array.isArray(payload?.actionHistory)) {
+          setActionHistory(payload.actionHistory);
         }
 
         if (
@@ -5426,6 +5466,12 @@ if (typeof payload?.phase === 'string') {
           typeof payload.diceResults === 'object'
         ) {
           const animationKey = `${payload.roomId}:${payload.round}:${payload.turnPlayer}`;
+          const latestResults = normalizeOnlineDiceResults(
+            payload.diceResults
+          );
+
+          setAllDiceResults(latestResults);
+          setImpactDialResults(latestResults);
 
           if (diceAnimationKeyRef.current !== animationKey) {
             diceAnimationKeyRef.current = animationKey;
@@ -6150,10 +6196,14 @@ function finishDicePhase(
   smileChecked = false,
   smileActivatedSeats = []
 ) {
+  const isOnlineGame =
+    socketRef.current?.connected &&
+    onlineState?.roomId;
+
   // ========================================
   // SMILE：マネマネの処理が終わってから発動判定
   // ========================================
-  if (!smileChecked) {
+  if (!smileChecked && !isOnlineGame) {
     const activatedSeats = [];
 
     players.forEach((player) => {
@@ -6214,10 +6264,6 @@ function finishDicePhase(
   // オンラインではサーバー側で処理済み
   // ========================================
 
-  const isOnlineGame =
-    socketRef.current?.connected &&
-    onlineState?.roomId;
-
   // オンラインではクライアント側で
   // ラウンドやターンを勝手に変更しない
   if (isOnlineGame) {
@@ -6234,9 +6280,32 @@ function finishDicePhase(
     }
 
     effectsFinishedKeyRef.current = effectsKey;
-    socketRef.current.emit('saikoro:effects-finished', {
-      roomId: String(onlineState.roomId),
-    });
+    const reportEffectsFinished = (attempt = 0) => {
+      const socket = socketRef.current;
+      if (!socket?.connected) {
+        effectsFinishedKeyRef.current = '';
+        return;
+      }
+
+      socket.timeout(2500).emit(
+        'saikoro:effects-finished',
+        { roomId: String(onlineState.roomId) },
+        (timeoutError, response) => {
+          if (!timeoutError && response?.ok) {
+            return;
+          }
+
+          if (attempt < 2) {
+            reportEffectsFinished(attempt + 1);
+          } else {
+            effectsFinishedKeyRef.current = '';
+            setMessage('ダイス効果完了の同期に失敗しました。再接続してお試しください。');
+          }
+        }
+      );
+    };
+
+    reportEffectsFinished();
     setMessage('自分のダイス効果が完了しました。ほかのプレイヤーを待っています……');
     return;
   }
@@ -8153,11 +8222,17 @@ function handleEndMyTurn() {
       socketRef.current?.connected &&
       onlineState?.roomId
     ) {
+      const startingPlayer =
+        startingPlayerMode === 'random'
+          ? Math.floor(Math.random() * 4)
+          : Number(specifiedStartingPlayer);
+
       socketRef.current.emit('saikoro:start-request', {
         roomId: String(onlineState.roomId),
         currentVivreProfile: getCardProfile(currentVivreCard),
         extraCharacter,
         victoryTarget,
+        startingPlayer,
       });
 
       setMessage('全員の準備完了を待っています。');
@@ -8166,13 +8241,26 @@ function handleEndMyTurn() {
     gameFinishedRef.current = false;
     setGameWinner(null);
 
-    setPlayers(clonePlayers());
     setRound(1);
 
     const firstPlayer =
       startingPlayerMode === 'random'
         ? Math.floor(Math.random() * 4)
         : Number(specifiedStartingPlayer);
+
+    setPlayers(
+      clonePlayers().map((player) => {
+        const order =
+          (player.seat - firstPlayer + 4) % 4;
+
+        return {
+          ...player,
+          resources: {
+            ...INITIAL_RESOURCES[order],
+          },
+        };
+      })
+    );
 
     setTurnPlayer(firstPlayer);
     setAnswer('');
@@ -10040,10 +10128,10 @@ rolling={
       ].map((resource) => {
 
 const current =
-  Number(players?.[0]?.resources?.[resource.id] || 0);
+  Number(myPlayer?.resources?.[resource.id] || 0);
 
 const max =
-  Number(players?.[0]?.maxResources?.[resource.id] || 0);
+  Number(myPlayer?.maxResources?.[resource.id] || 0);
 
         const full = current >= max;
 
@@ -10362,6 +10450,26 @@ extraCharacterBoard.map(
     >
       回答フェーズへ
     </button>
+  )}
+
+{phase === 'action' &&
+  socketRef.current?.connected &&
+  onlineState?.resourcesReady === true &&
+  onlineState?.effectsReady !== true && (
+    <div
+      role="status"
+      style={{
+        width: '100%',
+        textAlign: 'center',
+        color: '#f8fafc',
+        fontSize: 13,
+        fontWeight: 800,
+      }}
+    >
+      ダイス効果の完了待ち：
+      {Number(onlineState.effectsFinishedCount ?? 0)}/
+      {Number(onlineState.effectsRequiredCount ?? 4)}人
+    </div>
   )}
 
          {phase ===
@@ -12236,6 +12344,7 @@ style={{
 
             <button
               type="button"
+              disabled={forgeSubmitting}
               onClick={
                 handleForgeExchange
               }
@@ -12245,17 +12354,15 @@ style={{
                 height: 52,
                 border: 'none',
                 borderRadius: 14,
-                background:
-                  '#172033',
+                background: forgeSubmitting ? '#64748b' : '#172033',
                 color:
                   '#ffffff',
                 fontSize: 16,
                 fontWeight: 1000,
-                cursor:
-                  'pointer',
+                cursor: forgeSubmitting ? 'wait' : 'pointer',
               }}
             >
-              YES
+              {forgeSubmitting ? '処理中…' : 'YES'}
             </button>
           </div>
         </div>
@@ -13785,11 +13892,11 @@ onClick={() =>
             },
           ].map((resource) => {
             const current = Number(
-              players?.[0]?.resources?.[resource.id] || 0
+              myPlayer?.resources?.[resource.id] || 0
             );
 
             const max = Number(
-              players?.[0]?.maxResources?.[resource.id] || 0
+              myPlayer?.maxResources?.[resource.id] || 0
             );
 
             const gained = Math.min(

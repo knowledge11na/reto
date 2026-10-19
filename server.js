@@ -10001,21 +10001,6 @@ const SAIKORO_INITIAL_MAX_RESOURCES = {
     6,
 };
 
-const SAIKORO_CARD_CATALOG = {
-  dorudoru: { name: 'ドルドルの実', cost: { verse: 1 } },
-  yomiyomi: { name: 'ヨミヨミの実', cost: { verse: 2 } },
-  jikijiki: { name: 'ジキジキの実', cost: { verse: 3 } },
-  manemane: { name: 'マネマネの実', cost: { verse: 4 } },
-  bakubaku: { name: 'バクバクの実', cost: { verse: 5 } },
-  barabara: { name: 'バラバラの実', cost: { verse: 6 } },
-  daiaru: { name: '衝撃貝', cost: { eternal: 1 } },
-  takara: { name: '食糧宝船', cost: { eternal: 2 } },
-  smile: { name: 'SMILE', cost: { eternal: 3 } },
-  news: { name: 'ニュース・クー', cost: { eternal: 4 } },
-  tact: { name: '魔法の天候棒', cost: { eternal: 5 } },
-  kuroden: { name: '黒電伝虫', cost: { eternal: 6 } },
-};
-
 
 // ============================================================
 // 看板たぬき：初期ベリー
@@ -10043,6 +10028,53 @@ const SAIKORO_INITIAL_RESOURCES = [
     eternal: 0,
   },
 ];
+
+const SAIKORO_CARD_CATALOG = {
+  dorudoru: { name: 'ドルドルの実', cost: { verse: 1 } },
+  yomiyomi: { name: 'ヨミヨミの実', cost: { verse: 2 } },
+  jikijiki: { name: 'ジキジキの実', cost: { verse: 3 } },
+  manemane: { name: 'マネマネの実', cost: { verse: 4 } },
+  bakubaku: { name: 'バクバクの実', cost: { verse: 5 } },
+  barabara: { name: 'バラバラの実', cost: { verse: 6 } },
+  daiaru: { name: '衝撃貝', cost: { eternal: 1 } },
+  takara: { name: '食糧宝船', cost: { eternal: 2 } },
+  smile: { name: 'SMILE', cost: { eternal: 3 } },
+  news: { name: 'ニュース・クー', cost: { eternal: 4 } },
+  tact: { name: '魔法の天候棒', cost: { eternal: 5 } },
+  kuroden: { name: '黒電伝虫', cost: { eternal: 6 } },
+};
+
+function saikoroCreateCardStocks() {
+  return Object.fromEntries(
+    Object.keys(SAIKORO_CARD_CATALOG).map((cardId) => [cardId, 2])
+  );
+}
+
+const SAIKORO_FORGE_CATALOG = {
+  berry2_a: { cost: 2, stock: 4, faces: [{ type: 'berry', value: 3 }] },
+  berry2_b: { cost: 2, stock: 4, faces: [{ type: 'eternal', value: 1 }] },
+  berry3_a: { cost: 3, stock: 4, faces: [{ type: 'berry', value: 4 }] },
+  berry3_b: { cost: 3, stock: 4, faces: [{ type: 'verse', value: 1 }] },
+  berry4_a: { cost: 4, stock: 1, faces: [{ type: 'berry', value: 6 }] },
+  berry4_b: { cost: 4, stock: 1, faces: [{ type: 'berry', value: 2 }, { type: 'eternal', value: 1 }] },
+  berry4_c: { cost: 4, stock: 1, faces: [{ type: 'verse', value: 1 }, { type: 'eternal', value: 1 }] },
+  berry4_d: { cost: 4, stock: 1, faces: [{ type: 'berry', value: 2 }, { type: 'verse', value: 1 }] },
+  berry5_a: { cost: 5, stock: 2, faces: [{ type: 'berry', value: 4 }, { type: 'verse', value: 1 }] },
+  berry5_b: { cost: 5, stock: 2, faces: [{ type: 'berry', value: 4 }, { type: 'eternal', value: 1 }] },
+  berry6_a: { cost: 6, stock: 4, faces: [{ type: 'eternal', value: 2 }] },
+  berry8_a: { cost: 8, stock: 4, faces: [{ type: 'verse', value: 2 }] },
+  berry12_a: { cost: 12, stock: 2, faces: [{ type: 'verse', value: 2 }, { type: 'eternal', value: 2 }] },
+  berry12_b: { cost: 12, stock: 2, faces: [{ type: 'eternal', value: 1 }, { type: 'verse', value: 1 }, { type: 'berry', value: 1 }] },
+};
+
+function saikoroCreateForgeStocks() {
+  return Object.fromEntries(
+    Object.entries(SAIKORO_FORGE_CATALOG).map(([offerId, offer]) => [
+      offerId,
+      offer.stock,
+    ])
+  );
+}
 
 function saikoroInitialResources(playerNumber) {
   const number = Number(playerNumber);
@@ -10307,14 +10339,14 @@ function saikoroApplyDiceResult(
     return;
   }
 
-  const applyFace = (face) => {
+  const applyFace = (face, awards) => {
     if (!face) {
       return;
     }
 
     if (face.type === 'combo' && Array.isArray(face.faces)) {
       for (const component of face.faces) {
-        applyFace(component);
+        applyFace(component, awards);
       }
       return;
     }
@@ -10322,17 +10354,29 @@ function saikoroApplyDiceResult(
     if (
       ['berry', 'verse', 'eternal'].includes(face.type)
     ) {
-      saikoroAddResource(
+      const gained = saikoroAddResource(
         player,
         face.type,
         Number(face.value) || 0
       );
+      awards[face.type] =
+        Number(awards[face.type] ?? 0) + gained;
     }
   };
 
-  for (const item of [result.a, result.b]) {
-    applyFace(item?.face ?? item);
+  const awards = {};
+  const byDie = {};
+
+  for (const die of ['a', 'b']) {
+    byDie[die] = {};
+    const item = result[die];
+    applyFace(item?.face ?? item, byDie[die]);
+    for (const [type, amount] of Object.entries(byDie[die])) {
+      awards[type] = Number(awards[type] ?? 0) + amount;
+    }
   }
+
+  return byDie;
 }
 
 function saikoroHistoryFace(item) {
@@ -10585,11 +10629,27 @@ function saikoroBuildState(
     winnerSeat:
       game.winnerSeat ?? null,
 
+    startingPlayer:
+      Number(game.startingPlayer ?? 0),
+
     resourcesReady:
       game.resourcesReady === true,
 
     effectsReady:
       game.effectsReady === true,
+
+    effectsFinishedCount:
+      game.effectsFinished instanceof Set
+        ? game.effectsFinished.size
+        : 0,
+
+    effectsRequiredCount:
+      players.length,
+
+    smileActivatedSeats:
+      Array.isArray(game.smileActivatedSeats)
+        ? game.smileActivatedSeats
+        : [],
 
     actionHistory:
       Array.isArray(game.actionHistory)
@@ -10597,7 +10657,10 @@ function saikoroBuildState(
         : [],
 
     cardStocks:
-      game.cardStocks || {},
+      game.cardStocks || saikoroCreateCardStocks(),
+
+    forgeStocks:
+      game.forgeStocks || saikoroCreateForgeStocks(),
 
     lastAnswer:
       game.lastAnswer ?? null,
@@ -10783,7 +10846,12 @@ function saikoroStartGame(game) {
   game.started = true;
   game.phase = 'dice';
   game.round = 1;
-  game.turnPlayer = 0;
+  game.turnPlayer =
+    Number.isInteger(Number(game.startingPlayer)) &&
+    Number(game.startingPlayer) >= 0 &&
+    Number(game.startingPlayer) < SAIKORO_MAX_PLAYERS
+      ? Number(game.startingPlayer)
+      : 0;
   game.diceResults = {};
   game.actionUsed = {};
   game.extraActionUsed = {};
@@ -10796,9 +10864,14 @@ function saikoroStartGame(game) {
   game.effectsFinished = new Set();
   game.rerollResults = {};
   game.actionHistory = [];
-  game.cardStocks = Object.fromEntries(
-    Object.keys(SAIKORO_CARD_CATALOG).map((cardId) => [cardId, 2])
-  );
+  game.cardStocks = saikoroCreateCardStocks();
+  game.cardPurchasedThisTurn = {};
+  game.forgeStocks = saikoroCreateForgeStocks();
+  game.forgeUsedThisTurn = {};
+  game.yomiyomiUsed = {};
+  game.diceResourceAwards = {};
+  game.manemaneCopyUsed = {};
+  game.smileActivatedSeats = [];
   game.players = {};
 
   participants.forEach((player, index) => {
@@ -10811,7 +10884,9 @@ function saikoroStartGame(game) {
       seat,
 
 resources: {
-  ...saikoroInitialResources(seat + 1),
+  ...saikoroInitialResources(
+    ((seat - game.turnPlayer + SAIKORO_MAX_PLAYERS) % SAIKORO_MAX_PLAYERS) + 1
+  ),
 },
 
       maxResources: {
@@ -10913,6 +10988,10 @@ results[player.socketId] =
 // 全員分の結果を確定してから資源を獲得する
 game.diceResults = results;
 game.rerollResults = {};
+game.diceResourceAwards = {};
+game.smileActivatedSeats = [];
+game.manemaneCopyUsed = {};
+game.yomiyomiUsed ||= {};
 game.resourcesReady = false;
 game.effectsReady = false;
 game.effectsFinished = new Set();
@@ -11017,12 +11096,19 @@ function saikoroNextTurn(
     {};
 
   game.rerollResults = {};
+  game.diceResourceAwards = {};
+  game.smileActivatedSeats = [];
   game.resourcesReady = false;
   game.effectsReady = false;
   game.effectsFinished = new Set();
 
   game.actionUsed =
     {};
+
+  game.cardPurchasedThisTurn = {};
+  game.forgeUsedThisTurn = {};
+  game.yomiyomiUsed = {};
+  game.manemaneCopyUsed = {};
 
   game.extraActionUsed =
     {};
@@ -11551,6 +11637,16 @@ if (oldSocketId && oldSocketId !== socket.id) {
         if (Number.isInteger(victoryTarget) && victoryTarget > 0) {
           game.victoryTarget = victoryTarget;
         }
+
+        const startingPlayer = Number(payload?.startingPlayer);
+        if (
+          Number.isInteger(startingPlayer) &&
+          startingPlayer >= 0 &&
+          startingPlayer < SAIKORO_MAX_PLAYERS
+        ) {
+          game.startingPlayer = startingPlayer;
+        }
+
         game.winnerSeat = null;
         game.lastAnswer = null;
 
@@ -11816,6 +11912,88 @@ console.log('[saikoro] start-request受信', {
     // ========================================================
 
     socket.on(
+      'saikoro:forge-face',
+      (payload) => {
+        const roomId = String(payload?.roomId || '')
+          .replace(/\D/g, '')
+          .slice(0, 4);
+        const game = saikoroGames.get(roomId);
+        const player = saikoroGetGamePlayer(game, socket.id);
+        const offerId = String(payload?.offerId || '');
+        const offer = SAIKORO_FORGE_CATALOG[offerId];
+        const dieKey = payload?.die === 'B' ? 'diceB' : 'diceA';
+        const faceIndex = Number(payload?.faceIndex);
+
+        const fail = (message) => {
+          socket.emit('saikoro:forge-result', { ok: false, message });
+        };
+
+        if (!game || !player || !offer) {
+          fail('鍛造内容を確認できません。');
+          return;
+        }
+
+        if (
+          game.phase !== 'action' ||
+          Number(player.seat) !== Number(game.turnPlayer) ||
+          game.effectsReady !== true
+        ) {
+          fail('現在は鍛造できません。');
+          return;
+        }
+
+        game.forgeStocks ||= saikoroCreateForgeStocks();
+        game.forgeUsedThisTurn ||= {};
+
+        if (game.forgeUsedThisTurn[socket.id]) {
+          fail('このターンはすでに鍛造しています。');
+          return;
+        }
+
+        if (Number(game.forgeStocks[offerId] ?? 0) <= 0) {
+          fail('この鍛造面は売り切れです。');
+          return;
+        }
+
+        if (
+          !Number.isInteger(faceIndex) ||
+          faceIndex < 0 ||
+          faceIndex >= 6 ||
+          !Array.isArray(player[dieKey])
+        ) {
+          fail('交換するダイス面が正しくありません。');
+          return;
+        }
+
+        if (Number(player.resources?.berry ?? 0) < offer.cost) {
+          fail('鍛造に必要なベリーが足りません。');
+          return;
+        }
+
+        player.resources.berry -= offer.cost;
+        player[dieKey][faceIndex] = offer.faces.length === 1
+          ? { ...offer.faces[0] }
+          : {
+              type: 'combo',
+              faces: offer.faces.map((face) => ({ ...face })),
+            };
+        game.forgeStocks[offerId] -= 1;
+        game.forgeUsedThisTurn[socket.id] = true;
+
+        game.actionHistory ||= [];
+        game.actionHistory.push({
+          id: `${Date.now()}-${Math.random()}`,
+          text: `${player.name}が鍛造で${offerId}をサイコロ${payload?.die === 'B' ? 'B' : 'A'}の${faceIndex + 1}面に適用`,
+        });
+        game.actionHistory = game.actionHistory.slice(-100);
+        game.message = `${player.name}が鍛造しました。`;
+
+        saikoroBroadcastState(game);
+        socket.emit('saikoro:forge-result', { ok: true, offerId });
+      }
+    );
+
+    socket.on(
       'saikoro:buy-card',
       (payload) => {
         const roomId =
@@ -11878,24 +12056,18 @@ console.log('[saikoro] start-request受信', {
           game.phase !==
           'action'
         ) {
-          saikoroError(
-            socket,
-            '現在はアクションフェーズではありません。'
-          );
-
+          socket.emit('saikoro:card-purchase-result', {
+            ok: false,
+            message: '現在はアクションフェーズではありません。',
+          });
           return;
         }
 
-        if (
-          game.actionUsed[
-            socket.id
-          ]
-        ) {
-          saikoroError(
-            socket,
-            'このターンのアクションはすでに使用しています。'
-          );
-
+        if (game.effectsReady !== true) {
+          socket.emit('saikoro:card-purchase-result', {
+            ok: false,
+            message: '全員のダイス効果処理が終わるまでお待ちください。',
+          });
           return;
         }
 
@@ -11904,46 +12076,55 @@ console.log('[saikoro] start-request受信', {
             payload?.cardId ||
               ''
           );
+        const card = SAIKORO_CARD_CATALOG[cardId];
 
-        const catalogCard = SAIKORO_CARD_CATALOG[cardId];
-
-        if (!catalogCard) {
-          saikoroError(
-            socket,
-            '指定されたカードは購入できません。'
-          );
-
+        if (!card) {
+          socket.emit('saikoro:card-purchase-result', {
+            ok: false,
+            message: '購入するカードを確認できません。',
+          });
           return;
         }
 
-        const stock = Number(game.cardStocks?.[cardId] ?? 0);
-        if (stock <= 0) {
-          saikoroError(socket, 'このカードは売り切れです。');
+        game.cardStocks ||= saikoroCreateCardStocks();
+        game.cardPurchasedThisTurn ||= {};
+
+        if (game.cardPurchasedThisTurn[socket.id]) {
+          socket.emit('saikoro:card-purchase-result', {
+            ok: false,
+            message: 'このターンはすでにカードを購入しています。',
+          });
           return;
         }
 
-        const cost = catalogCard.cost;
-        const canAfford = Object.entries(cost).every(
+        if (Number(game.cardStocks[cardId] ?? 0) <= 0) {
+          socket.emit('saikoro:card-purchase-result', {
+            ok: false,
+            message: 'このカードは売り切れです。',
+          });
+          return;
+        }
+
+        const canAfford = Object.entries(card.cost).every(
           ([type, amount]) =>
             Number(gamePlayer.resources?.[type] ?? 0) >= Number(amount)
         );
 
         if (!canAfford) {
-          saikoroError(socket, 'カード購入に必要な資源が足りません。');
+          socket.emit('saikoro:card-purchase-result', {
+            ok: false,
+            message: 'カード購入に必要な資源が足りません。',
+          });
           return;
         }
 
-        for (const [type, amount] of Object.entries(cost)) {
-          gamePlayer.resources[type] =
-            Number(gamePlayer.resources[type] ?? 0) - Number(amount);
+        for (const [type, amount] of Object.entries(card.cost)) {
+          gamePlayer.resources[type] -= Number(amount);
         }
 
-        gamePlayer.cards ||= [];
         gamePlayer.cards.push({
           id: cardId,
-          name: catalogCard.name,
-          image: `/saikoro/${cardId}.png`,
-          description: '',
+          name: card.name,
         });
 
         if (cardId === 'dorudoru') {
@@ -11952,28 +12133,26 @@ console.log('[saikoro] start-request受信', {
           gamePlayer.maxResources.eternal += 3;
         }
 
-        game.cardStocks[cardId] = stock - 1;
-        game.actionUsed[
-          socket.id
-        ] = true;
-
-        game.message =
-          `${gamePlayer.name}が「${catalogCard.name}」を購入しました。`;
-
+        game.cardStocks[cardId] -= 1;
+        game.cardPurchasedThisTurn[socket.id] = true;
         game.actionHistory ||= [];
         game.actionHistory.push({
           id: `${Date.now()}-${Math.random()}`,
-          text: `${gamePlayer.name}が「${catalogCard.name}」を購入`,
+          text: `${gamePlayer.name}が「${card.name}」を購入`,
         });
         game.actionHistory = game.actionHistory.slice(-100);
+
+        game.message =
+          `${gamePlayer.name}が「${card.name}」を購入しました。`;
 
         saikoroBroadcastState(
           game
         );
 
-        socket.emit('saikoro:card-purchased', {
+        socket.emit('saikoro:card-purchase-result', {
+          ok: true,
           cardId,
-          cardName: catalogCard.name,
+          name: card.name,
         });
       }
     );
@@ -12126,7 +12305,16 @@ console.log('[saikoro] start-request受信', {
           text,
         });
         game.actionHistory = game.actionHistory.slice(-100);
-        saikoroBroadcastState(game);
+
+        const historyPayload = {
+          actionHistory: game.actionHistory,
+        };
+        for (const roomPlayer of saikoroGetPlayers(game)) {
+          io.to(roomPlayer.socketId).emit(
+            'saikoro:history-updated',
+            historyPayload
+          );
+        }
       }
     );
 
@@ -12299,6 +12487,148 @@ console.log('[saikoro] start-request受信', {
     );
 
     socket.on(
+      'saikoro:manemane-copy',
+      (payload) => {
+        const roomId = String(payload?.roomId || '')
+          .replace(/\D/g, '')
+          .slice(0, 4);
+        const game = saikoroGames.get(roomId);
+        const player = saikoroGetGamePlayer(game, socket.id);
+        const targetSeat = Number(payload?.targetSeat);
+        const die = payload?.die === 'B' ? 'b' : 'a';
+
+        if (
+          !game ||
+          game.phase !== 'action' ||
+          !game.resourcesReady ||
+          !player ||
+          !Number.isInteger(targetSeat) ||
+          targetSeat === Number(player.seat)
+        ) {
+          return;
+        }
+
+        const ownResults = game.diceResults?.[socket.id];
+        const manemaneCount = [ownResults?.a, ownResults?.b]
+          .filter((item) => (item?.face ?? item)?.type === 'manemane')
+          .length;
+        game.manemaneCopyUsed ||= {};
+
+        if (
+          manemaneCount === 0 ||
+          Number(game.manemaneCopyUsed[socket.id] ?? 0) >= manemaneCount
+        ) {
+          return;
+        }
+
+        const targetPlayer = saikoroGetPlayers(game).find(
+          (item) => Number(item.playerNumber) - 1 === targetSeat
+        );
+        const selectedResult = targetPlayer
+          ? game.diceResults?.[targetPlayer.socketId]?.[die]
+          : null;
+        const face = selectedResult?.face ?? selectedResult;
+
+        if (!face || face.type === 'manemane') {
+          return;
+        }
+
+        const applyCopiedFace = (copiedFace) => {
+          if (copiedFace?.type === 'combo' && Array.isArray(copiedFace.faces)) {
+            for (const component of copiedFace.faces) {
+              applyCopiedFace(component);
+            }
+            return;
+          }
+
+          if (['berry', 'verse', 'eternal'].includes(copiedFace?.type)) {
+            saikoroAddResource(
+              player,
+              copiedFace.type,
+              Number(copiedFace.value) || 0
+            );
+          }
+        };
+
+        applyCopiedFace(face);
+        game.manemaneCopyUsed[socket.id] =
+          Number(game.manemaneCopyUsed[socket.id] ?? 0) + 1;
+
+        game.actionHistory ||= [];
+        game.actionHistory.push({
+          id: `${Date.now()}-${Math.random()}`,
+          text: `${player.name}がマネマネで${targetPlayer.name}のダイス${die.toUpperCase()}をコピー`,
+        });
+        game.actionHistory = game.actionHistory.slice(-100);
+        game.message = `${player.name}がマネマネで出目をコピーしました。`;
+        saikoroBroadcastState(game);
+      }
+    );
+
+    socket.on(
+      'saikoro:yomiyomi-reroll',
+      (payload) => {
+        const roomId = String(payload?.roomId || '')
+          .replace(/\D/g, '')
+          .slice(0, 4);
+        const game = saikoroGames.get(roomId);
+        const player = saikoroGetGamePlayer(game, socket.id);
+        const die = payload?.die === 'b' ? 'b' : 'a';
+        const newResult = payload?.result;
+
+        if (
+          !game ||
+          game.phase !== 'action' ||
+          !game.resourcesReady ||
+          !player ||
+          Number(player.seat) !== Number(game.turnPlayer) ||
+          !newResult ||
+          typeof newResult !== 'object'
+        ) {
+          return;
+        }
+
+        const cardCount = (player.cards || []).filter(
+          (card) => card?.id === 'yomiyomi'
+        ).length;
+        game.yomiyomiUsed ||= {};
+        if (cardCount === 0 || Number(game.yomiyomiUsed[socket.id] ?? 0) >= cardCount) {
+          saikoroError(socket, 'ヨミヨミの実の使用回数を超えています。');
+          return;
+        }
+
+        const resultFace = { ...newResult };
+        const resultIndex = Number(resultFace.index);
+        delete resultFace.index;
+        const awards = saikoroApplyDiceResult(player, {
+          a: {
+            index: Number.isInteger(resultIndex) ? resultIndex : null,
+            face: resultFace,
+          },
+          b: null,
+        });
+
+        game.diceResourceAwards ||= {};
+        game.diceResourceAwards[socket.id] ||= {};
+        game.diceResourceAwards[socket.id][die] = awards?.a || {};
+        game.diceResults[socket.id][die] = {
+          index: Number.isInteger(resultIndex) ? resultIndex : null,
+          face: resultFace,
+        };
+        game.yomiyomiUsed[socket.id] =
+          Number(game.yomiyomiUsed[socket.id] ?? 0) + 1;
+
+        game.actionHistory ||= [];
+        game.actionHistory.push({
+          id: `${Date.now()}-${Math.random()}`,
+          text: `${player.name}がヨミヨミの実でダイス${die.toUpperCase()}を振り直しました（${saikoroHistoryFace(resultFace)}）`,
+        });
+        game.actionHistory = game.actionHistory.slice(-100);
+        saikoroBroadcastState(game);
+      }
+    );
+
+    socket.on(
       'saikoro:reroll-finished',
       (payload) => {
         const roomId = String(payload?.roomId || '')
@@ -12330,12 +12660,43 @@ console.log('[saikoro] start-request受信', {
         }
 
         game.diceResults = { ...game.rerollResults };
+        game.diceResourceAwards = {};
+        game.smileActivatedSeats = [];
         for (const item of players) {
           const gamePlayer = saikoroGetGamePlayer(game, item.socketId);
-          saikoroApplyDiceResult(
+          const awards = saikoroApplyDiceResult(
             gamePlayer,
             game.diceResults[item.socketId]
           );
+          game.diceResourceAwards[item.socketId] = awards;
+
+          const smileCount = (gamePlayer.cards || []).filter(
+            (card) => card?.id === 'smile'
+          ).length;
+          if (
+            smileCount > 0 &&
+            Math.random() < Math.min(smileCount * 0.1, 1)
+          ) {
+            const totalAwards = {};
+            for (const dieAwards of Object.values(awards || {})) {
+              for (const [type, amount] of Object.entries(dieAwards || {})) {
+                totalAwards[type] =
+                  Number(totalAwards[type] ?? 0) + Number(amount || 0);
+              }
+            }
+
+            for (const [type, amount] of Object.entries(totalAwards)) {
+              saikoroAddResource(gamePlayer, type, amount * 2);
+            }
+
+            game.smileActivatedSeats.push(Number(gamePlayer.seat));
+            game.actionHistory ||= [];
+            game.actionHistory.push({
+              id: `${Date.now()}-${Math.random()}`,
+              text: `${gamePlayer.name}のSMILEが発動し、出目の資源を3倍獲得`,
+            });
+            game.actionHistory = game.actionHistory.slice(-100);
+          }
         }
 
         game.resourcesReady = true;
@@ -12345,7 +12706,13 @@ console.log('[saikoro] start-request受信', {
 
     socket.on(
       'saikoro:effects-finished',
-      (payload) => {
+      (payload, acknowledge) => {
+        const reply = (result) => {
+          if (typeof acknowledge === 'function') {
+            acknowledge(result);
+          }
+        };
+
         const roomId = String(payload?.roomId || '')
           .replace(/\D/g, '')
           .slice(0, 4);
@@ -12358,6 +12725,7 @@ console.log('[saikoro] start-request受信', {
           !game.resourcesReady ||
           !player
         ) {
+          reply({ ok: false });
           return;
         }
 
@@ -12368,6 +12736,12 @@ console.log('[saikoro] start-request受信', {
         );
 
         saikoroBroadcastState(game);
+        reply({
+          ok: true,
+          effectsReady: game.effectsReady,
+          finishedCount: game.effectsFinished.size,
+          requiredCount: players.length,
+        });
       }
     );
 
