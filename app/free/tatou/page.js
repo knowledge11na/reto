@@ -68,6 +68,7 @@ function HasteVouteContent() {
   const searchParams = useSearchParams();
   const roomId = searchParams.get("room") || "";
   const socketRef = useRef(null);
+  const lastRoundRef = useRef(null);
   const [me, setMe] = useState(null);
   const [state, setState] = useState(null);
   const [error, setError] = useState("");
@@ -75,7 +76,7 @@ function HasteVouteContent() {
   const [targetScore, setTargetScore] = useState("40");
   const [answerSeconds, setAnswerSeconds] = useState("120");
   const [declareNumber, setDeclareNumber] = useState("1");
-  const [now, setNow] = useState(Date.now());
+  const [now, setNow] = useState(0);
 
   const emit = useCallback((event, payload = {}) => {
     socketRef.current?.emit(event, {
@@ -88,11 +89,6 @@ function HasteVouteContent() {
     const timer = setInterval(() => setNow(Date.now()), 250);
     return () => clearInterval(timer);
   }, []);
-
-
-  useEffect(() => {
-    setAnswerText("");
-  }, [state?.round]);
 
 
   useEffect(() => {
@@ -159,7 +155,16 @@ function HasteVouteContent() {
     };
 
     const onState = (nextState) => {
+      if (nextState?.round !== lastRoundRef.current) {
+        lastRoundRef.current = nextState?.round ?? null;
+        setAnswerText("");
+      }
+
       setState(nextState);
+
+      if (nextState?.deadline) {
+        setNow(Date.now());
+      }
 
       if (nextState?.targetScore != null) {
         setTargetScore(String(nextState.targetScore));
@@ -198,19 +203,20 @@ function HasteVouteContent() {
   const isAnswerer = state?.answererUserId === me?.userId;
 
   const remainingSeconds = state?.deadline
-    ? Math.max(0, Math.ceil((state.deadline - now) / 1000))
+    ? Math.max(
+        0,
+        Math.ceil(
+          (state.deadline -
+            (now || state.deadline - Number(state.answerSeconds || 0) * 1000)) /
+            1000
+        )
+      )
     : 0;
 
   const formatTime = (seconds) => {
     const minutes = Math.floor(seconds / 60);
     const rest = seconds % 60;
     return `${minutes}:${String(rest).padStart(2, "0")}`;
-  };
-
-  const submitAnswers = () => {
-    emit("haste-voute:submit-answers", {
-      answers: answerText,
-    });
   };
 
   const submitDeclaration = () => {
@@ -440,19 +446,15 @@ function HasteVouteContent() {
               resize: "vertical",
             }}
             value={answerText}
-            onChange={(event) => setAnswerText(event.target.value)}
+            onChange={(event) => {
+              const answers = event.target.value;
+              setAnswerText(answers);
+              emit("haste-voute:save-draft", { answers });
+            }}
             placeholder={"回答1\n回答2\n回答3"}
           />
 
           <div style={{ ...styles.row, marginTop: "12px" }}>
-            <button
-              type="button"
-              style={styles.button}
-              onClick={submitAnswers}
-              disabled={remainingSeconds <= 0}
-            >
-              回答を送信・更新
-            </button>
             <span>
               入力済み：{
                 answerText.split(/\r?\n/).filter((text) => text.trim()).length
@@ -470,6 +472,9 @@ function HasteVouteContent() {
         <section style={styles.panel}>
           <h2>数字を宣言しよう</h2>
           <p>自分が正しいと証明できる回答数を宣言してね。</p>
+          <p>
+            保存済み回答数：<strong>{state.ownAnswers?.length ?? 0}件</strong>
+          </p>
 
           {myPlayer?.declaredNumber == null ? (
             <div style={styles.row}>
@@ -630,11 +635,30 @@ function HasteVouteContent() {
                     type="button"
                     key={answer.index}
                     style={styles.button}
-                    onClick={() =>
+                    onClick={() => {
+                      const normalize = (text) =>
+                        String(text ?? "")
+                          .normalize("NFKC")
+                          .replace(/[\s　]/g, "")
+                          .toLowerCase();
+                      const exact =
+                        normalize(answer.text) ===
+                        normalize(state.currentReveal?.text);
+
+                      if (
+                        !exact &&
+                        !window.confirm(
+                          "完全一致ではありませんが、この回答カードを削除しますか？"
+                        )
+                      ) {
+                        return;
+                      }
+
                       emit("haste-voute:remove-duplicate", {
                         index: answer.index,
-                      })
-                    }
+                        force: !exact,
+                      });
+                    }}
                   >
                     {answer.text}
                   </button>

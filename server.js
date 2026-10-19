@@ -4742,6 +4742,7 @@ const EXTRA_POKER_DEFAULT_CHIPS = 10000;
 const EXTRA_POKER_DEFAULT_ROUNDS = 3;
 const EXTRA_POKER_DEFAULT_MIN_BET = 100;
 const EXTRA_POKER_DEFAULT_MAX_BET = 2000;
+const EXTRA_POKER_DEFAULT_TURN_SECONDS = 60;
 
 
 // ============================================================
@@ -5357,6 +5358,15 @@ function extraPokerBroadcastState(
         turnNumber:
           game.turnNumber,
 
+        turnDeadline:
+          game.turnDeadline ?? null,
+
+        turnSeconds:
+          game.settings.turnSeconds ?? EXTRA_POKER_DEFAULT_TURN_SECONDS,
+
+        turnTimerSeconds:
+          Number(game.turnTimerSeconds ?? game.settings.turnSeconds ?? EXTRA_POKER_DEFAULT_TURN_SECONDS),
+
         turnStartPlayerId:
           game.turnStartPlayerId,
 
@@ -5524,6 +5534,9 @@ function extraPokerCreateSettings(
       payload?.maxBet
     );
 
+  const turnSeconds =
+    Number(payload?.turnSeconds);
+
   const safeInitialChips =
     Number.isInteger(
       initialChips
@@ -5559,6 +5572,13 @@ function extraPokerCreateSettings(
       ? maxBet
       : EXTRA_POKER_DEFAULT_MAX_BET;
 
+  const safeTurnSeconds =
+    Number.isInteger(turnSeconds) &&
+    turnSeconds >= 10 &&
+    turnSeconds <= 600
+      ? turnSeconds
+      : EXTRA_POKER_DEFAULT_TURN_SECONDS;
+
   return {
     initialChips:
       safeInitialChips,
@@ -5571,7 +5591,28 @@ function extraPokerCreateSettings(
 
     maxBet:
       safeMaxBet,
+
+    turnSeconds:
+      safeTurnSeconds,
   };
+}
+
+function extraPokerResetTurnTimer(game) {
+  game.turnTimerSeconds = Number(
+    game.settings?.turnSeconds ?? EXTRA_POKER_DEFAULT_TURN_SECONDS
+  );
+  game.turnDeadline =
+    Date.now() + game.turnTimerSeconds * 1000;
+}
+
+function extraPokerPauseTurnTimer(game) {
+  if (game.turnDeadline) {
+    game.turnTimerSeconds = Math.max(
+      0,
+      Math.ceil((game.turnDeadline - Date.now()) / 1000)
+    );
+  }
+  game.turnDeadline = null;
 }
 
 
@@ -5600,6 +5641,9 @@ function extraPokerCreateGame(
 
       maxBet:
         EXTRA_POKER_DEFAULT_MAX_BET,
+
+      turnSeconds:
+        EXTRA_POKER_DEFAULT_TURN_SECONDS,
     },
 
     round:
@@ -5607,6 +5651,12 @@ function extraPokerCreateGame(
 
     turnNumber:
       0,
+
+    turnDeadline:
+      null,
+
+    turnTimerSeconds:
+      EXTRA_POKER_DEFAULT_TURN_SECONDS,
 
     turnStartPlayerId:
       null,
@@ -6921,6 +6971,8 @@ if (
   game.phase =
     'playing';
 
+  extraPokerResetTurnTimer(game);
+
   for (
     const player of players
   ) {
@@ -6949,6 +7001,16 @@ if (
 
           currentBet:
             game.currentBet,
+
+          turnDeadline:
+            game.turnDeadline ?? null,
+
+          turnSeconds:
+            game.settings.turnSeconds ??
+            EXTRA_POKER_DEFAULT_TURN_SECONDS,
+
+          turnTimerSeconds:
+            game.turnTimerSeconds,
 
           pot:
             game.pot,
@@ -7279,6 +7341,7 @@ async function extraPokerFinishCycle(
   if (
     answerCandidates.length > 0
   ) {
+    extraPokerResetTurnTimer(game);
     game.phase =
       'answering';
 
@@ -7371,6 +7434,10 @@ game.cycleActors =
   game.currentActorId =
     game.cycleActors[0] ??
     null;
+
+    if (game.currentActorId) {
+      extraPokerResetTurnTimer(game);
+    }
 
   game.lastAction =
     null;
@@ -7541,6 +7608,8 @@ function extraPokerAdvanceActor(
       game.currentActorId =
         candidate;
 
+      extraPokerResetTurnTimer(game);
+
       return true;
     }
   }
@@ -7615,6 +7684,8 @@ function extraPokerAdvanceActor(
     ) {
       game.currentActorId =
         candidate;
+
+      extraPokerResetTurnTimer(game);
 
       return true;
     }
@@ -8027,6 +8098,42 @@ io.on(
     // ========================================================
     // SETUP
     // ========================================================
+
+    socket.on(
+      'extra-poker:peek-folded-hand',
+      (payload) => {
+        const roomId = String(payload?.roomId || '')
+          .replace(/\D/g, '')
+          .slice(0, 4);
+        const game = extraPokerGames.get(roomId);
+        const requester = extraPokerGetPlayers(game).find(
+          (player) => player.socketId === socket.id
+        );
+        const targetSocketId = String(payload?.targetSocketId || '');
+        const target = extraPokerGetPlayers(game).find(
+          (player) => player.socketId === targetSocketId
+        );
+
+        if (
+          !requester ||
+          !target ||
+          !game.folded[socket.id] ||
+          targetSocketId === socket.id ||
+          !['playing', 'answering', 'last-answer'].includes(game.phase)
+        ) {
+          return;
+        }
+
+        socket.emit('extra-poker:folded-hand', {
+          socketId: targetSocketId,
+          name: target.name || 'プレイヤー',
+          cards: (game.hands[targetSocketId] || []).map((card) => ({
+            id: card.id,
+            text: card.text,
+          })),
+        });
+      }
+    );
 
     socket.on(
       'extra-poker:start-setup',
@@ -9730,7 +9837,8 @@ socket.on(
     const nextStartId =
       extraPokerNextPlayer(
         game,
-        currentStartId
+        currentStartId,
+        { includeFolded: true }
       );
 
     /*
@@ -13386,19 +13494,22 @@ function hasteVouteFinishGame(game, winner) {
 
 
 function hasteVouteDrawHandicap(game) {
-  // すでに配布済み、または配布待ちなら何もしない
-  if (game.handicapDrawn || game.handicapPending) return;
+  if (game.handicapEnabled) {
+    game.handicapPending = true;
+    return;
+  }
 
   const threshold = game.targetScore * 2 / 3;
 
   // 目標点の2/3以上に到達したか確認
   const crossed = game.players.some(
-    (player) => player.score >= threshold
+    (player) => player.score > threshold
   );
 
   if (!crossed) return;
 
   // この時点では配らず、ラウンド終了まで待つ
+  game.handicapEnabled = true;
   game.handicapPending = true;
 
   console.log("[haste-voute] ハンデカード配布待ち", {
@@ -13412,7 +13523,7 @@ function hasteVouteDrawHandicap(game) {
 }
 
 async function hasteVouteAwardHandicapAtRoundEnd(game) {
-  if (!game.handicapPending || game.handicapDrawn) return;
+  if (!game.handicapEnabled) return;
 
   try {
     const cards = await hasteVouteGetHandicaps();
@@ -13434,9 +13545,7 @@ async function hasteVouteAwardHandicapAtRoundEnd(game) {
 
     if (!leaders.length) return;
 
-    if (!game.handicapCards) {
-      game.handicapCards = [];
-    }
+    game.handicapCards = [];
 
     for (const leader of leaders) {
       const card = cards[
@@ -13599,9 +13708,13 @@ function hasteVouteAdvanceAnswerer(game) {
 
   // 全プレイヤーの処理が終わった場合だけラウンド終了
   if (game.declarationCursor >= game.declarationOrder.length) {
-    const winner = game.players.find(
-      (player) => player.score >= game.targetScore
-    );
+    const winner = game.players
+      .filter((player) => player.score >= game.targetScore)
+      .sort((a, b) =>
+        b.score - a.score ||
+        Number(a.targetReachedSequence ?? Infinity) -
+          Number(b.targetReachedSequence ?? Infinity)
+      )[0];
 
     if (winner) {
       hasteVouteFinishGame(game, winner);
@@ -13717,17 +13830,23 @@ function hasteVouteRevealNext(game) {
   if (
     player.acceptedCount >= player.declaredNumber
   ) {
+    const previousScore = player.score;
     player.score += player.declaredNumber;
+
+    if (
+      previousScore < game.targetScore &&
+      player.score >= game.targetScore &&
+      player.targetReachedSequence == null
+    ) {
+      game.targetReachedSequence =
+        Number(game.targetReachedSequence ?? 0) + 1;
+      player.targetReachedSequence = game.targetReachedSequence;
+    }
 
     game.lastResult =
       `${player.name} が ${player.declaredNumber} 点を獲得しました！`;
 
     hasteVouteDrawHandicap(game);
-
-    if (player.score >= game.targetScore) {
-      hasteVouteFinishGame(game, player);
-      return;
-    }
 
     game.declarationCursor += 1;
     hasteVouteAdvanceAnswerer(game);
@@ -13794,6 +13913,7 @@ io.on("connection", (socket) => {
           players: lobbyPlayers.map((player) => ({
             ...player,
             score: 0,
+              targetReachedSequence: null,
             answers: [],
             declaredNumber: null,
             acceptedCount: 0,
@@ -13818,7 +13938,9 @@ io.on("connection", (socket) => {
 handicapCards: [],
 handicapDrawn: false,
 handicapPending: false,
+          handicapEnabled: false,
 
+          targetReachedSequence: 0,
 
           winnerUserId: null,
           timer: null,
@@ -13897,6 +14019,29 @@ handicapPending: false,
 
     hasteVouteStartAnswerPhase(game);
   });
+
+
+socket.on("haste-voute:save-draft", (payload = {}) => {
+  const roomId = String(payload.roomId ?? "");
+  const game = hasteVouteGames.get(roomId);
+
+  if (!game || game.phase !== "answer") return;
+
+  const player = game.players.find(
+    (item) => item.userId === socket.data.hasteVouteUserId
+  );
+
+  if (!player || player.socketId !== socket.id) return;
+
+  player.answers = String(payload.answers ?? "")
+    .split(/\r?\n/)
+    .map((text) => text.trim())
+    .filter(Boolean)
+    .map((text) => ({
+      text: text.slice(0, 100),
+      used: false,
+    }));
+});
 
 
 socket.on("haste-voute:submit-answers", (payload = {}) => {
@@ -14106,12 +14251,16 @@ socket.on("haste-voute:submit-answers", (payload = {}) => {
 
     const index = Number(payload.index);
     const answer = player?.answers[index];
+    const isExactDuplicate = Boolean(
+      answer &&
+      hasteVouteNormalizeAnswer(answer.text) ===
+        hasteVouteNormalizeAnswer(game.currentReveal.text)
+    );
 
     if (
       !answer ||
       answer.used ||
-      hasteVouteNormalizeAnswer(answer.text) !==
-        hasteVouteNormalizeAnswer(game.currentReveal.text)
+      (!isExactDuplicate && payload.force !== true)
     ) {
       return;
     }

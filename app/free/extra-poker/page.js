@@ -24,6 +24,7 @@ const DEFAULT_SETTINGS = {
   rounds: 3,
   minBet: 100,
   maxBet: 2000,
+  turnSeconds: 60,
 };
 
 
@@ -275,6 +276,34 @@ function getCharacterName(result) {
 }
 
 
+function formatAction(action) {
+  if (!action) return '';
+
+  const playerName = String(
+    action.playerName ?? action.name ?? 'プレイヤー'
+  );
+  const rawAmount = action.amount ?? action.bet ?? null;
+  const hasAmount = rawAmount !== null && rawAmount !== undefined && rawAmount !== '';
+  const amount = hasAmount ? Number(rawAmount).toLocaleString() : '';
+
+  if (action.type === 'raise') {
+    return amount ? `${playerName}：${amount}でレイズ！` : `${playerName}：レイズ！`;
+  }
+  if (action.type === 'answer') {
+    return amount ? `${playerName}：${amount}で回答！` : `${playerName}：回答！`;
+  }
+  if (action.type === 'reanswer') {
+    return amount ? `${playerName}：${amount}で再回答！` : `${playerName}：再回答！`;
+  }
+  if (action.type === 'bet') {
+    return amount ? `${playerName}：${amount}でベット！` : `${playerName}：ベット！`;
+  }
+  if (action.type === 'call') return `${playerName}：コール！`;
+  if (action.type === 'fold') return `${playerName}：フォールド！`;
+  return '';
+}
+
+
 /* =========================================================
    MAIN
 ========================================================= */
@@ -303,6 +332,10 @@ function ExtraPokerPageContent() {
   const [error, setError] =
     useState('');
 
+  const displayedError = roomId
+    ? error
+    : '部屋IDがありません。';
+
   const [message, setMessage] =
     useState('');
 
@@ -322,6 +355,18 @@ function ExtraPokerPageContent() {
     useState(3);
 
   const [turnNumber, setTurnNumber] =
+    useState(0);
+
+  const [turnDeadline, setTurnDeadline] =
+    useState(null);
+
+  const [turnSeconds, setTurnSeconds] =
+    useState(DEFAULT_SETTINGS.turnSeconds);
+
+  const [turnTimerSeconds, setTurnTimerSeconds] =
+    useState(DEFAULT_SETTINGS.turnSeconds);
+
+  const [timerNow, setTimerNow] =
     useState(0);
 
   const [players, setPlayers] =
@@ -381,6 +426,9 @@ function ExtraPokerPageContent() {
   const [finalResults, setFinalResults] =
     useState(null);
 
+  const [peekedHand, setPeekedHand] =
+    useState(null);
+
 
   /* =======================================================
      PLAYER
@@ -406,6 +454,15 @@ function ExtraPokerPageContent() {
       mySocketId &&
       currentActorId === mySocketId
     );
+
+  const remainingTurnSeconds = turnDeadline
+    ? Math.max(0, Math.ceil((turnDeadline - timerNow) / 1000))
+    : turnTimerSeconds;
+  const turnTimerText = `${Math.floor(remainingTurnSeconds / 60)
+    .toString()
+    .padStart(2, '0')}:${(remainingTurnSeconds % 60)
+    .toString()
+    .padStart(2, '0')}`;
 
 
   const hasWinner =
@@ -525,11 +582,22 @@ function ExtraPokerPageContent() {
 
 
   useEffect(() => {
-    if (!roomId) {
-      setError(
-        '部屋IDがありません。'
-      );
+    if (
+      !turnDeadline ||
+      !['playing', 'answering', 'last-answer'].includes(phase)
+    ) {
+      return;
+    }
 
+    const updateTimer = () => setTimerNow(Date.now());
+    const timer = setInterval(updateTimer, 250);
+
+    return () => clearInterval(timer);
+  }, [phase, turnDeadline]);
+
+
+  useEffect(() => {
+    if (!roomId) {
       return;
     }
 
@@ -675,6 +743,20 @@ function ExtraPokerPageContent() {
           )
         );
 
+        setTurnDeadline(
+          Number.isFinite(Number(payload?.turnDeadline))
+            ? Number(payload.turnDeadline)
+            : null
+        );
+
+        setTurnSeconds(
+          Number(payload?.turnSeconds ?? DEFAULT_SETTINGS.turnSeconds)
+        );
+
+        setTurnTimerSeconds(
+          Number(payload?.turnTimerSeconds ?? payload?.turnSeconds ?? DEFAULT_SETTINGS.turnSeconds)
+        );
+
         setPlayers(
           Array.isArray(
             payload?.players
@@ -804,6 +886,7 @@ function ExtraPokerPageContent() {
     socket.on(
       'extra-poker:turn-started',
       (payload) => {
+        setTimerNow(Date.now());
         setTurnResult(null);
         setTurnDescription('');
         setTurnCharacterName('');
@@ -837,6 +920,22 @@ function ExtraPokerPageContent() {
             payload?.turnNumber ?? 0
           )
         );
+
+        setTurnDeadline(
+          Number.isFinite(Number(payload?.turnDeadline))
+            ? Number(payload.turnDeadline)
+            : null
+        );
+
+        setTurnSeconds(
+          Number(payload?.turnSeconds ?? DEFAULT_SETTINGS.turnSeconds)
+        );
+
+        setTurnTimerSeconds(
+          Number(payload?.turnTimerSeconds ?? payload?.turnSeconds ?? DEFAULT_SETTINGS.turnSeconds)
+        );
+
+        setPeekedHand(null);
 
         setPot(
           Number(
@@ -910,6 +1009,8 @@ function ExtraPokerPageContent() {
     socket.on(
       'extra-poker:turn-result',
       (payload) => {
+        setPeekedHand(null);
+        setTurnDeadline(null);
         setTurnResult(
           payload ?? null
         );
@@ -932,6 +1033,17 @@ function ExtraPokerPageContent() {
           )
             ? payload.answers
             : []
+        );
+      }
+    );
+
+    socket.on(
+      'extra-poker:folded-hand',
+      (payload) => {
+        setPeekedHand(
+          payload && Array.isArray(payload.cards)
+            ? payload
+            : null
         );
       }
     );
@@ -1100,6 +1212,9 @@ function emitSubmitAnswer() {
           Number(
             settings.maxBet
           ),
+
+        turnSeconds:
+          Number(settings.turnSeconds),
       }
     );
 
@@ -1144,72 +1259,26 @@ function emitSubmitAnswer() {
   }
 
 
+  function requestFoldedHand(player) {
+    if (
+      !mePlayer?.folded ||
+      !player ||
+      player.socketId === mySocketId ||
+      !['playing', 'answering', 'last-answer'].includes(phase)
+    ) {
+      return;
+    }
+
+    socketRef.current?.emit('extra-poker:peek-folded-hand', {
+      roomId,
+      targetSocketId: player.socketId,
+    });
+  }
+
+
   /* =======================================================
      DISPLAY HELPERS
   ======================================================= */
-
-  function formatAction(action) {
-    if (!action) {
-      return '';
-    }
-
-    const playerName =
-      String(
-        action.playerName ??
-        action.name ??
-        'プレイヤー'
-      );
-
-    const rawAmount =
-      action.amount ??
-      action.bet ??
-      null;
-
-    const hasAmount =
-      rawAmount !== null &&
-      rawAmount !== undefined &&
-      rawAmount !== '';
-
-    const amount =
-      hasAmount
-        ? Number(rawAmount).toLocaleString()
-        : '';
-
-    if (action.type === 'raise') {
-      return amount
-        ? `${playerName}：${amount}でレイズ！`
-        : `${playerName}：レイズ！`;
-    }
-
-    if (action.type === 'answer') {
-      return amount
-        ? `${playerName}：${amount}で回答！`
-        : `${playerName}：回答！`;
-    }
-
-    if (action.type === 'reanswer') {
-      return amount
-        ? `${playerName}：${amount}で再回答！`
-        : `${playerName}：再回答！`;
-    }
-
-    if (action.type === 'bet') {
-      return amount
-        ? `${playerName}：${amount}でベット！`
-        : `${playerName}：ベット！`;
-    }
-
-    if (action.type === 'call') {
-      return `${playerName}：コール！`;
-    }
-
-    if (action.type === 'fold') {
-      return `${playerName}：フォールド！`;
-    }
-
-    return '';
-  }
-
 
   function getPlayerStatus(player) {
     if (player.eliminated) {
@@ -1340,9 +1409,9 @@ function emitSubmitAnswer() {
           </header>
 
 
-          {error && (
+          {displayedError && (
             <ErrorBox
-              message={error}
+              message={displayedError}
             />
           )}
 
@@ -1410,6 +1479,20 @@ function emitSubmitAnswer() {
               />
 
               <SettingInput
+                label="各手番の持ち時間（秒）"
+                type="number"
+                min="10"
+                max="600"
+                value={settings.turnSeconds}
+                onChange={(value) =>
+                  setSettings((prev) => ({
+                    ...prev,
+                    turnSeconds: Number(value),
+                  }))
+                }
+              />
+
+              <SettingInput
                 label="最低チップ数"
                 type="number"
                 min="100"
@@ -1470,6 +1553,11 @@ function emitSubmitAnswer() {
                 <strong>
                   {settings.rounds}
                 </strong>
+              </div>
+
+              <div>
+                各手番の持ち時間：
+                <strong>{settings.turnSeconds}秒</strong>
               </div>
 
               <div>
@@ -1669,9 +1757,9 @@ function emitSubmitAnswer() {
         </header>
 
 
-        {error && (
+        {displayedError && (
           <ErrorBox
-            message={error}
+            message={displayedError}
           />
         )}
 
@@ -1989,17 +2077,38 @@ function emitSubmitAnswer() {
                           '22px',
                       }}
                     >
-                      <span
-                        style={{
-                          overflow: 'hidden',
-                          textOverflow:
-                            'ellipsis',
-                          whiteSpace:
-                            'nowrap',
-                        }}
-                      >
-                        {player.name}
-                      </span>
+                      {mePlayer?.folded && !isMe &&
+                      ['playing', 'answering', 'last-answer'].includes(phase) ? (
+                        <button
+                          type="button"
+                          onClick={() => requestFoldedHand(player)}
+                          aria-label={`${player.name}の手札を見る`}
+                          style={{
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                            border: 0,
+                            padding: 0,
+                            background: 'transparent',
+                            color: 'inherit',
+                            font: 'inherit',
+                            cursor: 'pointer',
+                            textDecoration: 'underline',
+                          }}
+                        >
+                          {player.name}
+                        </button>
+                      ) : (
+                        <span
+                          style={{
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
+                          {player.name}
+                        </span>
+                      )}
 
                       {isMe && (
                         <span
@@ -3266,6 +3375,104 @@ function emitSubmitAnswer() {
             )}
           </section>
         )}
+
+        {peekedHand && (
+          <div
+            role="presentation"
+            onClick={() => setPeekedHand(null)}
+            style={{
+              position: 'fixed',
+              inset: 0,
+              zIndex: 80,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: 16,
+              background: 'rgba(0,0,0,.62)',
+              boxSizing: 'border-box',
+            }}
+          >
+            <section
+              role="dialog"
+              aria-modal="true"
+              aria-label={`${peekedHand.name}の手札`}
+              onClick={(event) => event.stopPropagation()}
+              style={{
+                width: 'min(420px, 100%)',
+                padding: 22,
+                borderRadius: 16,
+                background: '#fffdf7',
+                color: '#222',
+                boxShadow: '0 16px 45px rgba(0,0,0,.35)',
+              }}
+            >
+              <h2 style={{ margin: '0 0 16px', textAlign: 'center' }}>
+                {peekedHand.name}の手札
+              </h2>
+              <div style={{ display: 'flex', justifyContent: 'center', flexWrap: 'wrap', gap: 8 }}>
+                {peekedHand.cards.map((card, index) => (
+                  <div
+                    key={card.id ?? index}
+                    style={{
+                      width: 76,
+                      height: 100,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      padding: 8,
+                      boxSizing: 'border-box',
+                      border: '2px solid #d6d0c5',
+                      borderRadius: 8,
+                      background: '#fff',
+                      fontWeight: 900,
+                      textAlign: 'center',
+                      overflowWrap: 'anywhere',
+                    }}
+                  >
+                    {card.text}
+                  </div>
+                ))}
+              </div>
+              <button
+                type="button"
+                onClick={() => setPeekedHand(null)}
+                style={{ ...primaryButtonStyle, width: '100%', marginTop: 18 }}
+              >
+                閉じる
+              </button>
+            </section>
+          </div>
+        )}
+
+        {['playing', 'answering', 'last-answer'].includes(phase) && (
+            <div
+              role="timer"
+              aria-label={`手番の残り時間 ${turnTimerText}`}
+              style={{
+                position: 'fixed',
+                left: '50%',
+                bottom: 12,
+                transform: 'translateX(-50%)',
+                zIndex: 60,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 12,
+                padding: '9px 18px',
+                borderRadius: 999,
+                background: 'rgba(10,35,23,.94)',
+                border: '2px solid rgba(255,255,255,.35)',
+                color: '#fff',
+                boxShadow: '0 5px 20px rgba(0,0,0,.3)',
+                fontWeight: 900,
+                pointerEvents: 'none',
+              }}
+            >
+              <span style={{ fontSize: 12, opacity: 0.85 }}>手番の残り時間</span>
+              <strong style={{ minWidth: 46, fontSize: 20, textAlign: 'center' }}>
+                {turnTimerText}
+              </strong>
+            </div>
+          )}
 
       </div>
     </main>
