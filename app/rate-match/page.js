@@ -136,13 +136,23 @@ rulePath: '/free/tatou/rules',
 
 {
   id: 'saikoro',
-    name: '看板たぬき',
-    description: 'ダイスを強化しながら知識と戦略で競うゲーム',
-    minPlayers: 4,
-    maxPlayers: 4,
-    available: true,
-    rulePath: '/free/saikoro/rules',
-  },
+  name: '看板たぬき',
+  description: 'ダイスを強化しながら知識と戦略で競うゲーム',
+  minPlayers: 4,
+  maxPlayers: 4,
+  available: true,
+  rulePath: '/free/saikoro/rules',
+},
+
+{
+  id: 'tcg',
+  name: 'KNOWLEDGE TCG',
+  description: 'クイズを解いて戦う1対1のカードゲーム',
+  minPlayers: 2,
+  maxPlayers: 2,
+  available: true,
+  rulePath: '/free/tcg/rules',
+},
 ];
 
 // ========================================
@@ -487,6 +497,14 @@ if (gameId === 'saikoro') {
 if (gameId === 'haste-voute') {
   router.push(
     `/free/tatou?room=${encodeURIComponent(roomId)}`
+  );
+  return;
+}
+
+// ONE PIECE TCG
+if (gameId === 'tcg') {
+  router.push(
+    `/free/tcg?room=${encodeURIComponent(roomId)}`
   );
   return;
 }

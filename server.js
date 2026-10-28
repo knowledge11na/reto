@@ -7,6 +7,7 @@ import { Server } from "socket.io";
 import db from "./lib/db.js";
 import { addBerriesByUserId } from "./lib/berries.js";
 import { setupMeteorMode } from "./meteorMode.js";
+import { setupTcgMode } from "./tcgMode.js";
 
 const PORT = process.env.PORT || 4000;
 
@@ -53,6 +54,7 @@ const io = new Server(httpServer, {
 });
 
 setupMeteorMode(io);
+setupTcgMode(io);
 
 // ------------------------------
 // 共通
