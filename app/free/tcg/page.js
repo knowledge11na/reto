@@ -9,6 +9,11 @@ import {
   DECK_SIZE,
   MAX_COPIES,
   STANDARD_DECK,
+  STANDARD_CARD_POOL,
+  VILLAINS_DECK,
+  VILLAINS_CARD_POOL,
+  REVOLUTIONARY_DECK,
+  REVOLUTIONARY_CARD_POOL,
   normalizeDeck,
 } from '../../../lib/tcgCards.js';
 
@@ -19,8 +24,13 @@ function loadCustomDecks() {
   try {
     const list = JSON.parse(localStorage.getItem(DECKS_KEY) || '[]');
     return list
-      .map((d) => ({ id: String(d.id), name: String(d.name || 'マイデッキ'), cards: normalizeDeck(d.cards) }))
-      .filter((d) => d.cards);
+        .map((d) => ({
+          id: String(d.id),
+          name: String(d.name || 'マイデッキ'),
+          cards: normalizeDeck(d.cards),
+          allowedCards: Array.isArray(d.allowedCards) ? d.allowedCards.filter((id) => CARD_DEFS[id]) : null,
+        }))
+        .filter((d) => d.cards);
   } catch {
     return [];
   }
@@ -96,7 +106,40 @@ const CARD_IMAGES = {
   hojiro: '0010',
   kavell: '0011',
   sloop: '0012',
-  mugicha5: '0013',
+  mugicha5: '00001',
+  vivi: '0013',
+  karoo: '0138',
+  crocodile: '0174',
+  enel: '0302',
+  lucci: '0377',
+  doflamingo: '0266',
+  katakuri: '1076',
+  buggy: '0046',
+  arlong: '0094',
+  wapol: '0154',
+  moria: '0483',
+  magellan: '0575',
+  hody: '0725',
+  caesar: '0797',
+  kaido: '0944',
+  foxy: '0342',
+  creek: '0084',
+  dragon: '0125',
+  sabo: '0659',
+  koala: '0747',
+  hack: '0871',
+  ivankov: '0589',
+  inazuma: '0588',
+  beloBetty: '1187',
+  morley: '1186',
+  lindbergh: '1188',
+  karasu: '1189',
+  ahiru: '1198',
+  ushiarno: '1772',
+  gambo: '1773',
+  jiron: '1774',
+  bunnyJoe: '0670',
+  terryGilteo: '0456',
 };
 
 function CardArt({ defId }) {
@@ -124,7 +167,12 @@ function DeckSelect({ onStart, onBack }) {
     setCustom(loadCustomDecks());
   }, []);
 
-  const decks = [{ id: 'standard', name: 'スタンダードデッキ', cards: STANDARD_DECK, fixed: true }, ...custom];
+  const decks = [
+    { id: 'standard', name: 'スタンダードデッキ', cards: STANDARD_DECK, allowedCards: STANDARD_CARD_POOL, fixed: true },
+    { id: 'villains', name: 'ヴィランズデッキ', cards: VILLAINS_DECK, allowedCards: VILLAINS_CARD_POOL, fixed: true },
+    { id: 'revolutionary', name: '革命軍デッキ', cards: REVOLUTIONARY_DECK, allowedCards: REVOLUTIONARY_CARD_POOL, fixed: true },
+    ...custom,
+  ];
   const current = decks.find((d) => d.id === selected) || decks[0];
 
   const persist = (list) => {
@@ -135,14 +183,20 @@ function DeckSelect({ onStart, onBack }) {
   const startEdit = (deck) => {
     setEditing({
       id: deck.fixed ? null : deck.id,
-      name: deck.fixed ? 'マイデッキ' : deck.name,
+      name: deck.fixed ? `${deck.name}のコピー` : deck.name,
       cards: { ...deck.cards },
+      allowedCards: deck.allowedCards ? [...deck.allowedCards] : Object.keys(CARD_DEFS),
     });
   };
 
   const saveEdit = () => {
     const id = editing.id || `d${Date.now().toString(36)}`;
-    const entry = { id, name: editing.name.trim().slice(0, 20) || 'マイデッキ', cards: editing.cards };
+    const entry = {
+      id,
+      name: editing.name.trim().slice(0, 20) || 'マイデッキ',
+      cards: editing.cards,
+      allowedCards: editing.allowedCards,
+    };
     persist(editing.id ? custom.map((d) => (d.id === id ? entry : d)) : [...custom, entry]);
     setSelected(id);
     setEditing(null);
@@ -181,7 +235,8 @@ function DeckSelect({ onStart, onBack }) {
           <button className="btn ghost" onClick={() => setEditing(null)}>キャンセル</button>
         </div>
         <div className="deck-grid">
-          {Object.entries(CARD_DEFS).map(([id, def]) => {
+          {editing.allowedCards.map((id) => {
+            const def = CARD_DEFS[id];
             const n = editing.cards[id] || 0;
             return (
               <div key={id} className={`deck-item ${n ? 'in' : ''}`}>
@@ -236,7 +291,7 @@ function DeckSelect({ onStart, onBack }) {
           <button className="btn" onClick={() => startEdit(current)}>
             {current.fixed ? 'コピーして編集' : '編集'}
           </button>
-          <button className="btn" onClick={() => startEdit({ cards: {}, fixed: true })}>新規作成</button>
+          <button className="btn" onClick={() => startEdit({ name: '新しいデッキ', cards: {}, fixed: true, allowedCards: Object.keys(CARD_DEFS) })}>完全新規作成</button>
           {!current.fixed && (
             <button className="btn ghost" onClick={() => removeDeck(current)}>削除</button>
           )}
@@ -264,6 +319,11 @@ function DeckPile({ count, trash, onOpenTrash }) {
   );
 }
 
+function nameClass(name) {
+  const n = String(name || '').length;
+  return `c-name ${n >= 10 ? 'len-xl' : n >= 7 ? 'len-l' : n >= 5 ? 'len-m' : ''}`;
+}
+
 function BoardCard({ c, cls = '', onClick, onHover }) {
   return (
     <button
@@ -274,7 +334,7 @@ function BoardCard({ c, cls = '', onClick, onHover }) {
     >
       <span className="c-cost">{c.cost}</span>
       <CardArt defId={c.defId} />
-      <span className="c-name">{c.name}</span>
+      <span className={nameClass(c.name)}>{c.name}</span>
       {c.blocker && <span className="c-tag">ブロッカー</span>}
       {c.hasAbility && (
         <span className={`c-tag ability ${c.abilityUsed ? 'used' : ''}`}>
@@ -399,6 +459,7 @@ export default function TcgPage() {
   }, [myQuiz, pending?.deadline]);
 
   const emit = (ev, data) => socketRef.current?.emit(ev, data);
+  const discardCard = (cardId) => emit('tcg:discard', { cardId });
 
   const myTurn = g?.phase === 'playing' && g.current === g.you;
   const idle = myTurn && !pending;
@@ -462,6 +523,7 @@ export default function TcgPage() {
 
   const chooseOptions = pending?.kind === 'choose' && pending.mine ? pending.options : [];
   const blockOptions = pending?.kind === 'block' && pending.mine ? pending.options : [];
+  const discardOptions = pending?.kind === 'discard' && pending.mine ? pending.options : [];
   const attacking = idle && selectedChar?.canAttack;
 
   const onMyChar = (c) => {
@@ -489,7 +551,7 @@ export default function TcgPage() {
       emit('tcg:choose', { targetId: c.id });
       return;
     }
-    if (attacking && c.rested) {
+    if (attacking && (c.rested || selectedChar?.hitActive)) {
       emit('tcg:attack', { attackerId: selChar, target: c.id });
       setSelChar(null);
     }
@@ -538,6 +600,8 @@ export default function TcgPage() {
       ? '相手がブロックを選択中…'
       : pending.kind === 'choose'
         ? '相手が対象を選択中…'
+        : pending.kind === 'discard'
+          ? '相手が捨てるカードを選択中…'
         : null
     : null;
 
@@ -580,7 +644,7 @@ export default function TcgPage() {
                   {c ? (
                     <BoardCard
                       c={c}
-                      cls={`enemy ${attacking && c.rested ? 'targetable' : ''} ${chooseOptions.includes(c.id) ? 'choosable' : ''}`}
+                      cls={`enemy ${attacking && (c.rested || selectedChar?.hitActive) ? 'targetable' : ''} ${chooseOptions.includes(c.id) ? 'choosable' : ''}`}
                       onClick={() => onOppChar(c)}
                       onHover={setDetail}
                     />
@@ -687,7 +751,7 @@ export default function TcgPage() {
                   >
                     <span className={`c-cost ${c.cost > me.cost ? 'over' : ''}`}>{c.cost}</span>
                     <CardArt defId={c.defId} />
-                    <span className="c-name">{c.name}</span>
+                    <span className={nameClass(c.name)}>{c.name}</span>
                     {c.blocker && <span className="c-tag">ブロッカー</span>}
                     <span className="c-power">{c.power}</span>
                   </button>
@@ -739,10 +803,14 @@ export default function TcgPage() {
               {selectedChar.hasAbility && selectedChar.defId !== 'mugicha' && (
                 <button
                   className="btn"
-                  disabled={selectedChar.abilityUsed}
+                  disabled={selectedChar.abilityUsed || (selectedChar.defId === 'beloBetty' && selectedChar.rested)}
                   onClick={() => emit('tcg:ability', { charId: selectedChar.id })}
                 >
-                  {selectedChar.abilityUsed ? '効果使用済み' : '効果を使う'}
+                  {selectedChar.abilityUsed
+                    ? '効果使用済み'
+                    : selectedChar.defId === 'beloBetty' && selectedChar.rested
+                      ? 'ダウン中は使用不可'
+                      : '効果を使う'}
                 </button>
               )}
               {!selectedChar.canAttack && (
@@ -764,6 +832,28 @@ export default function TcgPage() {
           <b>相手が回答中：{pending.title}</b>
           <div>【{pending.genre}】{pending.lines.join(' ／ ')}</div>
           <div className="timer"><span style={{ width: `${pct}%` }} /></div>
+        </div>
+      )}
+
+      {pending?.kind === 'discard' && pending.mine && (
+        <div className="overlay">
+          <div className="quiz trash-modal">
+            <div className="q-title">{pending.title}</div>
+            <div className="trash-list">
+              {discardOptions.map((card) => (
+                <button
+                  type="button"
+                  key={card.id}
+                  className="deck-mini discard-option"
+                  onClick={() => discardCard(card.id)}
+                >
+                  <CardArt defId={card.defId} />
+                  <span>{card.name}</span>
+                </button>
+              ))}
+            </div>
+            <div className="q-left">残り {left} 秒</div>
+          </div>
         </div>
       )}
 
@@ -899,6 +989,8 @@ body { margin: 0; background: #eaf3ff; }
 .trash-card .c-art { width: 100%; height: 100%; flex: 1; object-fit: contain; }
 .trash-modal { max-height: 80vh; }
 .trash-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 10px; overflow-y: auto; max-height: 50vh; }
+.discard-option { cursor: pointer; border: 1px solid #b7cde6; border-radius: 8px; padding: 8px; background: #fff; color: inherit; }
+.discard-option:hover { border-color: #3b82f6; background: #eef6ff; }
 .unit.swappable { box-shadow: 0 0 12px #e0a800; outline: 2px dashed #e0a800; }
 .deck-count { font-size: 11px; color: #5d7391; white-space: nowrap; }
 
@@ -920,7 +1012,10 @@ body { margin: 0; background: #eaf3ff; }
 .unit.ready { box-shadow: 0 0 12px #f5c76b; }
 .unit.targetable { box-shadow: 0 0 16px #ff5a6e; animation: pulse 1s infinite; }
 .unit.choosable { outline: 3px solid #5ab4ff; animation: pulse 1s infinite; }
-.c-name { font-weight: bold; font-size: clamp(11px, 1.5vh, 15px); text-align: center; }
+.c-name { font-weight: bold; font-size: clamp(11px, 1.5vh, 15px); text-align: center; line-height: 1.15; word-break: break-all; }
+.c-name.len-m { font-size: clamp(10px, 1.3vh, 13px); }
+.c-name.len-l { font-size: clamp(9px, 1.1vh, 11px); }
+.c-name.len-xl { font-size: clamp(8px, 0.95vh, 10px); }
 .c-cost { position: absolute; top: 4px; left: 4px; width: 22px; height: 22px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #bfe6ff, #2f8fe0); color: #07223d; font-weight: bold; font-size: 13px; display: grid; place-items: center; }
 .c-cost.over { background: #555; color: #bbb; }
 .c-power { position: absolute; right: 4px; bottom: 4px; min-width: 26px; padding: 1px 6px; border-radius: 12px; background: #f5c76b; color: #3a2a05; font-weight: bold; font-size: 14px; text-align: center; }
@@ -947,6 +1042,9 @@ body { margin: 0; background: #eaf3ff; }
 .hand { display: flex; justify-content: center; align-items: flex-end; gap: 6px; min-width: 0; min-height: 110px; padding: 14px 2px 4px; overflow-x: auto; overflow-y: hidden; }
 .hand-card { flex: 0 1 auto; width: clamp(64px, 8.5vw, 96px); min-width: 56px; height: clamp(92px, 15vh, 132px); border: 2px solid #8aa8d0; border-radius: 8px; background: linear-gradient(160deg, #ffffff, #dbe8f8); transition: transform 0.12s; justify-content: flex-start; gap: 2px; padding: 4px; overflow: hidden; }
 .hand-card .c-name { font-size: clamp(9px, 1.2vh, 12px); }
+.hand-card .c-name.len-m { font-size: clamp(8px, 1.05vh, 11px); }
+.hand-card .c-name.len-l { font-size: clamp(7px, 0.9vh, 10px); }
+.hand-card .c-name.len-xl { font-size: clamp(6px, 0.8vh, 9px); }
 .hand-card .c-cost { width: 18px; height: 18px; font-size: 11px; }
 .hand-card .c-power { font-size: 11px; min-width: 20px; padding: 0 4px; }
 .hand-card .c-tag { font-size: 8px; padding: 0 4px; }
