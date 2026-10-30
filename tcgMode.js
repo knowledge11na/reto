@@ -13,6 +13,7 @@ import {
   BOARD_SIZE,
   QUIZ_MS,
   STANDARD_DECK,
+  WORLD_CARD_POOL,
   normalizeDeck,
 } from './lib/tcgCards.js';
 import { makeQuestion, ALL_GENRES } from './lib/tcgQuestions.js';
@@ -37,7 +38,7 @@ function shuffle(arr) {
   return a;
 }
 
-function askDiscard(game, owner, title, cb) {
+function askDiscard(game, owner, title, cb, drawAfter = 2) {
   const P = game.players[owner];
   if (!P.hand.length) {
     addLog(game, `${game.seats[owner].name} は手札がなく、捨てるカードを選べなかった。`);
@@ -50,6 +51,7 @@ function askDiscard(game, owner, title, cb) {
     title,
     options: P.hand.map(({ id, defId }) => ({ id, defId, name: CARD_DEFS[defId].name })),
     deadline: Date.now() + QUIZ_MS,
+    drawAfter,
     cb,
   };
   game.pending = pending;
@@ -69,8 +71,10 @@ function resolveDiscard(game, pending, cardId) {
   player.hand = player.hand.filter((c) => c.id !== cardId);
   player.trash.push({ id: card.id, defId: card.defId });
   addLog(game, `${game.seats[pending.owner].name} は ${CARD_DEFS[card.defId].name} を捨てた。`);
-  const drawn = draw(game, pending.owner, 2);
-  addLog(game, `${game.seats[pending.owner].name} はカードを${drawn}枚引いた。`);
+  if (pending.drawAfter > 0) {
+    const drawn = draw(game, pending.owner, pending.drawAfter);
+    addLog(game, `${game.seats[pending.owner].name} はカードを${drawn}枚引いた。`);
+  }
   pending.cb(true);
 }
 
@@ -205,6 +209,94 @@ function findChar(game, id) {
   return null;
 }
 
+function newChar(card, slot, P) {
+  return {
+    id: card.id,
+    defId: card.defId,
+    slot,
+    rested: false,
+    bonus: 0,
+    temp: 0,
+    turnTemp: 0,
+    powerMods: [],
+    powerBuffs: [],
+    haste: false,
+    summonedOn: P.turns,
+    abilityUsed: false,
+    genresUsed: [],
+  };
+}
+
+function placeFromHand(game, pi, defId) {
+  const P = game.players[pi];
+  const card = P.hand.find((c) => c.defId === defId);
+  if (!card) return;
+  const slot = [0, 1, 2, 3, 4].find((s) => !P.board.some((c) => c.slot === s));
+  if (slot === undefined) {
+    addLog(game, `場が埋まっているため ${CARD_DEFS[defId].name} を出せなかった。`);
+    return;
+  }
+  P.hand = P.hand.filter((c) => c.id !== card.id);
+  P.board.push(newChar(card, slot, P));
+  addLog(game, `${game.seats[pi].name} は手札の ${CARD_DEFS[defId].name} を場に出した。`);
+}
+
+function bounce(game, found) {
+  const { pi, c } = found;
+  const P = game.players[pi];
+  P.board = P.board.filter((x) => x.id !== c.id);
+  P.hand.push({ id: c.id, defId: c.defId });
+  addLog(game, `${CARD_DEFS[c.defId].name} が手札に戻った。`);
+}
+
+function healLife(game, pi, n) {
+  const P = game.players[pi];
+  P.lifeHp = Math.min(LIFE_HP, P.lifeHp + n);
+  addLog(game, `${game.seats[pi].name} のライフ耐久力が${n}回復した（${P.lifeHp}/${LIFE_HP}）。`);
+}
+
+function gainCost(game, pi, n) {
+  const P = game.players[pi];
+  P.cost = Math.min(P.maxCost, P.cost + n);
+  addLog(game, `${game.seats[pi].name} のコストが回復した（${P.cost}/${P.maxCost}）。`);
+}
+
+function hasOnBoard(game, pi, ...defIds) {
+  return game.players[pi].board.some((c) => defIds.includes(c.defId));
+}
+
+function chooseOpp(game, owner, title, filter, cb) {
+  const options = game.players[1 - owner].board.filter(filter).map((x) => x.id);
+  askChoose(game, owner, title, options, (id) => cb(id ? findChar(game, id) : null));
+}
+
+function checkWorldWin(game, pi) {
+  const kinds = new Set(
+    game.players[pi].trash.map((t) => t.defId).filter((id) => WORLD_CARD_POOL.includes(id))
+  );
+  if (kinds.size >= 20) {
+    finishGame(game, pi, `トラッシュに世界の王達が${kinds.size}種類`);
+  } else {
+    addLog(game, `トラッシュの世界の王達は${kinds.size}種類（20種類で勝利）。`);
+  }
+}
+
+// お互いのキャラ1体ずつ（片方のみも可）を相手ターン終了時までパワー-1
+function pairDebuff(game, pi, source, rounds) {
+  if (rounds <= 0 || game.phase !== 'playing') return;
+  const opp = 1 - pi;
+  const expires = { owner: opp, turn: game.players[opp].turns + 1 };
+  const mine = game.players[pi].board.map((x) => x.id);
+  askChoose(game, pi, 'パワー-1にする味方キャラを選んでください（スキップ可）', mine, (myId) => {
+    if (myId) applyPowerDebuff(game, pi, source.id, myId, 1, expires);
+    const theirs = game.players[opp].board.map((x) => x.id);
+    askChoose(game, pi, 'パワー-1にする相手キャラを選んでください（スキップ可）', theirs, (oppId) => {
+      if (oppId) applyPowerDebuff(game, pi, source.id, oppId, 1, expires);
+      pairDebuff(game, pi, source, rounds - 1);
+    });
+  });
+}
+
 function draw(game, pi, n) {
   const P = game.players[pi];
   let drawn = 0;
@@ -223,7 +315,8 @@ function startTurn(game, pi) {
   P.maxCost = schedule[Math.min(P.turns - 1, schedule.length - 1)];
   P.cost = P.maxCost;
   for (const c of P.board) {
-    c.rested = false;
+    if (c.noRecover) c.noRecover = false;
+    else c.rested = false;
     c.abilityUsed = false;
   }
   game.current = pi;
@@ -279,7 +372,12 @@ function armTimer(game, pending, onTimeout) {
       console.error('[tcg] timeout error', e);
     }
     settle(game);
-  }, QUIZ_MS + 1500);
+  }, (pending.ms || QUIZ_MS) + 1500);
+}
+
+function quizMs(game, owner) {
+  const until = game.players[owner].shortUntil;
+  return until && game.players[owner].turns <= until ? 20000 : QUIZ_MS;
 }
 
 function ask(game, owner, genres, title, cb, step = null) {
@@ -293,13 +391,15 @@ function ask(game, owner, genres, title, cb, step = null) {
     cb(false);
     return;
   }
+  const ms = quizMs(game, owner);
   const pending = {
     kind: 'quiz',
     owner,
     title,
     genre: q.label,
     lines: q.lines,
-    deadline: Date.now() + QUIZ_MS,
+    ms,
+    deadline: Date.now() + ms,
     q,
     cb,
     step,
@@ -396,6 +496,10 @@ function damageLife(game, target, dmg, done = () => {}) {
 
 // ===== 戦闘 =====
 function resolveBattle(game, att, attOwner, def, defOwner, noKill = false) {
+  if (!findChar(game, att.id) || !findChar(game, def.id)) {
+    game.combat = null;
+    return;
+  }
   const a = currentPower(att);
   const d = currentPower(def);
   const an = CARD_DEFS[att.defId].name;
@@ -545,6 +649,26 @@ function defendTrigger(game, owner, c, role, cont) {
         });
       });
       return;
+    case 'neptune':
+      if (role !== 'block') break;
+      ask(game, owner, ['subKanji', 'subBetween'], 'ネプチューン：正解で相手のコスト3以下のキャラ1体を手札に戻す', (ok) => {
+        if (!ok) {
+          cont(false);
+          return;
+        }
+        chooseOpp(game, owner, '手札に戻す相手キャラ（コスト3以下）を選んでください', (x) => CARD_DEFS[x.defId].cost <= 3, (t) => {
+          if (t) bounce(game, t);
+          cont(false);
+        });
+      });
+      return;
+    case 'dalton':
+      if (role !== 'block') break;
+      ask(game, owner, ['food'], 'ドルトン：正解でパワー+2', (ok) => {
+        if (ok) c.temp += 2;
+        cont(false);
+      });
+      return;
     case 'katakuri':
       if (role !== 'block') break;
       resolveKatakuriQuestions(game, owner, c, cont);
@@ -558,6 +682,18 @@ function defendTrigger(game, owner, c, role, cont) {
 function attackTriggers(game, attOwner, att, cont) {
   const cb = game.combat;
   switch (att.defId) {
+    case 'elizabello':
+      askSeq(game, attOwner, [['wazaKanji'], ['hint']], 'エリザベローⅡ世：両方正解で相手キャラ1体を破壊', (res) => {
+        if (!res.every(Boolean)) {
+          cont();
+          return;
+        }
+        chooseOpp(game, attOwner, '破壊する相手キャラを選んでください', () => true, (t) => {
+          if (t) destroy(game, t.pi, t.c);
+          cont();
+        });
+      });
+      return;
     case 'sabo':
       ask(game, attOwner, ['wazaKanji'], 'サボ：正解で相手のライフ耐久力に2ダメージ', (ok) => {
         if (!ok) {
@@ -801,8 +937,215 @@ function useAbility(game, pi, charId, genre) {
   if (!ACTIVE_CARDS.has(c.defId)) fail('このカードに起動効果はありません。');
   if (c.defId !== 'beloBetty' && c.abilityUsed) fail('この効果はこのターンすでに使用しました。');
   const name = CARD_DEFS[c.defId].name;
+  if (CARD_DEFS[c.defId].restCost) {
+    if (c.rested) fail('ダウン中のため使用できません。');
+    c.rested = true;
+    c.abilityUsed = true;
+  }
+  const opp = 1 - pi;
+  const turnExpiry = { owner: pi, turn: P.turns };
+  const nextOppExpiry = () => ({ owner: opp, turn: game.players[opp].turns + 1 });
 
   switch (c.defId) {
+    case 'taco':
+      ask(game, pi, ['personality'], `${name}：正解でカードを1枚引く`, (ok) => {
+        if (!ok) return;
+        const n = draw(game, pi, hasOnBoard(game, pi, 'morolon') ? 2 : 1);
+        addLog(game, `${game.seats[pi].name} はカードを${n}枚引いた。`);
+      });
+      return;
+    case 'morolon':
+      ask(game, pi, ['between'], `${name}：正解でライフ耐久力を回復`, (ok) => {
+        if (!ok) return;
+        healLife(game, pi, hasOnBoard(game, pi, 'fraley', 'taco') ? 4 : 2);
+      });
+      return;
+    case 'fraley':
+      ask(game, pi, ['age'], `${name}：正解で相手キャラ1体のパワーを下げる`, (ok) => {
+        if (!ok) return;
+        const rounds = P.hand.some((x) => x.defId === 'morolon') ? 2 : 1;
+        const finish = () => {
+          const jeep = P.board.find((x) => x.defId === 'jeep');
+          if (jeep) destroy(game, pi, jeep);
+        };
+        const round = (left) => {
+          if (left <= 0) {
+            finish();
+            return;
+          }
+          chooseOpp(game, pi, 'パワー-2にする相手キャラを選んでください', () => true, (t) => {
+            if (t) applyPowerDebuff(game, pi, c.id, t.c.id, 2, nextOppExpiry());
+            round(left - 1);
+          });
+        };
+        round(rounds);
+      });
+      return;
+    case 'stelly':
+    case 'mari': {
+      const genre = c.defId === 'stelly' ? 'fish' : 'food';
+      ask(game, pi, [genre], `${name}：正解でカードを1枚引き、1枚捨てる`, (ok) => {
+        if (!ok) return;
+        draw(game, pi, 1);
+        askDiscard(game, pi, '捨てる手札を1枚選んでください', () => {}, 0);
+      });
+      return;
+    }
+    case 'cobra':
+      ask(game, pi, ['before'], `${name}：正解で相手のパワー4以下のキャラを手札に戻す`, (ok) => {
+        if (!ok) return;
+        chooseOpp(game, pi, '手札に戻す相手キャラ（パワー4以下）を選んでください', (x) => currentPower(x) <= 4, (t) => {
+          if (t) bounce(game, t);
+        });
+      });
+      return;
+    case 'sauce':
+      ask(game, pi, ['image'], `${name}：正解でダウン中の相手キャラを回復不可にする`, (ok) => {
+        if (!ok) return;
+        chooseOpp(game, pi, '回復できなくする相手キャラ（ダウン中）を選んでください', (x) => x.rested, (t) => {
+          if (t) {
+            t.c.noRecover = true;
+            addLog(game, `${CARD_DEFS[t.c.defId].name} は次の相手ターン開始時に回復できない。`);
+          }
+          placeFromHand(game, pi, 'ramen');
+        });
+      });
+      return;
+    case 'coulan':
+      ask(game, pi, ['between'], `${name}：正解でカードを1枚引く`, (ok) => {
+        if (ok) draw(game, pi, 1);
+      });
+      return;
+    case 'hamburger':
+    case 'nashi':
+    case 'tarassa': {
+      c.abilityUsed = true;
+      const genre = { hamburger: 'hint', nashi: 'ship', tarassa: 'before' }[c.defId];
+      ask(game, pi, [genre], `${name}：正解でトラッシュの世界の王達が20種類以上なら勝利`, (ok) => {
+        if (ok) checkWorldWin(game, pi);
+      });
+      return;
+    }
+    case 'iwatobi':
+    case 'mukkeka': {
+      const genre = c.defId === 'iwatobi' ? 'subKanji' : 'wazaKanji';
+      ask(game, pi, [genre], `${name}：正解でお互いのキャラ1体ずつのパワー-1`, (ok) => {
+        if (!ok) return;
+        const partners = c.defId === 'iwatobi' ? ['mukkeka', 'hamburger'] : ['iwatobi', 'beer6'];
+        const again = P.board.some((x) => x.id !== c.id && partners.includes(x.defId));
+        pairDebuff(game, pi, c, again ? 2 : 1);
+      });
+      return;
+    }
+    case 'beer6':
+      ask(game, pi, ['subBetween'], `${name}：正解で相手キャラ1体のパワーをこのターン中-3`, (ok) => {
+        if (!ok) return;
+        chooseOpp(game, pi, 'パワー-3にする相手キャラを選んでください', () => true, (t) => {
+          if (t) applyPowerDebuff(game, pi, c.id, t.c.id, 3, turnExpiry);
+          if (hasOnBoard(game, pi, 'mukkeka')) {
+            const n = draw(game, pi, 1);
+            addLog(game, `${game.seats[pi].name} はカードを${n}枚引いた。`);
+          }
+        });
+      });
+      return;
+    case 'ramen':
+      ask(game, pi, ['hobby', 'hate', 'season'], `${name}：正解で相手のコスト5以下のキャラを手札に戻す`, (ok) => {
+        if (!ok) return;
+        chooseOpp(game, pi, '手札に戻す相手キャラ（コスト5以下）を選んでください', (x) => CARD_DEFS[x.defId].cost <= 5, (t) => {
+          if (t) bounce(game, t);
+        });
+      });
+      return;
+    case 'rikudold':
+    case 'bandodecine':
+      ask(game, pi, ['subBetween'], `${name}：正解で味方キャラ1体を回復`, (ok) => {
+        if (!ok) return;
+        const options = P.board.filter((x) => x.rested).map((x) => x.id);
+        askChoose(game, pi, '回復させる味方キャラを選んでください', options, (id) => {
+          const t = id && findChar(game, id);
+          if (t) {
+            t.c.rested = false;
+            addLog(game, `${CARD_DEFS[t.c.defId].name} が回復した。`);
+          }
+        });
+      });
+      return;
+    case 'tea4':
+      ask(game, pi, ['before'], `${name}：正解で相手の問題の制限時間が20秒になる`, (ok) => {
+        if (!ok) return;
+        game.players[opp].shortUntil = game.players[opp].turns + 1;
+        addLog(game, '次の相手ターン終了時まで、相手の問題の制限時間は20秒になる。');
+      });
+      return;
+    case 'chap':
+      ask(game, pi, ['ship'], `${name}：正解で相手キャラ1体のパワーをこのターン中-2`, (ok) => {
+        if (!ok) return;
+        chooseOpp(game, pi, 'パワー-2にする相手キャラを選んでください', () => true, (t) => {
+          if (t) applyPowerDebuff(game, pi, c.id, t.c.id, 2, turnExpiry);
+          placeFromHand(game, pi, 'ramen');
+        });
+      });
+      return;
+    case 'jeep':
+      ask(game, pi, ['fish'], `${name}：正解でコストを2回復`, (ok) => {
+        if (!ok) return;
+        gainCost(game, pi, 2);
+        const fraley = P.board.find((x) => x.defId === 'fraley');
+        if (fraley) destroy(game, pi, fraley);
+      });
+      return;
+    case 'negie':
+      ask(game, pi, ['between'], `${name}：正解でカードを1枚引く`, (ok) => {
+        if (!ok) return;
+        const n = draw(game, pi, 1);
+        addLog(game, `${game.seats[pi].name} はカードを${n}枚引いた。`);
+        if (hasOnBoard(game, pi, 'sauce')) gainCost(game, pi, 2);
+      });
+      return;
+    case 'seza':
+      ask(game, pi, ['image'], `${name}：正解で相手キャラ全員のパワー-1`, (ok) => {
+        if (!ok) return;
+        for (const t of [...game.players[opp].board]) {
+          applyPowerDebuff(game, pi, c.id, t.id, 1, nextOppExpiry());
+        }
+      });
+      return;
+    case 'lemoncheese':
+      ask(game, pi, ['hint'], `${name}：正解で相手キャラ1体のパワー-1（永続）`, (ok) => {
+        if (!ok) return;
+        chooseOpp(game, pi, 'パワー-1にする相手キャラを選んでください', () => true, (t) => {
+          if (t) applyPowerDebuff(game, pi, c.id, t.c.id, 1);
+        });
+      });
+      return;
+    case 'seki':
+      ask(game, pi, ['personality'], `${name}：正解で自身以外の味方キャラを全て破壊`, (ok) => {
+        if (!ok) return;
+        for (const x of [...P.board]) if (x.id !== c.id) destroy(game, pi, x);
+      });
+      return;
+    case 'stroganoff':
+      ask(game, pi, ['height'], `${name}：正解で味方キャラ1体を破壊しライフ耐久力を3回復`, (ok) => {
+        if (!ok) return;
+        const options = P.board.map((x) => x.id);
+        askChoose(game, pi, '破壊する味方キャラを選んでください', options, (id) => {
+          const t = id && findChar(game, id);
+          if (t && destroy(game, pi, t.c)) healLife(game, pi, 3);
+        });
+      });
+      return;
+    case 'bulldog':
+      ask(game, pi, ALL_GENRES, `${name}：正解で相手キャラ1体を攻撃不可にする`, (ok) => {
+        if (!ok) return;
+        chooseOpp(game, pi, '攻撃不可にする相手キャラを選んでください', () => true, (t) => {
+          if (t) {
+            t.c.noAttack = true;
+            addLog(game, `${CARD_DEFS[t.c.defId].name} は次の相手ターン中、攻撃できない。`);
+          }
+        });
+      });
+      return;
     case 'mugicha': {
       if (!MUGICHA_GENRES.includes(genre)) fail('強化するジャンルを選んでください。');
       if (c.genresUsed.includes(genre)) fail('そのジャンルでは、もうこのカードを強化できません。');
@@ -999,21 +1342,7 @@ function actPlay(game, pi, cardId, slot) {
   }
   P.cost -= def.cost;
   P.hand = P.hand.filter((c) => c.id !== cardId);
-  const c = {
-    id: card.id,
-    defId: card.defId,
-    slot,
-    rested: false,
-    bonus: 0,
-    temp: 0,
-    turnTemp: 0,
-    powerMods: [],
-    powerBuffs: [],
-    haste: false,
-    summonedOn: P.turns,
-    abilityUsed: false,
-    genresUsed: [],
-  };
+  const c = newChar(card, slot, P);
   P.board.push(c);
   addLog(game, `${game.seats[pi].name} が ${def.name} を出した。`);
 
@@ -1092,12 +1421,17 @@ function actPlay(game, pi, cardId, slot) {
   }
 }
 
+function canAttackNow(P, c) {
+  return c.haste || P.turns - c.summonedOn >= (CARD_DEFS[c.defId].attackDelay || 1);
+}
+
 function actAttack(game, pi, attackerId, target) {
   const P = game.players[pi];
   const att = P.board.find((c) => c.id === attackerId);
   if (!att) fail('攻撃するキャラクターが場にいません。');
   if (att.rested) fail('そのキャラクターはダウン中です。');
-  if (att.summonedOn >= P.turns && !att.haste) fail('場に出したターンは攻撃できません。');
+  if (att.noAttack) fail('そのキャラクターはこのターン攻撃できません。');
+  if (!canAttackNow(P, att)) fail('場に出たばかりのため攻撃できません。');
 
   if (target === 'player') {
     // 直接攻撃
@@ -1149,6 +1483,9 @@ function actBlock(game, pi, blockerId) {
 }
 
 function actEnd(game, pi) {
+  const endingPlayer = game.players[pi];
+  if (endingPlayer.shortUntil && endingPlayer.turns >= endingPlayer.shortUntil) endingPlayer.shortUntil = 0;
+  for (const c of endingPlayer.board) c.noAttack = false;
   for (const c of game.players[pi].board) {
     c.temp = 0;
     c.turnTemp = 0;
@@ -1189,8 +1526,13 @@ function charView(game, pi, c) {
     cost: def.cost,
     blocker: def.blocker,
     text: def.text,
-    canAttack: mine && !c.rested && (c.summonedOn < P.turns || c.haste),
+    canAttack: mine && !c.rested && !c.noAttack && canAttackNow(P, c),
     hitActive: !!c.hitActive,
+    needsRest: !!def.restCost,
+    noAttack: !!c.noAttack,
+    summonedOn: c.summonedOn,
+    attackDelay: def.attackDelay || 1,
+    turnsOnBoard: P.turns - c.summonedOn,
     hasAbility: ACTIVE_CARDS.has(c.defId),
     abilityUsed: c.abilityUsed,
     genresUsed: c.genresUsed,
@@ -1204,6 +1546,7 @@ function pendingView(game, viewer) {
     kind: p.kind,
     mine: p.owner === viewer,
     deadline: p.deadline,
+    total: p.ms || QUIZ_MS,
   };
   if (p.kind === 'quiz') {
     return { ...base, title: p.title, genre: p.genre, lines: p.lines, step: p.step };
