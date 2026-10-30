@@ -158,13 +158,20 @@ function CardArt({ defId }) {
   );
 }
 
-function DeckSelect({ onStart, onBack }) {
+function DeckSelect({ onStart, onBack, editOnly = false }) {
   const [custom, setCustom] = useState([]);
   const [selected, setSelected] = useState('standard');
   const [editing, setEditing] = useState(null); // { id, name, cards }
 
+  // localStorage はクライアントでのみ読めるため、マウント後に非同期で読み込む（SSRとの不一致を避ける）
   useEffect(() => {
-    setCustom(loadCustomDecks());
+    let alive = true;
+    Promise.resolve().then(() => {
+      if (alive) setCustom(loadCustomDecks());
+    });
+    return () => {
+      alive = false;
+    };
   }, []);
 
   const decks = [
@@ -261,7 +268,7 @@ function DeckSelect({ onStart, onBack }) {
     <main className="deck-page">
       <style>{css}</style>
       <div className="deck-head">
-        <h1>デッキを選択</h1>
+        <h1>{editOnly ? 'デッキを編集' : 'デッキを選択'}</h1>
         <button className="btn ghost" onClick={onBack}>戻る</button>
       </div>
       <div className="deck-list">
@@ -287,7 +294,9 @@ function DeckSelect({ onStart, onBack }) {
           ))}
         </div>
         <div className="deck-actions">
-          <button className="btn end" onClick={() => onStart(current.cards)}>このデッキで対戦</button>
+          {!editOnly && (
+            <button className="btn end" onClick={() => onStart(current.cards)}>このデッキで対戦</button>
+          )}
           <button className="btn" onClick={() => startEdit(current)}>
             {current.fixed ? 'コピーして編集' : '編集'}
           </button>
@@ -328,6 +337,7 @@ function BoardCard({ c, cls = '', onClick, onHover }) {
   return (
     <button
       type="button"
+      data-cid={c.id}
       className={`card unit ${c.rested ? 'rested' : ''} ${cls}`}
       onClick={onClick}
       onMouseEnter={() => onHover?.(c)}
@@ -356,6 +366,7 @@ export default function TcgPage() {
   const [error, setError] = useState('');
   const [fatal, setFatal] = useState(false);
   const [deck, setDeck] = useState(null);
+  const [editOnly, setEditOnly] = useState(false);
 
   const [selHand, setSelHand] = useState(null);
   const [selChar, setSelChar] = useState(null);
@@ -363,6 +374,9 @@ export default function TcgPage() {
   const [answer, setAnswer] = useState('');
   const [now, setNow] = useState(() => Date.now());
   const [toast, setToast] = useState(null);
+  const [arrow, setArrow] = useState(null);
+  const lastAttackSeq = useRef(null);
+  const rectCache = useRef({});
   const lastFlash = useRef(0);
   const inputRef = useRef(null);
   const logRef = useRef(null);
@@ -371,6 +385,10 @@ export default function TcgPage() {
   useEffect(() => {
     const room = new URLSearchParams(window.location.search).get('room') || '';
     setRoomId(room);
+    if (new URLSearchParams(window.location.search).get('edit') === '1') {
+      setEditOnly(true);
+      return;
+    }
     if (!room) {
       setConn('noroom');
       return;
@@ -426,6 +444,42 @@ export default function TcgPage() {
     // 状態更新のたびに flash オブジェクトが変わるため、seq だけを監視する
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [g?.flash?.seq]);
+
+  // 攻撃の矢印：直前の描画時の位置を覚えておき、攻撃側／対象が消えていても描けるようにする
+  useEffect(() => {
+    const snapshot = () => {
+      const map = {};
+      document.querySelectorAll('[data-cid]').forEach((el) => {
+        map[`c${el.getAttribute('data-cid')}`] = el.getBoundingClientRect();
+      });
+      document.querySelectorAll('[data-life]').forEach((el) => {
+        map[`life-${el.getAttribute('data-life')}`] = el.getBoundingClientRect();
+      });
+      return map;
+    };
+    const la = g?.lastAttack;
+    if (la && la.seq !== lastAttackSeq.current) {
+      const first = lastAttackSeq.current === null;
+      lastAttackSeq.current = la.seq;
+      if (!first) {
+        const rects = { ...rectCache.current, ...snapshot() };
+        const from = rects[`c${la.attackerId}`];
+        const to = la.target === 'player'
+          ? rects[`life-${la.attackerMine ? 'opp' : 'me'}`]
+          : rects[`c${la.target}`];
+        if (from && to) {
+          const center = (r) => ({ x: r.left + r.width / 2, y: r.top + r.height / 2 });
+          const a = center(from);
+          const b = center(to);
+          setArrow({ seq: la.seq, x1: a.x, y1: a.y, x2: b.x, y2: b.y, mine: la.attackerMine });
+          setTimeout(() => setArrow((cur) => (cur?.seq === la.seq ? null : cur)), 1800);
+        }
+      }
+    } else if (la && lastAttackSeq.current === null) {
+      lastAttackSeq.current = la.seq;
+    }
+    rectCache.current = { ...rectCache.current, ...snapshot() };
+  }, [g]);
 
   // スマホでのダブルタップ／入力時の自動ズームを、この画面だけ無効にする
   useEffect(() => {
@@ -485,6 +539,9 @@ export default function TcgPage() {
     }
   }, [idle]);
 
+  if (editOnly) {
+    return <DeckSelect editOnly onBack={() => router.push('/rate-match')} />;
+  }
   if (conn === 'noroom') {
     return <Center text="部屋IDが指定されていません。フリー対戦の部屋から入ってください。" />;
   }
@@ -623,6 +680,7 @@ export default function TcgPage() {
               <div className="pname">{opp.name}{!opp.connected && <em>（切断中）</em>}</div>
               <button
                 type="button"
+                data-life="opp"
                 className={`life-box ${attacking ? 'targetable' : ''}`}
                 onClick={attackPlayer}
                 disabled={!attacking}
@@ -725,7 +783,7 @@ export default function TcgPage() {
           <div className="player-strip">
             <div className="who">
               <div className="pname">{me.name}（あなた）</div>
-              <div className="life-box mine">
+              <div className="life-box mine" data-life="me">
                 <span className="life-label">LIFE</span>
                 <Hearts life={me.life} hp={me.lifeHp} maxHp={me.lifeMaxHp} />
               </div>
@@ -906,6 +964,29 @@ export default function TcgPage() {
         </div>
       )}
 
+      {arrow && (
+        <svg className="atk-arrow" width="100%" height="100%">
+          <defs>
+            <marker id="atk-head" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
+              <path d="M0,0 L8,4 L0,8 z" fill={arrow.mine ? '#1d7fd6' : '#e0364d'} />
+            </marker>
+          </defs>
+          <line
+            key={arrow.seq}
+            className="atk-line"
+            x1={arrow.x1}
+            y1={arrow.y1}
+            x2={arrow.x2}
+            y2={arrow.y2}
+            stroke={arrow.mine ? '#1d7fd6' : '#e0364d'}
+            strokeWidth="7"
+            strokeLinecap="round"
+            markerEnd="url(#atk-head)"
+            pathLength="1"
+          />
+        </svg>
+      )}
+
       {toast && (
         <div className={`toast ${toast.ok ? 'ok' : 'ng'}`}>
           <b>{toast.ok ? '正解！' : toast.timeout ? '時間切れ…' : '不正解…'}</b>
@@ -1078,6 +1159,9 @@ body { margin: 0; background: #eaf3ff; }
 .timer span { display: block; height: 100%; background: linear-gradient(90deg, #f06a6a, #f5c76b, #5fd6a2); transition: width 0.25s linear; }
 .opp-quiz { position: fixed; left: 50%; top: 10px; transform: translateX(-50%); width: min(620px, 90vw); padding: 10px 14px; border: 1px solid #d98585; border-radius: 10px; background: rgba(255,236,238,0.97); color: #3a1f28; font-size: 13px; z-index: 40; display: flex; flex-direction: column; gap: 6px; }
 
+.atk-arrow { position: fixed; inset: 0; width: 100vw; height: 100vh; pointer-events: none; z-index: 70; filter: drop-shadow(0 0 4px rgba(0,0,0,0.4)); }
+.atk-line { stroke-dasharray: 1; stroke-dashoffset: 1; animation: atk-draw 0.45s ease-out forwards; }
+@keyframes atk-draw { to { stroke-dashoffset: 0; } }
 .toast { position: fixed; left: 50%; bottom: 30%; transform: translateX(-50%); padding: 14px 22px; border-radius: 12px; z-index: 60; display: flex; flex-direction: column; align-items: center; gap: 4px; font-size: 14px; }
 .toast b { font-size: 24px; }
 .toast.ok { background: rgba(214,247,230,0.98); color: #14573a; border: 2px solid #3fb584; }

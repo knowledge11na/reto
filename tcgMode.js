@@ -473,7 +473,7 @@ function afterAttackTriggers(game) {
 function defendTrigger(game, owner, c, role, cont) {
   switch (c.defId) {
     case 'hack':
-      ask(game, owner, ['subBetween'], 'ハック：正解でパワー+1、不正解でパワー-1', (ok) => {
+      ask(game, owner, ['fish'], 'ハック：正解でパワー+1、不正解でパワー-1', (ok) => {
         modifyTempPower(game, owner, c, ok ? 1 : -1);
         if (!findChar(game, c.id)) {
           game.combat = null;
@@ -507,7 +507,7 @@ function defendTrigger(game, owner, c, role, cont) {
       return;
     case 'riesen':
       if (role !== 'block') break;
-      ask(game, owner, ['hobby', 'hate'], 'フランキー：正解でパワー+3', (ok) => {
+      ask(game, owner, ['ship'], 'フランキー：正解でパワー+3', (ok) => {
         if (ok) c.temp += 3;
         cont(false);
       });
@@ -570,7 +570,7 @@ function attackTriggers(game, attOwner, att, cont) {
       });
       return;
     case 'hack':
-      ask(game, attOwner, ['subBetween'], 'ハック：正解でパワー+1、不正解でパワー-1', (ok) => {
+      ask(game, attOwner, ['fish'], 'ハック：正解でパワー+1、不正解でパワー-1', (ok) => {
         modifyTempPower(game, attOwner, att, ok ? 1 : -1);
         cont();
       });
@@ -631,7 +631,7 @@ function attackTriggers(game, attOwner, att, cont) {
       });
       return;
     case 'hojiro':
-      askSeq(game, attOwner, [['between'], ['wazaKanji']], 'ジンベエ：2問正解でパワー+4', (res) => {
+      askSeq(game, attOwner, [['fish'], ['fish']], 'ジンベエ：2問正解でパワー+4', (res) => {
         if (res.every(Boolean)) att.temp += 4;
         cont();
       });
@@ -744,7 +744,7 @@ function attackTriggers(game, attOwner, att, cont) {
       });
       return;
     case 'magellan':
-      ask(game, attOwner, ['age', 'height'], 'マゼラン：正解で攻撃続行。不正解で自分のライフに3ダメージ', (ok) => {
+      ask(game, attOwner, ['personality'], 'マゼラン：正解で攻撃続行。不正解で自分のライフに3ダメージ', (ok) => {
         if (!ok) {
           game.combat = null;
           damageLife(game, attOwner, 3);
@@ -882,7 +882,7 @@ function useAbility(game, pi, charId, genre) {
       return;
     case 'corobokkle':
       c.abilityUsed = true;
-      askSeq(game, pi, [['hint'], ['between']], `${name}：両方正解で相手キャラ1体をダウン`, (res) => {
+      askSeq(game, pi, [['hint'], ['personality']], `${name}：両方正解で相手キャラ1体をダウン`, (res) => {
         if (!res.every(Boolean)) return;
         const options = game.players[1 - pi].board.filter((x) => !x.rested).map((x) => x.id);
         askChoose(game, pi, 'ダウンさせる相手キャラを選んでください', options, (id) => {
@@ -945,7 +945,7 @@ function useAbility(game, pi, charId, genre) {
       return;
     case 'arlong':
       c.abilityUsed = true;
-      ask(game, pi, ['hobby', 'hate', 'season'], `${name}：正解で相手のダウン中キャラのパワー-2`, (ok) => {
+      ask(game, pi, ['fish'], `${name}：正解で相手のダウン中キャラのパワー-2`, (ok) => {
         if (!ok) return;
         const options = game.players[1 - pi].board.filter((x) => x.rested).map((x) => x.id);
         askChoose(game, pi, 'パワーを下げるダウン中の相手キャラを選んでください', options, (id) => {
@@ -1023,42 +1023,42 @@ function actPlay(game, pi, cardId, slot) {
         c.haste = true;
         c.turnTemp += 2;
       }
-      if (card.defId === 'sabo') {
-        ask(game, pi, ['subKanji'], 'サボ：正解でパワー+1（永続）', (ok) => {
-          if (ok) {
-            c.bonus += 1;
-            addLog(game, 'サボのパワーが永続で+1された。');
-          }
-        });
+    });
+  }
+  if (card.defId === 'sabo') {
+    ask(game, pi, ['subKanji'], 'サボ：正解でパワー+1（永続）', (ok) => {
+      if (ok) {
+        c.bonus += 1;
+        addLog(game, 'サボのパワーが永続で+1された。');
       }
-      if (card.defId === 'ivankov') {
-        askSeq(game, pi, [['image'], ['image']], 'イワンコフ：両方正解で山札から2枚引く', (res) => {
-          if (!res.every(Boolean)) return;
-          const drawn = draw(game, pi, 2);
-          addLog(game, `${game.seats[pi].name} はカードを${drawn}枚引いた。`);
-        });
+    });
+  }
+  if (card.defId === 'ivankov') {
+    askSeq(game, pi, [['image'], ['image']], 'イワンコフ：両方正解で山札から2枚引く', (res) => {
+      if (!res.every(Boolean)) return;
+      const drawn = draw(game, pi, 2);
+      addLog(game, `${game.seats[pi].name} はカードを${drawn}枚引いた。`);
+    });
+  }
+  if (card.defId === 'bunnyJoe') {
+    ask(game, pi, ['subKanji'], 'バニー・ジョー：正解で山札から1枚引く', (ok) => {
+      if (ok) {
+        const drawn = draw(game, pi, 1);
+        addLog(game, `${game.seats[pi].name} はカードを${drawn}枚引いた。`);
       }
-      if (card.defId === 'bunnyJoe') {
-        ask(game, pi, ['subKanji'], 'バニー・ジョー：正解で山札から1枚引く', (ok) => {
-          if (ok) {
-            const drawn = draw(game, pi, 1);
-            addLog(game, `${game.seats[pi].name} はカードを${drawn}枚引いた。`);
-          }
-        });
-      }
-      if (card.defId === 'terryGilteo') {
-        ask(game, pi, ['wazaKanji'], 'テリー・ギルテオ：正解で相手キャラ1体をダウン', (ok) => {
-          if (!ok) return;
-          const options = game.players[1 - pi].board.filter((target) => !target.rested).map((target) => target.id);
-          askChoose(game, pi, 'ダウンさせる相手キャラを選んでください', options, (id) => {
-            const target = id && findChar(game, id);
-            if (target) {
-              target.c.rested = true;
-              addLog(game, `${CARD_DEFS[target.c.defId].name} がダウンした。`);
-            }
-          });
-        });
-      }
+    });
+  }
+  if (card.defId === 'terryGilteo') {
+    ask(game, pi, ['wazaKanji'], 'テリー・ギルテオ：正解で相手キャラ1体をダウン', (ok) => {
+      if (!ok) return;
+      const options = game.players[1 - pi].board.filter((target) => !target.rested).map((target) => target.id);
+      askChoose(game, pi, 'ダウンさせる相手キャラを選んでください', options, (id) => {
+        const target = id && findChar(game, id);
+        if (target) {
+          target.c.rested = true;
+          addLog(game, `${CARD_DEFS[target.c.defId].name} がダウンした。`);
+        }
+      });
     });
   }
   if (card.defId === 'lucci') {
@@ -1072,7 +1072,7 @@ function actPlay(game, pi, cardId, slot) {
     });
   }
   if (card.defId === 'caesar') {
-    askSeq(game, pi, [['hint'], ['hint']], 'シーザー：両方正解で相手キャラ全員のパワー-1', (res) => {
+    askSeq(game, pi, [['ship'], ['ship']], 'シーザー：両方正解で相手キャラ全員のパワー-1', (res) => {
       if (!res.every(Boolean)) return;
       for (const target of [...game.players[1 - pi].board]) {
         applyPowerDebuff(game, pi, c.id, target.id, 1, { owner: pi, turn: P.turns });
@@ -1109,6 +1109,8 @@ function actAttack(game, pi, attackerId, target) {
 
   att.rested = true;
   game.combat = { attId: att.id, target, unblockable: false };
+  game.attackSeq = (game.attackSeq || 0) + 1;
+  game.lastAttack = { seq: game.attackSeq, attackerId: att.id, attackerOwner: pi, target };
   addLog(
     game,
     `${CARD_DEFS[att.defId].name} が${target === 'player' ? 'プレイヤー' : CARD_DEFS[findChar(game, target).c.defId].name}に攻撃！`
@@ -1232,6 +1234,14 @@ function viewFor(game, viewer) {
     seats: game.seats.map((s) => (s ? { name: s.name, connected: s.connected } : null)),
     log: game.log.slice(-30),
     flash: game.flash,
+    lastAttack: game.lastAttack
+      ? {
+          seq: game.lastAttack.seq,
+          attackerId: game.lastAttack.attackerId,
+          attackerMine: game.lastAttack.attackerOwner === viewer,
+          target: game.lastAttack.target,
+        }
+      : null,
   };
   if (game.phase === 'waiting') return base;
 

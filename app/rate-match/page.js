@@ -1601,6 +1601,7 @@ setFreeError(
                         </p>
                       </button>
 
+                      <div className="shrink-0 flex flex-col items-end gap-2">
                       <button
                         type="button"
                         onClick={() =>
@@ -1610,6 +1611,19 @@ setFreeError(
                       >
                         ルールを見る
                       </button>
+
+                      {game.id === 'tcg' && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            router.push('/free/tcg?edit=1')
+                          }
+                          className="shrink-0 text-xs font-bold text-sky-600 underline hover:text-sky-800"
+                        >
+                          デッキを編集
+                        </button>
+                      )}
+                      </div>
                     </div>
                   </div>
                 );

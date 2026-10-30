@@ -41,7 +41,7 @@ export default function TcgRulePage() {
     <main style={{ minHeight: '100vh', background: '#0b1018', color: '#f1f5fb', padding: 24 }}>
       <div style={{ maxWidth: 760, margin: '0 auto', lineHeight: 1.8 }}>
         <Link href="/rate-match" style={{ color: '#8fc4ff' }}>← レートマッチへ戻る</Link>
-        <h1>ONE PIECE TCG（仮）</h1>
+        <h1>KNOWLEDGE　TCG</h1>
         <p>クイズに正解して効果を発動する、オンライン1対1のカードゲームです。</p>
         {SECTIONS.map((s) => (
           <section key={s.title}>
