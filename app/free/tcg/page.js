@@ -732,7 +732,9 @@ export default function TcgPage() {
   const waitingMsg = pending && !pending.mine
     ? pending.kind === 'block'
       ? '相手がブロックを選択中…'
-      : pending.kind === 'choose'
+      : pending.kind === 'order'
+        ? '相手が先攻・後攻を選択中…'
+        : pending.kind === 'choose'
         ? '相手が対象を選択中…'
         : pending.kind === 'discard'
           ? '相手が捨てるカードを選択中…'
@@ -803,6 +805,17 @@ export default function TcgPage() {
               {pending.title}（残り{left}秒）
               <button className="btn small" onClick={() => emit('tcg:choose', { targetId: null })}>
                 スキップ
+              </button>
+            </div>
+          )}
+          {pending?.kind === 'order' && pending.mine && (
+            <div className="wait-msg strong">
+              ランダムで先攻・後攻の選択権が当たりました（残り{left}秒）
+              <button className="btn small" onClick={() => emit('tcg:order', { first: true })}>
+                先攻
+              </button>
+              <button className="btn small" onClick={() => emit('tcg:order', { first: false })}>
+                後攻
               </button>
             </div>
           )}

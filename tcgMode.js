@@ -147,8 +147,19 @@ function startGame(game) {
   game.first = rnd(2);
   game.phase = 'playing';
   game.winner = null;
-  addLog(game, `対戦開始！ 先攻は ${game.seats[game.first].name} です。`);
-  startTurn(game, game.first);
+  const chooser = rnd(2);
+  addLog(game, `対戦開始！ ランダムで ${game.seats[chooser].name} が先攻・後攻を選びます。`);
+  const decide = (first) => {
+    game.first = first;
+    addLog(game, `先攻は ${game.seats[first].name} です。`);
+    startTurn(game, first);
+  };
+  const pending = { kind: 'order', owner: chooser, ms: 30000, deadline: Date.now() + 30000, cb: decide, chooser };
+  game.pending = pending;
+  armTimer(game, pending, () => {
+    game.pending = null;
+    decide(chooser);
+  });
 }
 
 // ===== 基本操作 =====
@@ -1397,9 +1408,9 @@ function useAbility(game, pi, charId, genre) {
     case 'stelly':
     case 'mari': {
       const genre = c.defId === 'stelly' ? 'fish' : 'food';
-      ask(game, pi, [genre], `${name}：正解でカードを1枚引き、1枚捨てる`, (ok) => {
+      ask(game, pi, [genre], `${name}：      正解でカードを2枚引き、1枚捨てる`, (ok) => {
         if (!ok) return;
-        draw(game, pi, 1);
+              draw(game, pi, 2);
         askDiscard(game, pi, '捨てる手札を1枚選んでください', () => {}, 0);
       });
       return;
@@ -1425,11 +1436,13 @@ function useAbility(game, pi, charId, genre) {
       });
       return;
     case 'coulan':
-      ask(game, pi, ['between'], `${name}：正解でカードを1枚引く`, (ok) => {
-        if (ok) draw(game, pi, 1);
-      });
-      return;
-    case 'hamburger':
+      ask(game, pi, ['between'], `${name}：      正解でカードを2枚引き、1枚捨てる`, (ok) => {
+              if (!ok) return;
+              draw(game, pi, 2);
+              askDiscard(game, pi, '捨てる手札を1枚選んでください', () => {}, 0);
+            });
+            return;
+          case 'hamburger':
     case 'nashi':
     case 'tarassa': {
       c.abilityUsed = true;
@@ -2345,6 +2358,17 @@ export function setupTcgMode(io) {
         clearTimeout(game.timer);
         game.pending = null;
         p.cb(id);
+      })
+    );
+
+    socket.on('tcg:order', ({ first } = {}) =>
+      withGame((game, seat) => {
+        needPlaying(game, seat);
+        const p = game.pending;
+        if (!p || p.kind !== 'order' || p.owner !== seat) fail('今は先攻・後攻を選べません。');
+        clearTimeout(game.timer);
+        game.pending = null;
+        p.cb(first ? seat : 1 - seat);
       })
     );
 
