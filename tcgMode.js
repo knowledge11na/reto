@@ -239,14 +239,8 @@ function placeFromHand(game, pi, defId) {
   const P = game.players[pi];
   const card = P.hand.find((c) => c.defId === defId);
   if (!card) return;
-  const slot = [0, 1, 2, 3, 4].find((s) => !P.board.some((c) => c.slot === s));
-  if (slot === undefined) {
-    addLog(game, `場が埋まっているため ${CARD_DEFS[defId].name} を出せなかった。`);
-    return;
-  }
   P.hand = P.hand.filter((c) => c.id !== card.id);
-  P.board.push(newChar(card, slot, P));
-  addLog(game, `${game.seats[pi].name} は手札の ${CARD_DEFS[defId].name} を場に出した。`);
+  (game.afterQueue ||= []).push(() => putOnBoard(game, pi, { id: card.id, defId: card.defId }, '手札'));
 }
 
 function bounce(game, found) {
@@ -415,14 +409,8 @@ function pickTrash(game, owner, title, filter, cb) {
 
 function placeFromTrash(game, pi, card) {
   const P = game.players[pi];
-  const slot = [0, 1, 2, 3, 4].find((s) => !P.board.some((c) => c.slot === s));
-  if (slot === undefined) {
-    addLog(game, `場が埋まっているため ${CARD_DEFS[card.defId].name} を出せなかった。`);
-    return;
-  }
   P.trash = P.trash.filter((t) => t.id !== card.id);
-  P.board.push(newChar(card, slot, P));
-  addLog(game, `${game.seats[pi].name} はトラッシュの ${CARD_DEFS[card.defId].name} を場に出した。`);
+  (game.afterQueue ||= []).push(() => putOnBoard(game, pi, { id: card.id, defId: card.defId }, 'トラッシュ'));
 }
 
 function trashToHand(game, pi, card) {
@@ -1372,6 +1360,7 @@ function useAbility(game, pi, charId, genre) {
         });
       });
       return;
+    case 'taco':
       ask(game, pi, ['personality'], `${name}：正解でカードを1枚引く`, (ok) => {
         if (!ok) return;
         const n = draw(game, pi, hasOnBoard(game, pi, 'morolon') ? 2 : 1);
@@ -1873,6 +1862,38 @@ function actPlay(game, pi, cardId, slot) {
   const c = newChar(card, slot, P);
   P.board.push(c);
   addLog(game, `${game.seats[pi].name} が ${def.name} を出した。`);
+  runEntry(game, pi, c);
+}
+
+// 効果などで場に出す。場が埋まっていれば1体を押し出し（破壊扱いにしない）、登場時効果も発動する
+function putOnBoard(game, pi, card, from) {
+  const P = game.players[pi];
+  const name = CARD_DEFS[card.defId].name;
+  const place = (slot) => {
+    const c = newChar(card, slot, P);
+    P.board.push(c);
+    addLog(game, `${game.seats[pi].name} は${from}の ${name} を場に出した。`);
+    runEntry(game, pi, c);
+  };
+  const free = [0, 1, 2, 3, 4].find((s) => !P.board.some((x) => x.slot === s));
+  if (free !== undefined) {
+    place(free);
+    return;
+  }
+  askChoose(game, pi, `場が埋まっています。押し出すキャラを選んでください（${name}を出す）`, P.board.map((x) => x.id), (id) => {
+    const out = P.board.find((x) => x.id === (id || P.board[0]?.id));
+    if (!out) return;
+    const slot = out.slot;
+    P.board = P.board.filter((x) => x.id !== out.id);
+    P.trash.push({ id: out.id, defId: baseId(out.defId) });
+    addLog(game, `${CARD_DEFS[out.defId].name} が押し出されてトラッシュへ送られた。`);
+    place(slot);
+  });
+}
+
+function runEntry(game, pi, c) {
+  const P = game.players[pi];
+  const card = { defId: c.defId };
 
   if (card.defId === 'prince') {
     ask(game, pi, ['subKanji'], 'サンジ：正解でこのターン攻撃でき、パワー+2', (ok) => {
