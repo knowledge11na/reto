@@ -5,6 +5,7 @@ import {
   CARD_DEFS,
   ACTIVE_CARDS,
   MUGICHA_GENRES,
+  DESTROY_DRAW_CARDS,
   COST_FIRST,
   COST_SECOND,
   INITIAL_LIFE,
@@ -370,7 +371,7 @@ function destroy(game, pi, c) {
   P.board = P.board.filter((x) => x.id !== c.id);
   P.trash.push({ id: c.id, defId: baseId(c.defId) });
   addLog(game, `${CARD_DEFS[c.defId].name} が破壊された。`);
-  if (ON_DESTROY.has(c.defId)) {
+  if (ON_DESTROY.has(c.defId) || DESTROY_DRAW_CARDS.has(c.defId)) {
     (game.afterQueue ||= []).push(() => runDestroyTrigger(game, pi, c));
   }
   return true;
@@ -455,6 +456,13 @@ function runDestroyTrigger(game, pi, c) {
       });
       return;
     default:
+      if (DESTROY_DRAW_CARDS.has(c.defId)) {
+        askSeq(game, pi, [ALL_GENRES, ALL_GENRES], `${name}：破壊時、両方正解でカードを1枚引く`, (res) => {
+          if (!res.every(Boolean)) return;
+          const n = draw(game, pi, 1);
+          addLog(game, `${game.seats[pi].name} はカードを${n}枚引いた。`);
+        });
+      }
   }
 }
 
@@ -1283,12 +1291,39 @@ function useAbility(game, pi, charId, genre) {
   if (!c) fail('そのキャラクターは場にいません。');
   if (!ACTIVE_CARDS.has(c.defId)) fail('このカードに起動効果はありません。');
   if (c.defId !== 'beloBetty' && c.abilityUsed) fail('この効果はこのターンすでに使用しました。');
-  const name = CARD_DEFS[c.defId].name;
   if (CARD_DEFS[c.defId].restCost) {
     if (c.rested) fail('ダウン中のため使用できません。');
     c.rested = true;
     c.abilityUsed = true;
   }
+  if (COPY_ABILITY.has(c.defId)) {
+    c.abilityUsed = true;
+    const options = P.board
+      .filter((x) => x.id !== c.id && ACTIVE_CARDS.has(x.defId) && !NOT_COPYABLE.has(x.defId))
+      .map((x) => x.id);
+    if (!options.length) {
+      addLog(game, `${CARD_DEFS[c.defId].name}：使用できる効果を持つ味方キャラがいなかった。`);
+      return;
+    }
+    askChoose(game, pi, `${CARD_DEFS[c.defId].name}：使用する味方キャラの効果を選んでください`, options, (id) => {
+      const src = id && P.board.find((x) => x.id === id);
+      if (!src) return;
+      addLog(game, `${CARD_DEFS[c.defId].name} は ${CARD_DEFS[src.defId].name} の効果を使用した。`);
+      // 効果の使用者はこのキャラ。カード種別だけ対象のものに差し替える
+      const proxy = Object.create(c, { defId: { value: src.defId, writable: true } });
+      runAbility(game, pi, proxy, genre);
+    });
+    return;
+  }
+  runAbility(game, pi, c, genre);
+}
+
+const COPY_ABILITY = new Set(['rikudold', 'bandodecine']);
+const NOT_COPYABLE = new Set(['rikudold', 'bandodecine', 'beloBetty', 'mugicha']);
+
+function runAbility(game, pi, c, genre) {
+  const P = game.players[pi];
+  const name = CARD_DEFS[c.defId].name;
   const opp = 1 - pi;
   const turnExpiry = { owner: pi, turn: P.turns };
   const nextOppExpiry = () => ({ owner: opp, turn: game.players[opp].turns + 1 });
@@ -1480,32 +1515,6 @@ function useAbility(game, pi, charId, genre) {
         if (!ok) return;
         chooseOpp(game, pi, '手札に戻す相手キャラ（コスト5以下）を選んでください', (x) => CARD_DEFS[x.defId].cost <= 5, (t) => {
           if (t) bounce(game, t);
-        });
-      });
-      return;
-    case 'rikudold':
-      ask(game, pi, ['direction'], `${name}：正解で味方キャラ1体を回復`, (ok) => {
-        if (!ok) return;
-        const options = P.board.filter((x) => x.rested).map((x) => x.id);
-        askChoose(game, pi, '回復させる味方キャラを選んでください', options, (id) => {
-          const t = id && findChar(game, id);
-          if (t) {
-            t.c.rested = false;
-            addLog(game, `${CARD_DEFS[t.c.defId].name} が回復した。`);
-          }
-        });
-      });
-      return;
-    case 'bandodecine':
-      ask(game, pi, ['yobikata'], `${name}：正解で味方キャラ1体を回復`, (ok) => {
-        if (!ok) return;
-        const options = P.board.filter((x) => x.rested).map((x) => x.id);
-        askChoose(game, pi, '回復させる味方キャラを選んでください', options, (id) => {
-          const t = id && findChar(game, id);
-          if (t) {
-            t.c.rested = false;
-            addLog(game, `${CARD_DEFS[t.c.defId].name} が回復した。`);
-          }
         });
       });
       return;
@@ -1979,7 +1988,11 @@ function runEntry(game, pi, c) {
     });
   }
   if (card.defId === 'shiryu') {
-    destroyOwn(game, pi, '破壊する味方キャラを選んでください', (x) => x.id !== c.id, () => {
+    destroyOwn(game, pi, '破壊する味方キャラを選んでください（破壊しないと効果は発動しません）', (x) => x.id !== c.id, (done) => {
+      if (!done) {
+        addLog(game, 'シリュウ：味方を破壊しなかったため効果は発動しなかった。');
+        return;
+      }
       ask(game, pi, ['hint'], 'シリュウ：正解で出たターンに攻撃できる', (ok) => {
         if (!ok) return;
         c.haste = true;
