@@ -1,4 +1,4 @@
-// file: app/free/tcg/page.js
+﻿// file: app/free/tcg/page.js
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -14,6 +14,13 @@ import {
   VILLAINS_CARD_POOL,
   REVOLUTIONARY_DECK,
   REVOLUTIONARY_CARD_POOL,
+  WORLD_DECK,
+  WORLD_CARD_POOL,
+  KID_DECK,
+  KID_CARD_POOL,
+  PRISONER_DECK,
+  PRISONER_CARD_POOL,
+  ALL_DECK_CARDS,
   normalizeDeck,
 } from '../../../lib/tcgCards.js';
 
@@ -140,6 +147,73 @@ const CARD_IMAGES = {
   jiron: '1774',
   bunnyJoe: '0670',
   terryGilteo: '0456',
+  taco: '1197',
+  morolon: '1196',
+  fraley: '1210',
+  stelly: '0664',
+  neptune: '0731',
+  elizabello: '0844',
+  cobra: '0170',
+  sauce: '1204',
+  coulan: '1206',
+  hamburger: '1195',
+  iwatobi: '1023',
+  mukkeka: '1201',
+  beer6: '1190',
+  ramen: '1024',
+  rikudold: '0870',
+  bandodecine: '1218',
+  tea4: '1217',
+  chap: '1219',
+  jeep: '1208',
+  dalton: '0157',
+  negie: '1205',
+  seza: '1022',
+  lemoncheese: '1207',
+  seki: '1215',
+  mari: '1203',
+  stroganoff: '1216',
+  nashi: '1202',
+  tarassa: '0169',
+  bulldog: '1817',
+  kid: '0513',
+  killer: '0517',
+  heat: '0527',
+  wire: '0528',
+  emma: '1656',
+  pump: '1638',
+  bubblegum: '1639',
+  quincy: '1652',
+  hip: '1657',
+  hop: '1649',
+  uk: '1637',
+  dive: '1655',
+  discj: '1659',
+  papas: '1650',
+  moai: '1653',
+  compo: '1658',
+  jaguar: '1651',
+  gig: '1654',
+  rec: '1645',
+  house: '1646',
+  mosh: '1648',
+  boogie: '1647',
+  pankuta: '0572',
+  goen: '0576',
+  anzen: '0578',
+  dobby: '0585',
+  kairo: '0594',
+  kinoko: '0598',
+  francois: '0599',
+  tsunokkov: '0601',
+  usakkov: '0602',
+  bellet: '0603',
+  bellet2: '06031',
+  doha: '0620',
+  shiki: '1811',
+  shiryu: '0591',
+  hareji: '1380',
+  zangiri: '1381',
 };
 
 function CardArt({ defId }) {
@@ -178,6 +252,9 @@ function DeckSelect({ onStart, onBack, editOnly = false }) {
     { id: 'standard', name: 'スタンダードデッキ', cards: STANDARD_DECK, allowedCards: STANDARD_CARD_POOL, fixed: true },
     { id: 'villains', name: 'ヴィランズデッキ', cards: VILLAINS_DECK, allowedCards: VILLAINS_CARD_POOL, fixed: true },
     { id: 'revolutionary', name: '革命軍デッキ', cards: REVOLUTIONARY_DECK, allowedCards: REVOLUTIONARY_CARD_POOL, fixed: true },
+    { id: 'world', name: '世界会議デッキ', cards: WORLD_DECK, allowedCards: WORLD_CARD_POOL, fixed: true },
+    { id: 'kid', name: 'キッド海賊団デッキ', cards: KID_DECK, allowedCards: KID_CARD_POOL, fixed: true },
+    { id: 'prisoner', name: '囚人デッキ', cards: PRISONER_DECK, allowedCards: PRISONER_CARD_POOL, fixed: true },
     ...custom,
   ];
   const current = decks.find((d) => d.id === selected) || decks[0];
@@ -192,7 +269,7 @@ function DeckSelect({ onStart, onBack, editOnly = false }) {
       id: deck.fixed ? null : deck.id,
       name: deck.fixed ? `${deck.name}のコピー` : deck.name,
       cards: { ...deck.cards },
-      allowedCards: deck.allowedCards ? [...deck.allowedCards] : Object.keys(CARD_DEFS),
+      allowedCards: deck.allowedCards ? [...deck.allowedCards] : ALL_DECK_CARDS,
     });
   };
 
@@ -300,7 +377,7 @@ function DeckSelect({ onStart, onBack, editOnly = false }) {
           <button className="btn" onClick={() => startEdit(current)}>
             {current.fixed ? 'コピーして編集' : '編集'}
           </button>
-          <button className="btn" onClick={() => startEdit({ name: '新しいデッキ', cards: {}, fixed: true, allowedCards: Object.keys(CARD_DEFS) })}>完全新規作成</button>
+          <button className="btn" onClick={() => startEdit({ name: '新しいデッキ', cards: {}, fixed: true, allowedCards: ALL_DECK_CARDS })}>完全新規作成</button>
           {!current.fixed && (
             <button className="btn ghost" onClick={() => removeDeck(current)}>削除</button>
           )}
@@ -576,7 +653,7 @@ export default function TcgPage() {
 
   const { me, opp } = g;
   const left = pending ? Math.max(0, Math.ceil((pending.deadline - now) / 1000)) : 0;
-  const pct = pending ? Math.max(0, Math.min(100, ((pending.deadline - now) / 40000) * 100)) : 0;
+  const pct = pending ? Math.max(0, Math.min(100, ((pending.deadline - now) / (pending.total || 40000)) * 100)) : 0;
 
   const chooseOptions = pending?.kind === 'choose' && pending.mine ? pending.options : [];
   const blockOptions = pending?.kind === 'block' && pending.mine ? pending.options : [];
@@ -861,7 +938,7 @@ export default function TcgPage() {
               {selectedChar.hasAbility && selectedChar.defId !== 'mugicha' && (
                 <button
                   className="btn"
-                  disabled={selectedChar.abilityUsed || (selectedChar.defId === 'beloBetty' && selectedChar.rested)}
+                  disabled={selectedChar.abilityUsed || ((selectedChar.defId === 'beloBetty' || selectedChar.needsRest) && selectedChar.rested)}
                   onClick={() => emit('tcg:ability', { charId: selectedChar.id })}
                 >
                   {selectedChar.abilityUsed
@@ -910,6 +987,9 @@ export default function TcgPage() {
                 </button>
               ))}
             </div>
+            {pending.skippable && (
+              <button type="button" className="btn small" onClick={() => discardCard(0)}>選ばない</button>
+            )}
             <div className="q-left">残り {left} 秒</div>
           </div>
         </div>

@@ -158,6 +158,48 @@ function broadcastFreeRoom(room) {
 }
 
 // ------------------------------
+// 再接続したプレイヤーを元の席へ戻す
+// ------------------------------
+
+function rebindFreeRoomPlayer(room, player, socket) {
+  const oldSocketId = player.socketId;
+
+  if (oldSocketId !== socket.id) {
+    // 部屋内の並び順を保ったまま socketId を差し替える
+    const entries = Array.from(room.players.entries()).map(
+      ([key, value]) =>
+        value === player ? [socket.id, value] : [key, value]
+    );
+    room.players = new Map(entries);
+    player.socketId = socket.id;
+
+    if (room.hostSocketId === oldSocketId) {
+      room.hostSocketId = socket.id;
+    }
+
+    const oldSocket = io.sockets.sockets.get(oldSocketId);
+    if (oldSocket) {
+      oldSocket.leave(`free:${room.roomId}`);
+    }
+
+    saikoroMigrateSocket(room.roomId, oldSocketId, socket.id);
+  }
+
+  socket.join(`free:${room.roomId}`);
+  log("free room player rejoined:", room.roomId, player.name);
+  broadcastFreeRoom(room);
+
+  // 看板たぬきが進行中なら、ゲーム画面へ戻す
+  const game = saikoroGames.get(String(room.roomId));
+  if (room.selectedGame === "saikoro" && game?.started) {
+    socket.emit("free:game-start", {
+      roomId: room.roomId,
+      gameId: room.selectedGame,
+    });
+  }
+}
+
+// ------------------------------
 // フリーマッチ部屋から削除
 // ------------------------------
 
@@ -1232,6 +1274,26 @@ const room = {
             message:
               "その部屋は見つかりませんでした。",
           }
+        );
+
+        return;
+      }
+
+      // 同じユーザーIDの人が席を持っている場合は、その席へ復帰させる
+      const returningPlayer =
+        userId != null && userId !== ""
+          ? Array.from(room.players.values()).find(
+              (item) =>
+                item.userId != null &&
+                String(item.userId) === String(userId)
+            )
+          : null;
+
+      if (returningPlayer) {
+        rebindFreeRoomPlayer(
+          room,
+          returningPlayer,
+          socket
         );
 
         return;
@@ -11238,6 +11300,236 @@ function saikoroNextTurn(
 
 
 // ============================================================
+// 看板たぬき：進行保証（切断・遅延があってもゲームを止めない）
+// ============================================================
+
+function saikoroIsOnline(player) {
+  return Boolean(
+    player?.socketId && io.sockets.sockets.has(String(player.socketId))
+  );
+}
+
+// 再接続でSocket IDが変わったとき、ゲーム内のSocket ID参照を付け替える
+function saikoroMigrateGameKeys(game, oldId, newId) {
+  if (!game || !oldId || !newId || oldId === newId) return;
+
+  for (const [key, value] of Object.entries(game)) {
+    if (value instanceof Set) {
+      if (value.has(oldId)) {
+        value.delete(oldId);
+        value.add(newId);
+      }
+      const prefixed = String(oldId);
+      if (value.has(prefixed)) {
+        value.delete(prefixed);
+        value.add(String(newId));
+      }
+    } else if (
+      value &&
+      typeof value === 'object' &&
+      !Array.isArray(value) &&
+      Object.prototype.hasOwnProperty.call(value, oldId)
+    ) {
+      value[newId] = value[oldId];
+      delete value[oldId];
+      if (key === 'players' && value[newId]) {
+        value[newId].socketId = newId;
+      }
+    }
+  }
+
+  if (game.answerTarget?.socketId === oldId) {
+    game.answerTarget.socketId = newId;
+  }
+}
+
+function saikoroMigrateSocket(roomId, oldId, newId) {
+  const game = saikoroGames.get(String(roomId));
+  saikoroMigrateGameKeys(game, oldId, newId);
+}
+
+// 再抽選結果が全員分そろったら資源を確定する
+function saikoroTryFinalizeRerolls(game) {
+  const players = saikoroGetPlayers(game);
+  if (
+    game.phase !== 'action' ||
+    game.resourcesReady ||
+    !players.length ||
+    !players.every((item) => game.rerollResults[item.socketId])
+  ) {
+    return;
+  }
+
+  game.diceResults = { ...game.rerollResults };
+  game.diceResourceAwards = {};
+  game.smileActivatedSeats = [];
+  for (const item of players) {
+    const gamePlayer = saikoroGetGamePlayer(game, item.socketId);
+    if (!gamePlayer) continue;
+    const awards = saikoroApplyDiceResult(
+      gamePlayer,
+      game.diceResults[item.socketId]
+    );
+    game.diceResourceAwards[item.socketId] = awards;
+
+    const smileCount = (gamePlayer.cards || []).filter(
+      (card) => card?.id === 'smile'
+    ).length;
+    if (
+      smileCount > 0 &&
+      Math.random() < Math.min(smileCount * 0.1, 1)
+    ) {
+      const totalAwards = {};
+      for (const dieAwards of Object.values(awards || {})) {
+        for (const [type, amount] of Object.entries(dieAwards || {})) {
+          totalAwards[type] =
+            Number(totalAwards[type] ?? 0) + Number(amount || 0);
+        }
+      }
+
+      for (const [type, amount] of Object.entries(totalAwards)) {
+        saikoroAddResource(gamePlayer, type, amount * 2);
+      }
+
+      game.smileActivatedSeats.push(Number(gamePlayer.seat));
+      game.actionHistory ||= [];
+      game.actionHistory.push({
+        id: `${Date.now()}-${Math.random()}`,
+        text: `${gamePlayer.name}のSMILEが発動し、出目の資源を3倍獲得`,
+      });
+      game.actionHistory = game.actionHistory.slice(-100);
+    }
+  }
+
+  game.resourcesReady = true;
+  saikoroBroadcastState(game);
+}
+
+function saikoroEnterAnswerPhase(game, playerName, seat) {
+  game.phase = 'answer';
+  game.answerTarget = null;
+
+  game.actionHistory ||= [];
+  game.actionHistory.push({
+    id: `${Date.now()}-${Math.random()}`,
+    text: `${playerName}が回答フェーズへ進みました`,
+  });
+  game.actionHistory = game.actionHistory.slice(-100);
+
+  game.message = `プレイヤー${Number(seat) + 1}の回答フェーズです。`;
+  saikoroBroadcastState(game);
+}
+
+const SAIKORO_ABANDON_MS = 30 * 60 * 1000;
+
+function saikoroWatchGame(roomId, game, now) {
+  const room = freeRooms.get(roomId);
+  if (!room) {
+    saikoroGames.delete(roomId);
+    return;
+  }
+
+  if (!game.started || game.phase === 'waiting' || game.phase === 'result') {
+    return;
+  }
+
+  const players = saikoroGetPlayers(game);
+  if (players.length !== SAIKORO_MAX_PLAYERS) return;
+
+  // 全員が長時間いなければ部屋ごと片付ける
+  if (players.every((item) => !saikoroIsOnline(item))) {
+    game.allOfflineSince ||= now;
+    if (now - game.allOfflineSince > SAIKORO_ABANDON_MS) {
+      saikoroGames.delete(roomId);
+      freeRooms.delete(roomId);
+    }
+    return;
+  }
+  game.allOfflineSince = null;
+
+  const key = [
+    game.round,
+    game.turnPlayer,
+    game.phase,
+    game.resourcesReady === true,
+    game.effectsReady === true,
+    game.answerTarget ? 1 : 0,
+  ].join(':');
+  if (game.watchKey !== key) {
+    game.watchKey = key;
+    game.watchSince = now;
+    return;
+  }
+  const elapsed = now - game.watchSince;
+
+  const turnPlayer = players.find(
+    (item) => Number(item.saikoroSeat) === Number(game.turnPlayer)
+  );
+  const turnOffline = !saikoroIsOnline(turnPlayer);
+
+  if (game.phase === 'dice') {
+    if (elapsed > (turnOffline ? 3000 : 90000)) {
+      saikoroRollAllPlayers(game);
+    }
+    return;
+  }
+
+  if (game.phase === 'action') {
+    if (!game.resourcesReady) {
+      const missing = players.filter((item) => !game.rerollResults?.[item.socketId]);
+      const limit = missing.every((item) => !saikoroIsOnline(item)) ? 2500 : 10000;
+      if (elapsed > limit) {
+        game.rerollResults ||= {};
+        for (const item of missing) {
+          const rolled = game.diceResults?.[item.socketId];
+          game.rerollResults[item.socketId] = {
+            a: rolled?.a ?? null,
+            b: rolled?.b ?? null,
+          };
+        }
+        saikoroTryFinalizeRerolls(game);
+      }
+      return;
+    }
+
+    if (!game.effectsReady) {
+      const pending = players.filter((item) => !game.effectsFinished?.has(item.socketId));
+      const limit = pending.every((item) => !saikoroIsOnline(item)) ? 2500 : 10000;
+      if (elapsed > limit) {
+        game.effectsFinished ||= new Set();
+        for (const item of players) game.effectsFinished.add(item.socketId);
+        game.effectsReady = true;
+        saikoroBroadcastState(game);
+      }
+      return;
+    }
+
+    if (elapsed > (turnOffline ? 5000 : 300000)) {
+      saikoroEnterAnswerPhase(game, turnPlayer?.name || 'プレイヤー', game.turnPlayer);
+    }
+    return;
+  }
+
+  if (game.phase === 'answer') {
+    if (elapsed > (turnOffline ? 5000 : 180000)) {
+      saikoroNextTurn(game);
+    }
+  }
+}
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [roomId, game] of Array.from(saikoroGames.entries())) {
+    try {
+      saikoroWatchGame(roomId, game, now);
+    } catch (error) {
+      console.error('[saikoro] watchdog error', error);
+    }
+  }
+}, 1000);
+
+
+// ============================================================
 // 看板たぬき：Socket.IO
 // ============================================================
 
@@ -11315,16 +11607,16 @@ io.on(
 
         let playerIndex = -1;
 
-        // ロビーで確定したSocket IDを最優先で使う。
-        // 指定されている場合は、別の同一ユーザーの席へ
-        // フォールバックしない。
+        // ロビーで確定したSocket IDを優先して使う。
         if (lobbySocketId) {
           playerIndex = freePlayers.findIndex(
             (item) =>
               String(item.socketId) === lobbySocketId
           );
-        } else {
-          // playerSocketIdがない旧画面・再接続用の処理
+        }
+
+        // playerSocketIdがない・古い（再接続でSocketが変わった）場合
+        if (playerIndex < 0) {
           playerIndex = freePlayers.findIndex(
             (item) =>
               String(item.socketId) === String(socket.id)
@@ -11478,6 +11770,10 @@ readyPlayers: new Set(),
          * 再接続時にゲーム内データを
          * 新しいSocketへ移す。
          */
+        if (oldSocketId && oldSocketId !== socket.id) {
+          saikoroMigrateGameKeys(game, oldSocketId, socket.id);
+        }
+
         if (
           oldSocketId &&
           oldSocketId !==
@@ -12764,53 +13060,7 @@ console.log('[saikoro] start-request受信', {
           b: results.b ?? null,
         };
 
-        const players = saikoroGetPlayers(game);
-        if (!players.every((item) => game.rerollResults[item.socketId])) {
-          return;
-        }
-
-        game.diceResults = { ...game.rerollResults };
-        game.diceResourceAwards = {};
-        game.smileActivatedSeats = [];
-        for (const item of players) {
-          const gamePlayer = saikoroGetGamePlayer(game, item.socketId);
-          const awards = saikoroApplyDiceResult(
-            gamePlayer,
-            game.diceResults[item.socketId]
-          );
-          game.diceResourceAwards[item.socketId] = awards;
-
-          const smileCount = (gamePlayer.cards || []).filter(
-            (card) => card?.id === 'smile'
-          ).length;
-          if (
-            smileCount > 0 &&
-            Math.random() < Math.min(smileCount * 0.1, 1)
-          ) {
-            const totalAwards = {};
-            for (const dieAwards of Object.values(awards || {})) {
-              for (const [type, amount] of Object.entries(dieAwards || {})) {
-                totalAwards[type] =
-                  Number(totalAwards[type] ?? 0) + Number(amount || 0);
-              }
-            }
-
-            for (const [type, amount] of Object.entries(totalAwards)) {
-              saikoroAddResource(gamePlayer, type, amount * 2);
-            }
-
-            game.smileActivatedSeats.push(Number(gamePlayer.seat));
-            game.actionHistory ||= [];
-            game.actionHistory.push({
-              id: `${Date.now()}-${Math.random()}`,
-              text: `${gamePlayer.name}のSMILEが発動し、出目の資源を3倍獲得`,
-            });
-            game.actionHistory = game.actionHistory.slice(-100);
-          }
-        }
-
-        game.resourcesReady = true;
-        saikoroBroadcastState(game);
+        saikoroTryFinalizeRerolls(game);
       }
     );
 
@@ -12924,27 +13174,7 @@ console.log('[saikoro] start-request受信', {
           return;
         }
 
-        game.phase =
-          'answer';
-
-        game.answerTarget =
-          null;
-
-        game.actionHistory ||= [];
-        game.actionHistory.push({
-          id: `${Date.now()}-${Math.random()}`,
-          text: `${gamePlayer.name}が回答フェーズへ進みました`,
-        });
-        game.actionHistory = game.actionHistory.slice(-100);
-
-        game.message =
-          `プレイヤー${
-            gamePlayer.seat + 1
-          }の回答フェーズです。`;
-
-        saikoroBroadcastState(
-          game
-        );
+        saikoroEnterAnswerPhase(game, gamePlayer.name, gamePlayer.seat);
       }
     );
 

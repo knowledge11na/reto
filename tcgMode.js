@@ -64,6 +64,14 @@ function askDiscard(game, owner, title, cb, drawAfter = 2) {
 
 function resolveDiscard(game, pending, cardId) {
   const player = game.players[pending.owner];
+  if (pending.source === 'trash') {
+    const picked = cardId ? pending.options.find((o) => o.id === cardId) : null;
+    if (cardId && !picked) fail('そのカードは選べません。');
+    clearTimeout(game.timer);
+    game.pending = null;
+    pending.cb(picked ? { id: picked.id, defId: picked.defId } : null);
+    return;
+  }
   const card = player.hand.find((c) => c.id === cardId);
   if (!card || !pending.options.some((option) => option.id === cardId)) fail('そのカードは捨てられません。');
   clearTimeout(game.timer);
@@ -245,7 +253,7 @@ function bounce(game, found) {
   const { pi, c } = found;
   const P = game.players[pi];
   P.board = P.board.filter((x) => x.id !== c.id);
-  P.hand.push({ id: c.id, defId: c.defId });
+  P.hand.push({ id: c.id, defId: baseId(c.defId) });
   addLog(game, `${CARD_DEFS[c.defId].name} が手札に戻った。`);
 }
 
@@ -268,6 +276,20 @@ function hasOnBoard(game, pi, ...defIds) {
 function chooseOpp(game, owner, title, filter, cb) {
   const options = game.players[1 - owner].board.filter(filter).map((x) => x.id);
   askChoose(game, owner, title, options, (id) => cb(id ? findChar(game, id) : null));
+}
+
+function pickAlly(game, owner, title, filter, cb) {
+  const options = game.players[owner].board.filter(filter).map((x) => x.id);
+  askChoose(game, owner, title, options, (id) => {
+    const t = id && findChar(game, id);
+    if (t) cb(t);
+  });
+}
+
+function addTurnTemp(game, owner, c, amount) {
+  c.turnTemp += amount;
+  addLog(game, `${CARD_DEFS[c.defId].name} のパワーがこのターン中${amount > 0 ? '+' : ''}${amount}（現在 ${currentPower(c)}）。`);
+  if (currentPower(c) <= 0) destroy(game, owner, c);
 }
 
 function checkWorldWin(game, pi) {
@@ -328,6 +350,11 @@ function startTurn(game, pi) {
   addLog(game, `${game.seats[pi].name} のターン（コスト ${P.maxCost}）${skipDraw ? '※先攻は最初のターンはドローなし' : ''}`);
 }
 
+const baseId = (defId) => CARD_DEFS[defId].revertTo || defId;
+
+// バトル・効果で破壊されたとき（破壊時効果）。場の押し出し交換は破壊ではない
+const ON_DESTROY = new Set(['pankuta', 'goen', 'anzen']);
+
 function destroy(game, pi, c) {
   const turnNo = game.players[0].turns + game.players[1].turns;
   if (c.indestructibleThroughTurn >= turnNo) {
@@ -336,9 +363,100 @@ function destroy(game, pi, c) {
   }
   const P = game.players[pi];
   P.board = P.board.filter((x) => x.id !== c.id);
-  P.trash.push({ id: c.id, defId: c.defId });
+  P.trash.push({ id: c.id, defId: baseId(c.defId) });
   addLog(game, `${CARD_DEFS[c.defId].name} が破壊された。`);
+  if (ON_DESTROY.has(c.defId)) {
+    (game.afterQueue ||= []).push(() => runDestroyTrigger(game, pi, c));
+  }
   return true;
+}
+
+function flushAfterQueue(game) {
+  while (game.phase === 'playing' && !game.pending && game.afterQueue?.length) {
+    game.afterQueue.shift()();
+  }
+}
+
+function destroyOwn(game, pi, title, filter, cb) {
+  const options = game.players[pi].board.filter(filter).map((x) => x.id);
+  askChoose(game, pi, title, options, (id) => {
+    const t = id && findChar(game, id);
+    cb(t ? destroy(game, t.pi, t.c) : false);
+  });
+}
+
+// トラッシュからカードを1枚選ぶ（選ばない場合は null）
+function pickTrash(game, owner, title, filter, cb) {
+  const options = game.players[owner].trash
+    .filter((t) => filter(t))
+    .map(({ id, defId }) => ({ id, defId, name: CARD_DEFS[defId].name }));
+  if (!options.length) {
+    addLog(game, '対象になるトラッシュのカードがなかった。');
+    cb(null);
+    return;
+  }
+  const pending = {
+    kind: 'discard',
+    source: 'trash',
+    skippable: true,
+    owner,
+    title,
+    options,
+    deadline: Date.now() + QUIZ_MS,
+    drawAfter: 0,
+    cb,
+  };
+  game.pending = pending;
+  armTimer(game, pending, () => {
+    game.pending = null;
+    cb(null);
+  });
+}
+
+function placeFromTrash(game, pi, card) {
+  const P = game.players[pi];
+  const slot = [0, 1, 2, 3, 4].find((s) => !P.board.some((c) => c.slot === s));
+  if (slot === undefined) {
+    addLog(game, `場が埋まっているため ${CARD_DEFS[card.defId].name} を出せなかった。`);
+    return;
+  }
+  P.trash = P.trash.filter((t) => t.id !== card.id);
+  P.board.push(newChar(card, slot, P));
+  addLog(game, `${game.seats[pi].name} はトラッシュの ${CARD_DEFS[card.defId].name} を場に出した。`);
+}
+
+function trashToHand(game, pi, card) {
+  const P = game.players[pi];
+  P.trash = P.trash.filter((t) => t.id !== card.id);
+  P.hand.push({ id: card.id, defId: card.defId });
+  addLog(game, `${game.seats[pi].name} はトラッシュの ${CARD_DEFS[card.defId].name} を手札に加えた。`);
+}
+
+function runDestroyTrigger(game, pi, c) {
+  const name = CARD_DEFS[c.defId].name;
+  switch (c.defId) {
+    case 'pankuta':
+      ask(game, pi, ['image'], `${name}：破壊時、正解で相手のライフに2ダメージ`, (ok) => {
+        if (ok) damageLife(game, 1 - pi, 2);
+      });
+      return;
+    case 'goen':
+      ask(game, pi, ['hobby', 'hate', 'season'], `${name}：破壊時、正解でカードを2枚引く`, (ok) => {
+        if (!ok) return;
+        const n = draw(game, pi, 2);
+        addLog(game, `${game.seats[pi].name} はカードを${n}枚引いた。`);
+      });
+      return;
+    case 'anzen':
+      ask(game, pi, ['between'], `${name}：破壊時、正解でトラッシュからコスト3以下のキャラを場に出す`, (ok) => {
+        if (!ok) return;
+        pickTrash(game, pi, '場に出すキャラ（コスト3以下）を選んでください', (t) => CARD_DEFS[t.defId].cost <= 3, (card) => {
+          if (card) placeFromTrash(game, pi, card);
+        });
+      });
+      return;
+    default:
+  }
 }
 
 function checkWin(game) {
@@ -506,17 +624,39 @@ function resolveBattle(game, att, attOwner, def, defOwner, noKill = false) {
   const dn = CARD_DEFS[def.defId].name;
   addLog(game, `バトル：${an}(${a}) VS ${dn}(${d})`);
 
+  const lost = [];
+  const kill = (owner, c, other, otherOwner) => {
+    if (destroy(game, owner, c)) lost.push({ c, owner, other, otherOwner });
+  };
+
   if (a > d) {
-    destroy(game, defOwner, def);
+    kill(defOwner, def, att, attOwner);
   } else if (a < d) {
-    if (!noKill) destroy(game, attOwner, att);
+    if (!noKill) kill(attOwner, att, def, defOwner);
     else addLog(game, `${dn} は相手を破壊できない。`);
   } else {
-    destroy(game, defOwner, def);
-    if (!noKill) destroy(game, attOwner, att);
+    kill(defOwner, def, att, attOwner);
+    if (!noKill) kill(attOwner, att, def, defOwner);
   }
   att.temp = 0;
   def.temp = 0;
+  game.combat = null;
+  diveTriggers(game, lost);
+}
+
+function diveTriggers(game, lost) {
+  const next = lost.find((l) => l.c.defId === 'dive');
+  if (!next || game.phase !== 'playing') return;
+  const rest = lost.filter((l) => l !== next);
+  ask(game, next.owner, ['hint'], 'ダイブ：正解でバトルした相手キャラを破壊', (ok) => {
+    if (ok && findChar(game, next.other.id)) destroy(game, next.otherOwner, next.other);
+    diveTriggers(game, rest);
+  });
+}
+
+function failAttack(game, att) {
+  addLog(game, `${CARD_DEFS[att.defId].name} の攻撃は失敗した。`);
+  att.temp = 0;
   game.combat = null;
 }
 
@@ -525,6 +665,24 @@ function resolveDirect(game, att, attOwner) {
   const dmg = power(att);
   att.temp = 0;
   damageLife(game, 1 - attOwner, dmg);
+}
+
+// ブロックされなかった場合の攻撃解決（ライフ直接 or 攻撃対象キャラとのバトル）
+function resolveUnblocked(game, att, attOwner) {
+  const cb = game.combat;
+  if (!cb) return;
+  if (cb.target === 'player') {
+    resolveDirect(game, att, attOwner);
+    return;
+  }
+  const hit = findChar(game, cb.target);
+  if (!hit) {
+    game.combat = null;
+    return;
+  }
+  defendTrigger(game, hit.pi, hit.c, 'defend', (noKill) => {
+    resolveBattle(game, att, attOwner, hit.c, hit.pi, noKill);
+  });
 }
 
 function afterAttackTriggers(game) {
@@ -539,43 +697,67 @@ function afterAttackTriggers(game) {
   const attOwner = found.pi;
   const defOwner = 1 - attOwner;
 
-  if (cb.target === 'player') {
-    const blockers = cb.unblockable
-      ? []
-      : game.players[defOwner].board.filter((c) => CARD_DEFS[c.defId].blocker && !c.rested);
-    if (!blockers.length) {
-      resolveDirect(game, att, attOwner);
-      return;
-    }
-    const pending = {
-      kind: 'block',
-      owner: defOwner,
-      options: blockers.map((c) => c.id),
-      attId: att.id,
-      deadline: Date.now() + QUIZ_MS,
-    };
-    game.pending = pending;
-    armTimer(game, pending, () => {
-      game.pending = null;
-      addLog(game, 'ブロックしなかった。');
-      resolveDirect(game, att, attOwner);
-    });
+  // ライフ攻撃でもキャラ攻撃でも、ダウンしていないブロッカー（攻撃対象以外）でブロックできる
+  const blockers = cb.unblockable
+    ? []
+    : game.players[defOwner].board.filter(
+        (c) => CARD_DEFS[c.defId].blocker && !c.rested && c.id !== cb.target
+      );
+  if (!blockers.length) {
+    resolveUnblocked(game, att, attOwner);
     return;
   }
-
-  const hit = findChar(game, cb.target);
-  if (!hit) {
-    game.combat = null;
-    return;
-  }
-  defendTrigger(game, hit.pi, hit.c, 'defend', (noKill) => {
-    resolveBattle(game, att, attOwner, hit.c, hit.pi, noKill);
+  const pending = {
+    kind: 'block',
+    owner: defOwner,
+    options: blockers.map((c) => c.id),
+    attId: att.id,
+    deadline: Date.now() + QUIZ_MS,
+  };
+  game.pending = pending;
+  armTimer(game, pending, () => {
+    game.pending = null;
+    addLog(game, 'ブロックしなかった。');
+    resolveUnblocked(game, att, attOwner);
   });
 }
 
 // 防御側（攻撃された／ブロックした）のカード効果
 function defendTrigger(game, owner, c, role, cont) {
   switch (c.defId) {
+    case 'kinoko':
+      if (role !== 'block') break;
+      ask(game, owner, ['ship'], 'キノコ：正解で味方1体を破壊し、カードを2枚引く', (ok) => {
+        if (!ok) {
+          cont(false);
+          return;
+        }
+        destroyOwn(game, owner, '破壊する味方キャラを選んでください', () => true, (done) => {
+          if (done) {
+            const n = draw(game, owner, 2);
+            addLog(game, `${game.seats[owner].name} はカードを${n}枚引いた。`);
+          }
+          cont(false);
+        });
+      });
+      return;
+    case 'doha':
+      if (role !== 'block') break;
+      ask(game, owner, ['hobby', 'hate', 'season'], 'ドーハ：正解で味方1体を破壊してもよい。破壊したら相手キャラ全体パワー-1', (ok) => {
+        if (!ok) {
+          cont(false);
+          return;
+        }
+        destroyOwn(game, owner, '破壊する味方キャラを選んでください（スキップ可）', () => true, (done) => {
+          if (done) {
+            const opp = 1 - owner;
+            const expires = { owner: opp, turn: game.players[opp].turns };
+            for (const t of [...game.players[opp].board]) applyPowerDebuff(game, owner, c.id, t.id, 1, expires);
+          }
+          cont(false);
+        });
+      });
+      return;
     case 'hack':
       ask(game, owner, ['fish'], 'ハック：正解でパワー+1、不正解でパワー-1', (ok) => {
         modifyTempPower(game, owner, c, ok ? 1 : -1);
@@ -604,7 +786,7 @@ function defendTrigger(game, owner, c, role, cont) {
       return;
     case 'chappy':
       if (role !== 'block') break;
-      ask(game, owner, ['before'], 'トニートニー・チョッパー：正解でパワー+3（相手を破壊できない）', (ok) => {
+      ask(game, owner, ['direction'], 'トニートニー・チョッパー：正解でパワー+3（相手を破壊できない）', (ok) => {
         if (ok) c.temp += 3;
         cont(ok);
       });
@@ -662,6 +844,25 @@ function defendTrigger(game, owner, c, role, cont) {
         });
       });
       return;
+    case 'pump':
+      if (role !== 'block') break;
+      ask(game, owner, ['subBetween'], 'ポンプ：正解で相手のライフ耐久力に2ダメージ', (ok) => {
+        if (!ok) {
+          cont(false);
+          return;
+        }
+        damageLife(game, 1 - owner, 2, () => {
+          if (game.phase === 'playing') cont(false);
+        });
+      });
+      return;
+    case 'gig':
+      if (role !== 'block') break;
+      askSeq(game, owner, [['yobikata'], ['direction']], 'ギグ：1問でも不正解ならこのキャラを破壊', (res) => {
+        if (!res.every(Boolean)) destroy(game, owner, c);
+        cont(false);
+      });
+      return;
     case 'dalton':
       if (role !== 'block') break;
       ask(game, owner, ['food'], 'ドルトン：正解でパワー+2', (ok) => {
@@ -682,6 +883,153 @@ function defendTrigger(game, owner, c, role, cont) {
 function attackTriggers(game, attOwner, att, cont) {
   const cb = game.combat;
   switch (att.defId) {
+    case 'dobby':
+      ask(game, attOwner, ['wazaKanji'], 'ドビー：正解で味方1体を破壊してもよい。破壊したら相手キャラ1体のパワー-2（永続）', (ok) => {
+        if (!ok) {
+          cont();
+          return;
+        }
+        destroyOwn(game, attOwner, '破壊する味方キャラを選んでください（スキップ可）', () => true, (done) => {
+          if (!done) {
+            cont();
+            return;
+          }
+          chooseOpp(game, attOwner, 'パワー-2（永続）にする相手キャラを選んでください', () => true, (t) => {
+            if (t) applyPowerDebuff(game, attOwner, att.id, t.c.id, 2);
+            cont();
+          });
+        });
+      });
+      return;
+    case 'francois':
+      ask(game, attOwner, ['personality'], 'フランソワ：正解でカードを3枚引き、2枚捨てる', (ok) => {
+        if (!ok) {
+          cont();
+          return;
+        }
+        const n = draw(game, attOwner, 3);
+        addLog(game, `${game.seats[attOwner].name} はカードを${n}枚引いた。`);
+        askDiscard(game, attOwner, '捨てる手札を選んでください（1/2）', () => {
+          askDiscard(game, attOwner, '捨てる手札を選んでください（2/2）', () => cont(), 0);
+        }, 0);
+      });
+      return;
+    case 'shiki':
+      askSeq(game, attOwner, [['wazaKanji'], ['before']], 'シキ：両方正解で相手のパワー5以下のキャラを破壊（1問でも不正解で攻撃失敗）', (res) => {
+        if (!res.every(Boolean)) {
+          failAttack(game, att);
+          return;
+        }
+        chooseOpp(game, attOwner, '破壊する相手キャラ（パワー5以下）を選んでください', (x) => currentPower(x) <= 5, (t) => {
+          if (t) destroy(game, t.pi, t.c);
+          cont();
+        });
+      });
+      return;
+    case 'kid':
+      askSeq(game, attOwner, [['wazaKanji'], ['wazaKanji']], 'キッド：両方正解で相手キャラ1体を破壊（1問でも不正解で攻撃失敗）', (res) => {
+        if (!res.every(Boolean)) {
+          failAttack(game, att);
+          return;
+        }
+        chooseOpp(game, attOwner, '破壊する相手キャラを選んでください', () => true, (t) => {
+          if (t) destroy(game, t.pi, t.c);
+          cont();
+        });
+      });
+      return;
+    case 'killer':
+      ask(game, attOwner, ['subKanji'], 'キラー：不正解で攻撃失敗', (ok) => {
+        if (ok) cont();
+        else failAttack(game, att);
+      });
+      return;
+    case 'heat':
+      ask(game, attOwner, ['between'], 'ヒート：正解で相手のパワー3以下のキャラを破壊（不正解で攻撃失敗）', (ok) => {
+        if (!ok) {
+          failAttack(game, att);
+          return;
+        }
+        chooseOpp(game, attOwner, '破壊する相手キャラ（パワー3以下）を選んでください', (x) => currentPower(x) <= 3, (t) => {
+          if (t) destroy(game, t.pi, t.c);
+          cont();
+        });
+      });
+      return;
+    case 'wire':
+      ask(game, attOwner, ['hobby', 'hate', 'season'], 'ワイヤー：正解で相手キャラ1体をダウン（不正解で攻撃失敗）', (ok) => {
+        if (!ok) {
+          failAttack(game, att);
+          return;
+        }
+        chooseOpp(game, attOwner, 'ダウンさせる相手キャラを選んでください', (x) => !x.rested, (t) => {
+          if (t) {
+            t.c.rested = true;
+            addLog(game, `${CARD_DEFS[t.c.defId].name} がダウンした。`);
+          }
+          cont();
+        });
+      });
+      return;
+    case 'emma':
+      ask(game, attOwner, ['ship'], 'エマ：正解で相手のパワー5以下のキャラを手札に戻す（不正解で攻撃失敗）', (ok) => {
+        if (!ok) {
+          failAttack(game, att);
+          return;
+        }
+        chooseOpp(game, attOwner, '手札に戻す相手キャラ（パワー5以下）を選んでください', (x) => currentPower(x) <= 5, (t) => {
+          if (t) bounce(game, t);
+          cont();
+        });
+      });
+      return;
+    case 'bubblegum':
+      ask(game, attOwner, ['image'], 'バブルガム：不正解で攻撃失敗', (ok) => {
+        if (ok) cont();
+        else failAttack(game, att);
+      });
+      return;
+    case 'uk':
+      ask(game, attOwner, ['age', 'height', 'food', 'blood'], 'UK：正解でパワー+2（不正解で攻撃失敗＆破壊）', (ok) => {
+        if (ok) {
+          att.temp += 2;
+          cont();
+          return;
+        }
+        failAttack(game, att);
+        destroy(game, attOwner, att);
+      });
+      return;
+    case 'compo':
+      ask(game, attOwner, ['between'], 'コンポ：不正解でこのキャラを破壊', (ok) => {
+        if (ok) {
+          cont();
+          return;
+        }
+        failAttack(game, att);
+        destroy(game, attOwner, att);
+      });
+      return;
+    case 'mosh':
+      ask(game, attOwner, ['before'], 'モッシュ：不正解で攻撃失敗＆破壊', (ok) => {
+        if (ok) {
+          cont();
+          return;
+        }
+        failAttack(game, att);
+        destroy(game, attOwner, att);
+      });
+      return;
+    case 'gig':
+      askSeq(game, attOwner, [['yobikata'], ['direction']], 'ギグ：1問でも不正解なら攻撃失敗＆破壊', (res) => {
+        if (res.every(Boolean)) {
+          cont();
+          return;
+        }
+        failAttack(game, att);
+        destroy(game, attOwner, att);
+      });
+      return;
     case 'elizabello':
       askSeq(game, attOwner, [['wazaKanji'], ['hint']], 'エリザベローⅡ世：両方正解で相手キャラ1体を破壊', (res) => {
         if (!res.every(Boolean)) {
@@ -712,7 +1060,7 @@ function attackTriggers(game, attOwner, att, cont) {
       });
       return;
     case 'lindbergh':
-      askSeq(game, attOwner, [['before'], ['before']], 'リンドバーグ：正解数に応じて相手キャラを破壊', (res) => {
+      askSeq(game, attOwner, [['yobikata'], ['yobikata']], 'リンドバーグ：正解数に応じて相手キャラを破壊', (res) => {
         const correct = res.filter(Boolean).length;
         const maxCost = correct >= 2 ? 4 : correct === 1 ? 2 : 0;
         if (!maxCost) {
@@ -746,7 +1094,7 @@ function attackTriggers(game, attOwner, att, cont) {
       });
       return;
     case 'gambo':
-      ask(game, attOwner, ['before'], 'ギャンボ：正解でリンドバーグを1体回復', (ok) => {
+      ask(game, attOwner, ['yobikata'], 'ギャンボ：正解でリンドバーグを1体回復', (ok) => {
         if (ok) chooseRestedAlly(game, attOwner, 'lindbergh', '回復するリンドバーグを選んでください', cont);
         else cont();
       });
@@ -947,7 +1295,83 @@ function useAbility(game, pi, charId, genre) {
   const nextOppExpiry = () => ({ owner: opp, turn: game.players[opp].turns + 1 });
 
   switch (c.defId) {
-    case 'taco':
+    case 'kairo':
+      c.abilityUsed = true;
+      ask(game, pi, ['number'], `${name}：正解で自身を破壊し、トラッシュからキャラを場に出す`, (ok) => {
+        if (!ok) return;
+        destroy(game, pi, c);
+        pickTrash(game, pi, '場に出すキャラ（コスト4以下）を選んでください', (t) => CARD_DEFS[t.defId].cost <= 4, (a) => {
+          if (a) placeFromTrash(game, pi, a);
+          pickTrash(game, pi, '場に出すキャラ（コスト2以下）を選んでください', (t) => CARD_DEFS[t.defId].cost <= 2, (b) => {
+            if (b) placeFromTrash(game, pi, b);
+          });
+        });
+      });
+      return;
+    case 'tsunokkov':
+      c.abilityUsed = true;
+      ask(game, pi, ['direction'], `${name}：正解で手札1枚を捨て、トラッシュから2枚手札に加える`, (ok) => {
+        if (!ok) return;
+        askDiscard(game, pi, '捨てる手札を選んでください', (done) => {
+          if (!done) return;
+          pickTrash(game, pi, '手札に加えるカードを選んでください（1/2）', () => true, (a) => {
+            if (a) trashToHand(game, pi, a);
+            pickTrash(game, pi, '手札に加えるカードを選んでください（2/2）', () => true, (b) => {
+              if (b) trashToHand(game, pi, b);
+            });
+          });
+        }, 0);
+      });
+      return;
+    case 'usakkov':
+      c.abilityUsed = true;
+      ask(game, pi, ['bounty'], `${name}：正解で自身を破壊し、相手キャラ全員パワー-1（永続）`, (ok) => {
+        if (!ok) return;
+        destroy(game, pi, c);
+        for (const t of [...game.players[opp].board]) applyPowerDebuff(game, pi, c.id, t.id, 1);
+      });
+      return;
+    case 'bellet':
+      c.abilityUsed = true;
+      ask(game, pi, ['yobikata'], `${name}：正解で変身する`, (ok) => {
+        if (!ok || !findChar(game, c.id)) return;
+        c.defId = 'bellet2';
+        addLog(game, `${name} が変身した！`);
+      });
+      return;
+    case 'bellet2':
+      c.abilityUsed = true;
+      ask(game, pi, ['subBetween'], `${name}：正解でトラッシュからキャラを1体場に出してもよい`, (ok) => {
+        if (!ok) return;
+        pickTrash(game, pi, '場に出すキャラを選んでください（スキップ可）', () => true, (a) => {
+          if (a) placeFromTrash(game, pi, a);
+        });
+      });
+      return;
+    case 'shiki':
+      c.abilityUsed = true;
+      ask(game, pi, ['between'], `${name}：正解で味方1体を破壊し、相手のライフに5ダメージ`, (ok) => {
+        if (!ok) return;
+        destroyOwn(game, pi, '破壊する味方キャラを選んでください', () => true, (done) => {
+          if (done) damageLife(game, opp, 5);
+        });
+      });
+      return;
+    case 'hareji':
+      c.abilityUsed = true;
+      ask(game, pi, ['direction'], `${name}：正解で味方1体を破壊し、トラッシュから2枚手札に戻す`, (ok) => {
+        if (!ok) return;
+        destroyOwn(game, pi, '破壊する味方キャラを選んでください', () => true, (done) => {
+          if (!done) return;
+          pickTrash(game, pi, '手札に戻すカードを選んでください（1/2）', () => true, (a) => {
+            if (a) trashToHand(game, pi, a);
+            pickTrash(game, pi, '手札に戻すカードを選んでください（2/2）', () => true, (b) => {
+              if (b) trashToHand(game, pi, b);
+            });
+          });
+        });
+      });
+      return;
       ask(game, pi, ['personality'], `${name}：正解でカードを1枚引く`, (ok) => {
         if (!ok) return;
         const n = draw(game, pi, hasOnBoard(game, pi, 'morolon') ? 2 : 1);
@@ -1058,8 +1482,20 @@ function useAbility(game, pi, charId, genre) {
       });
       return;
     case 'rikudold':
+      ask(game, pi, ['direction'], `${name}：正解で味方キャラ1体を回復`, (ok) => {
+        if (!ok) return;
+        const options = P.board.filter((x) => x.rested).map((x) => x.id);
+        askChoose(game, pi, '回復させる味方キャラを選んでください', options, (id) => {
+          const t = id && findChar(game, id);
+          if (t) {
+            t.c.rested = false;
+            addLog(game, `${CARD_DEFS[t.c.defId].name} が回復した。`);
+          }
+        });
+      });
+      return;
     case 'bandodecine':
-      ask(game, pi, ['subBetween'], `${name}：正解で味方キャラ1体を回復`, (ok) => {
+      ask(game, pi, ['yobikata'], `${name}：正解で味方キャラ1体を回復`, (ok) => {
         if (!ok) return;
         const options = P.board.filter((x) => x.rested).map((x) => x.id);
         askChoose(game, pi, '回復させる味方キャラを選んでください', options, (id) => {
@@ -1088,7 +1524,7 @@ function useAbility(game, pi, charId, genre) {
       });
       return;
     case 'jeep':
-      ask(game, pi, ['fish'], `${name}：正解でコストを2回復`, (ok) => {
+      ask(game, pi, ['bounty'], `${name}：正解でコストを2回復`, (ok) => {
         if (!ok) return;
         gainCost(game, pi, 2);
         const fraley = P.board.find((x) => x.defId === 'fraley');
@@ -1096,7 +1532,7 @@ function useAbility(game, pi, charId, genre) {
       });
       return;
     case 'negie':
-      ask(game, pi, ['between'], `${name}：正解でカードを1枚引く`, (ok) => {
+      ask(game, pi, ['bounty'], `${name}：正解でカードを1枚引く`, (ok) => {
         if (!ok) return;
         const n = draw(game, pi, 1);
         addLog(game, `${game.seats[pi].name} はカードを${n}枚引いた。`);
@@ -1319,6 +1755,98 @@ function useAbility(game, pi, charId, genre) {
         addLog(game, 'サニー号以外の味方キャラ全員のパワーが+1された。');
       });
       return;
+    case 'quincy':
+      c.abilityUsed = true;
+      ask(game, pi, ['direction'], `${name}：正解で味方キャラ1体のパワー+3（不正解でダウン）`, (ok) => {
+        if (!ok) {
+          c.rested = true;
+          addLog(game, `${name} がダウンした。`);
+          return;
+        }
+        pickAlly(game, pi, 'パワー+3にする味方キャラを選んでください', () => true, (t) => addTurnTemp(game, pi, t.c, 3));
+      });
+      return;
+    case 'hip':
+      c.abilityUsed = true;
+      ask(game, pi, ['before'], `${name}：正解で味方キャラ1体を回復（不正解で破壊）`, (ok) => {
+        if (!ok) {
+          destroy(game, pi, c);
+          return;
+        }
+        pickAlly(game, pi, '回復させる味方キャラを選んでください', (x) => x.rested, (t) => {
+          t.c.rested = false;
+          addLog(game, `${CARD_DEFS[t.c.defId].name} が回復した。`);
+        });
+      });
+      return;
+    case 'hop':
+      c.abilityUsed = true;
+      ask(game, pi, ['personality'], `${name}：正解で味方キャラ1体のパワー+2（不正解で破壊）`, (ok) => {
+        if (!ok) {
+          destroy(game, pi, c);
+          return;
+        }
+        pickAlly(game, pi, 'パワー+2にする味方キャラを選んでください', () => true, (t) => addTurnTemp(game, pi, t.c, 2));
+      });
+      return;
+    case 'discj':
+      c.abilityUsed = true;
+      ask(game, pi, ['yobikata'], `${name}：正解で相手キャラ1体のパワーをこのターン中-3（不正解で破壊）`, (ok) => {
+        if (!ok) {
+          destroy(game, pi, c);
+          return;
+        }
+        chooseOpp(game, pi, 'パワー-3にする相手キャラを選んでください', () => true, (t) => {
+          if (t) applyPowerDebuff(game, pi, c.id, t.c.id, 3, turnExpiry);
+        });
+      });
+      return;
+    case 'papas':
+    case 'moai': {
+      c.abilityUsed = true;
+      const isPapas = c.defId === 'papas';
+      ask(game, pi, [isPapas ? 'wazaKanji' : 'subKanji'], `${name}：正解でカードを${isPapas ? 2 : 1}枚引く（不正解で破壊）`, (ok) => {
+        if (!ok) {
+          destroy(game, pi, c);
+          return;
+        }
+        const n = draw(game, pi, isPapas ? 2 : 1);
+        addLog(game, `${game.seats[pi].name} はカードを${n}枚引いた。`);
+      });
+      return;
+    }
+    case 'jaguar':
+      c.abilityUsed = true;
+      ask(game, pi, ['age', 'height', 'food', 'blood'], `${name}：正解でコストを2回復（不正解で破壊）`, (ok) => {
+        if (ok) gainCost(game, pi, 2);
+        else destroy(game, pi, c);
+      });
+      return;
+    case 'rec': {
+      c.abilityUsed = true;
+      const discarded = P.hand.length;
+      for (const h of P.hand) P.trash.push({ id: h.id, defId: h.defId });
+      P.hand = [];
+      addLog(game, `${game.seats[pi].name} は手札${discarded}枚を全て捨てた。`);
+      ask(game, pi, ['subBetween'], `${name}：正解でカードを3枚引く`, (ok) => {
+        if (!ok) return;
+        const n = draw(game, pi, 3);
+        addLog(game, `${game.seats[pi].name} はカードを${n}枚引いた。`);
+      });
+      return;
+    }
+    case 'house':
+      c.abilityUsed = true;
+      ask(game, pi, ['between'], `${name}：正解で味方全員パワー+2、不正解で味方全員パワー-2`, (ok) => {
+        for (const x of [...P.board]) addTurnTemp(game, pi, x, ok ? 2 : -2);
+      });
+      return;
+    case 'boogie':
+      c.abilityUsed = true;
+      ask(game, pi, ['hobby', 'hate', 'season'], `${name}：正解でこのターン中パワー+5`, (ok) => {
+        if (ok) addTurnTemp(game, pi, c, 5);
+      });
+      return;
     default:
       fail('未対応の効果です。');
   }
@@ -1337,7 +1865,7 @@ function actPlay(game, pi, cardId, slot) {
 
   if (occupant) {
     P.board = P.board.filter((x) => x.id !== occupant.id);
-    P.trash.push({ id: occupant.id, defId: occupant.defId });
+    P.trash.push({ id: occupant.id, defId: baseId(occupant.defId) });
     addLog(game, `${game.seats[pi].name} は ${CARD_DEFS[occupant.defId].name} をトラッシュへ送った。`);
   }
   P.cost -= def.cost;
@@ -1363,7 +1891,7 @@ function actPlay(game, pi, cardId, slot) {
     });
   }
   if (card.defId === 'ivankov') {
-    askSeq(game, pi, [['image'], ['image']], 'イワンコフ：両方正解で山札から2枚引く', (res) => {
+    askSeq(game, pi, [['direction'], ['direction']], 'イワンコフ：両方正解で山札から2枚引く', (res) => {
       if (!res.every(Boolean)) return;
       const drawn = draw(game, pi, 2);
       addLog(game, `${game.seats[pi].name} はカードを${drawn}枚引いた。`);
@@ -1390,8 +1918,16 @@ function actPlay(game, pi, cardId, slot) {
       });
     });
   }
+  if (card.defId === 'killer') {
+    ask(game, pi, ['bounty'], 'キラー：正解で出たターンでも攻撃できる', (ok) => {
+      if (ok) {
+        c.haste = true;
+        addLog(game, 'キラーは出たターンでも攻撃できる。');
+      }
+    });
+  }
   if (card.defId === 'lucci') {
-    ask(game, pi, ['subKanji'], 'ルッチ：正解で出たターンに攻撃可能、相手キャラのパワー-2', (ok) => {
+    ask(game, pi, ['bounty'], 'ルッチ：正解で出たターンに攻撃可能、相手キャラのパワー-2', (ok) => {
       if (!ok) return;
       c.haste = true;
       const options = game.players[1 - pi].board.map((x) => x.id);
@@ -1407,6 +1943,24 @@ function actPlay(game, pi, cardId, slot) {
         applyPowerDebuff(game, pi, c.id, target.id, 1, { owner: pi, turn: P.turns });
       }
     });
+  }
+  if (card.defId === 'shiryu') {
+    destroyOwn(game, pi, '破壊する味方キャラを選んでください', (x) => x.id !== c.id, () => {
+      ask(game, pi, ['hint'], 'シリュウ：正解で出たターンに攻撃できる', (ok) => {
+        if (!ok) return;
+        c.haste = true;
+        addLog(game, 'シリュウは出たターンでも攻撃できる。');
+      });
+    });
+  }
+  if (card.defId === 'zangiri') {
+    askDiscard(game, pi, '捨てる手札を選んでください', () => {
+      ask(game, pi, ['bounty'], 'ザン切丸：正解でカードを2枚引く', (ok) => {
+        if (!ok) return;
+        const n = draw(game, pi, 2);
+        addLog(game, `${game.seats[pi].name} はカードを${n}枚引いた。`);
+      });
+    }, 0);
   }
   if (card.defId === 'kaido') {
     askSeq(game, pi, [['before'], ['subKanji'], ['wazaKanji']], 'カイドウ：3問正解で相手のパワー3以下を全て破壊。不正解で自身を破壊', (res) => {
@@ -1470,7 +2024,7 @@ function actBlock(game, pi, blockerId) {
 
   if (!blockerId) {
     addLog(game, 'ブロックしなかった。');
-    resolveDirect(game, att, attOwner);
+    resolveUnblocked(game, att, attOwner);
     return;
   }
   if (!p.options.includes(blockerId)) fail('そのキャラクターではブロックできません。');
@@ -1555,7 +2109,7 @@ function pendingView(game, viewer) {
     return { ...base, title: p.title, options: p.options };
   }
   if (p.kind === 'discard') {
-    return { ...base, title: p.title, options: p.owner === viewer ? p.options : undefined };
+    return { ...base, title: p.title, options: p.owner === viewer ? p.options : undefined, skippable: !!p.skippable };
   }
   if (p.kind === 'block') {
     const att = findChar(game, p.attId);
@@ -1638,6 +2192,8 @@ function broadcast(game) {
 }
 
 function settle(game) {
+  checkWin(game);
+  flushAfterQueue(game);
   checkWin(game);
   broadcast(game);
 }
