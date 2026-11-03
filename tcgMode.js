@@ -568,7 +568,7 @@ function ask(game, owner, genres, title, cb, step = null) {
   const answerer = invert ? 1 - owner : owner;
   let q = null;
   for (const g of shuffle(genres)) {
-    q = makeQuestion(g);
+    q = makeQuestion(g, (game.usedQ ||= new Map()));
     if (q) break;
   }
   if (!q) {
@@ -2532,10 +2532,10 @@ function cpuStep(game, cpu) {
     return;
   }
 
-  // 1. 起動効果
+  // 1. 起動効果（回復系は攻撃後に回すため、ここでは使わない）
   for (const c of P.board) {
     const key = `a${c.id}`;
-    if (game.cpuTried.has(key) || !ACTIVE_CARDS.has(c.defId) || CPU_AVOID_ABILITY.has(c.defId)) continue;
+    if (game.cpuTried.has(key) || !ACTIVE_CARDS.has(c.defId) || CPU_AVOID_ABILITY.has(c.defId) || CPU_RECOVER[c.defId]) continue;
     const def = CARD_DEFS[c.defId];
     if (c.defId !== 'beloBetty' && c.abilityUsed) continue;
     if (def.restCost && c.rested) continue;
@@ -2578,23 +2578,78 @@ function cpuStep(game, cpu) {
     .filter((c) => !c.rested && !c.noAttack && canAttackNow(P, c) && !CPU_AVOID_ATTACK.has(c.defId) && !game.cpuTried.has(`t${c.id}`))
     .sort((a, b) => power(b) - power(a));
   const enemyMax = O.board.reduce((m, c) => Math.max(m, power(c)), 0);
+
+  // リーサル判定：相手のブロッカーが強い順に攻撃を止める前提で、残りの攻撃でライフを削り切れるか
+  const lethal = cpuLethal(O, attackers, blockers.length);
+  if (lethal && attackers.length) {
+    const att = attackers[attackers.length - 1];
+    game.cpuTried.add(`t${att.id}`);
+    actAttack(game, cpu, att.id, 'player');
+    return;
+  }
+  const lastLife = O.life <= 1;
+
   for (const att of attackers) {
     const ap = power(att);
     // ブロッカーは、相手の盤面に自分より強いキャラがいるなら攻撃せず防御に回す
-    if (CARD_DEFS[att.defId].blocker && enemyMax >= ap && !(O.life <= 1 && !blockers.length)) continue;
+    if (CARD_DEFS[att.defId].blocker && enemyMax >= ap && !(lastLife && !blockers.length)) continue;
     const targets = O.board
       .filter((t) => (t.rested || att.hitActive) && (ap > power(t) || (ap === power(t) && CARD_DEFS[t.defId].cost > CARD_DEFS[att.defId].cost)))
       .sort((a, b) => cpuVal(b) - cpuVal(a));
+    const lifeOpen = !blockers.length || ap > maxBlock;
     let target = null;
-    if (targets.length && (!blockers.length || ap > maxBlock || O.life > 1)) target = targets[0].id;
-    else if (!blockers.length || ap > maxBlock) target = 'player';
+    if (lastLife && lifeOpen) target = 'player';
+    else if (targets.length && (lifeOpen || O.life > 1)) target = targets[0].id;
+    else if (lifeOpen) target = 'player';
     if (target === null) continue;
     game.cpuTried.add(`t${att.id}`);
     actAttack(game, cpu, att.id, target);
     return;
   }
 
+  // 4. 攻撃後に、ダウンした攻撃役を回復して再攻撃できる状況なら回復系の効果を使う
+  for (const c of P.board) {
+    const key = `a${c.id}`;
+    const need = CPU_RECOVER[c.defId];
+    if (!need || game.cpuTried.has(key) || c.abilityUsed || (CARD_DEFS[c.defId].restCost && c.rested)) continue;
+    const ready = P.board.filter(
+      (x) => x.rested && x.id !== c.id && !x.noAttack && canAttackNow(P, x) && !CPU_AVOID_ATTACK.has(x.defId) && need.match(x)
+    );
+    if (ready.length < need.min) continue;
+    game.cpuTried.add(key);
+    activateAbility(game, cpu, c.id, '');
+    for (const k of [...game.cpuTried]) if (k.startsWith('t')) game.cpuTried.delete(k);
+    return;
+  }
+
   actEnd(game, cpu);
+}
+
+// 回復系の起動効果：回復対象の条件と、使う価値のある最低対象数
+const CPU_RECOVER = {
+  kavell: { match: () => true, min: 1 },
+  dragon: { match: () => true, min: 2 },
+  ahiru: { match: (x) => x.defId === 'beloBetty', min: 1 },
+  ushiarno: { match: (x) => x.defId === 'morley', min: 1 },
+};
+
+function cpuLethal(O, attackers, blockerCount) {
+  const powers = attackers.map(power).sort((a, b) => b - a).slice(blockerCount);
+  if (!powers.length) return false;
+  const run = (list) => {
+    let life = O.life;
+    let hp = O.lifeHp;
+    for (const p of list) {
+      hp -= p;
+      if (hp <= 0) {
+        life -= 1;
+        hp = LIFE_HP;
+        if (life <= 0) return true;
+      }
+    }
+    return false;
+  };
+  return run(powers) || run([...powers].reverse());
 }
 
 function cpuResolvePending(game, cpu, p) {
@@ -2644,7 +2699,12 @@ function cpuChoose(game, cpu, p) {
   const enemy = found.filter((f) => f.pi !== cpu);
   const byVal = (list, desc) => [...list].sort((a, b) => (desc ? 1 : -1) * (cpuVal(b.c) - cpuVal(a.c)))[0]?.c.id ?? null;
   if (!enemy.length) {
-    if (/回復/.test(p.title)) return byVal(own, true);
+    if (/回復/.test(p.title)) {
+      const P = game.players[cpu];
+      const ready = own.filter((f) => f.c.rested && canAttackNow(P, f.c) && !f.c.noAttack && !CPU_AVOID_ATTACK.has(f.c.defId));
+      const best = [...(ready.length ? ready : own)].sort((a, b) => power(b.c) - power(a.c))[0];
+      return best?.c.id ?? null;
+    }
     if (/パワーを上げる|効果を与える|パワー\+/.test(p.title)) {
       const P = game.players[cpu];
       const ready = own.filter((f) => !f.c.rested && !f.c.noAttack && (f.c.haste || canAttackNow(P, f.c)) && !CPU_AVOID_ATTACK.has(f.c.defId));
