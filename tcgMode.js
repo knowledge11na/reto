@@ -19,6 +19,7 @@ import {
   WORLD_DECK,
   KID_DECK,
   PRISONER_DECK,
+  SHABONDY_DECK,
   WORLD_CARD_POOL,
   normalizeDeck,
 } from './lib/tcgCards.js';
@@ -430,6 +431,57 @@ function placeFromTrash(game, pi, card) {
   (game.afterQueue ||= []).push(() => putOnBoard(game, pi, { id: card.id, defId: card.defId }, 'トラッシュ'));
 }
 
+// 手札のカードを1枚選ぶ（コスト軽減などの対象選択用。選ばない場合は null）
+function pickHand(game, owner, title, cb) {
+  const options = game.players[owner].hand.map(({ id, defId }) => ({ id, defId, name: CARD_DEFS[defId].name }));
+  if (!options.length) {
+    addLog(game, '対象になる手札がなかった。');
+    cb(null);
+    return;
+  }
+  const pending = {
+    kind: 'discard',
+    source: 'trash',
+    skippable: false,
+    owner,
+    title,
+    options,
+    deadline: Date.now() + QUIZ_MS,
+    drawAfter: 0,
+    cb,
+  };
+  game.pending = pending;
+  armTimer(game, pending, () => {
+    game.pending = null;
+    cb(null);
+  });
+}
+
+// 山札から指定カードを1枚手札に加える
+function searchDeck(game, pi, defId) {
+  const P = game.players[pi];
+  const i = P.deck.findIndex((x) => x.defId === defId);
+  if (i === -1) {
+    addLog(game, `山札に ${CARD_DEFS[defId].name} がなかった。`);
+    return false;
+  }
+  const [card] = P.deck.splice(i, 1);
+  P.hand.push(card);
+  P.deck = shuffle(P.deck);
+  addLog(game, `${game.seats[pi].name} は山札の ${CARD_DEFS[defId].name} を手札に加えた。`);
+  return true;
+}
+
+// トラッシュにある指定カードを1枚場に出す
+function placeTrashByDef(game, pi, defId) {
+  const card = game.players[pi].trash.find((t) => t.defId === defId);
+  if (!card) return false;
+  placeFromTrash(game, pi, card);
+  return true;
+}
+
+const effCost = (c) => Math.max(0, CARD_DEFS[c.defId].cost - (c.costDown || 0));
+
 function trashToHand(game, pi, card) {
   const P = game.players[pi];
   P.trash = P.trash.filter((t) => t.id !== card.id);
@@ -741,6 +793,46 @@ function afterAttackTriggers(game) {
 // 防御側（攻撃された／ブロックした）のカード効果
 function defendTrigger(game, owner, c, role, cont) {
   switch (c.defId) {
+    case 'sbDias':
+      if (role !== 'block') break;
+      ask(game, owner, ['number'], 'デビル・ディアス：正解でパワー+1、不正解でパワー-1', (ok) => {
+        modifyTempPower(game, owner, c, ok ? 1 : -1);
+        if (!findChar(game, c.id)) {
+          game.combat = null;
+          return;
+        }
+        cont(false);
+      });
+      return;
+    case 'sbByron':
+      if (role !== 'block') break;
+      ask(game, owner, ['hobby', 'hate', 'season'], 'バイロン：正解でカードを1枚引く', (ok) => {
+        if (ok) {
+          const n = draw(game, owner, 1);
+          addLog(game, `${game.seats[owner].name} はカードを${n}枚引いた。`);
+        }
+        cont(false);
+      });
+      return;
+    case 'sbLacuba':
+      if (role !== 'block') break;
+      ask(game, owner, ['image'], 'ラキューバ：正解でトラッシュからカードを1枚手札に戻す', (ok) => {
+        if (!ok) {
+          cont(false);
+          return;
+        }
+        pickTrash(game, owner, '手札に戻すカードを選んでください', () => true, (card) => {
+          if (card) trashToHand(game, owner, card);
+          cont(false);
+        });
+      });
+      return;
+    case 'sbReilly':
+      askSeq(game, owner, [['wazaKanji'], ['between'], ['hint']], 'レイリー：3問正解でパワー上昇＆シャクヤクを場に出す', (res) => {
+        if (res.every(Boolean)) reillyBonus(game, owner, c);
+        cont(false);
+      });
+      return;
     case 'kinoko':
       if (role !== 'block') break;
       ask(game, owner, ['ship'], 'キノコ：正解で味方1体を破壊し、カードを2枚引く', (ok) => {
@@ -896,9 +988,66 @@ function defendTrigger(game, owner, c, role, cont) {
   cont(false);
 }
 
+function reillyBonus(game, pi, c) {
+  const n = game.players[pi].hand.length;
+  c.temp += n;
+  addLog(game, `レイリーのパワーが手札の枚数分（+${n}）上がった（現在 ${currentPower(c)}）。`);
+  if (!placeTrashByDef(game, pi, 'sbShakuyaku')) placeFromHand(game, pi, 'sbShakuyaku');
+}
+
 function attackTriggers(game, attOwner, att, cont) {
   const cb = game.combat;
   switch (att.defId) {
+    case 'sbJudy':
+      ask(game, attOwner, ['number'], 'ジュディ：正解で山札のマリィを1枚手札に加える', (ok) => {
+        if (ok) searchDeck(game, attOwner, 'sbMarie');
+        cont();
+      });
+      return;
+    case 'sbMinoruba':
+      ask(game, attOwner, ['age', 'height', 'food'], 'ミノルバ：正解で山札のカイリケンを1枚手札に加える', (ok) => {
+        if (ok) searchDeck(game, attOwner, 'sbKairiken');
+        cont();
+      });
+      return;
+    case 'sbKairiken':
+      ask(game, attOwner, ['hobby', 'hate', 'season'], 'カイリケン：正解でパワー+1（ミノルバが場にいれば次の相手ターン終了まで+2）', (ok) => {
+        if (!ok) {
+          cont();
+          return;
+        }
+        if (hasOnBoard(game, attOwner, 'sbMinoruba')) {
+          const opp = 1 - attOwner;
+          applyPowerBuff(game, attOwner, att.id, att.id, 2, { owner: opp, turn: game.players[opp].turns + 1 });
+        } else {
+          addTurnTemp(game, attOwner, att, 1);
+        }
+        cont();
+      });
+      return;
+    case 'sbMarine':
+      ask(game, attOwner, ['fish'], 'マリン：不正解で攻撃失敗', (ok) => {
+        if (ok) cont();
+        else failAttack(game, att);
+      });
+      return;
+    case 'sbReilly':
+      askSeq(game, attOwner, [['wazaKanji'], ['between'], ['hint']], 'レイリー：0〜1問正解で攻撃失敗、3問正解でパワー上昇＆シャクヤクを場に出す', (res) => {
+        const right = res.filter(Boolean).length;
+        if (right < 2) {
+          failAttack(game, att);
+          return;
+        }
+        if (right === 3) reillyBonus(game, attOwner, att);
+        cont();
+      });
+      return;
+    case 'sbShakuyaku2':
+      ask(game, attOwner, ['before'], 'シャクヤク：正解で手札かトラッシュのレイリーを場に出す', (ok) => {
+        if (ok && !placeTrashByDef(game, attOwner, 'sbReilly')) placeFromHand(game, attOwner, 'sbReilly');
+        cont();
+      });
+      return;
     case 'dobby':
       ask(game, attOwner, ['wazaKanji'], 'ドビー：正解で味方1体を破壊してもよい。破壊したら相手キャラ1体のパワー-2（永続）', (ok) => {
         if (!ok) {
@@ -1415,6 +1564,54 @@ function runAbility(game, pi, c, genre) {
         });
       });
       return;
+    case 'sbMarie':
+      c.abilityUsed = true;
+      ask(game, pi, ['direction'], `${name}：正解で場のジュディ1枚のパワーをこのターン中+4`, (ok) => {
+        if (!ok) return;
+        pickAlly(game, pi, 'パワー+4にするジュディを選んでください', (x) => x.defId === 'sbJudy', (t) => addTurnTemp(game, pi, t.c, 4));
+      });
+      return;
+    case 'sbAntonio':
+      ask(game, pi, ['before'], `${name}：正解でカードを1枚引く`, (ok) => {
+        if (!ok) return;
+        const n = draw(game, pi, 1);
+        addLog(game, `${game.seats[pi].name} はカードを${n}枚引いた。`);
+      });
+      return;
+    case 'sbDisco':
+      c.abilityUsed = true;
+      askSeq(game, pi, Array.from({ length: P.hand.length }, () => ALL_GENRES), `${name}：自分の手札の枚数分のクイズ`, (mine) => {
+        const myRight = mine.filter(Boolean).length;
+        askSeq(game, opp, Array.from({ length: game.players[opp].hand.length }, () => ALL_GENRES), `${name}：相手の手札の枚数分のクイズ`, (theirs) => {
+          const diff = myRight - theirs.filter(Boolean).length;
+          addLog(game, `ディスコ：正解数 ${game.seats[pi].name} ${myRight} / ${game.seats[opp].name} ${theirs.filter(Boolean).length}`);
+          if (diff > 0) {
+            const n = draw(game, pi, diff);
+            addLog(game, `${game.seats[pi].name} はカードを${n}枚引いた。`);
+          }
+        });
+      });
+      return;
+    case 'sbPasia':
+      c.abilityUsed = true;
+      ask(game, pi, ['personality'], `${name}：正解で手札1枚のコストを-2（永続）`, (ok) => {
+        if (!ok) return;
+        pickHand(game, pi, 'コストを-2にする手札を選んでください', (picked) => {
+          const card = picked && P.hand.find((x) => x.id === picked.id);
+          if (!card) return;
+          card.costDown = (card.costDown || 0) + 2;
+          addLog(game, `${game.seats[pi].name} の手札の ${CARD_DEFS[card.defId].name} のコストが-2された（現在 ${effCost(card)}）。`);
+        });
+      });
+      return;
+    case 'sbShakuyaku':
+      c.abilityUsed = true;
+      ask(game, pi, ['subKanji'], `${name}：正解で変身する`, (ok) => {
+        if (!ok || !findChar(game, c.id)) return;
+        c.defId = 'sbShakuyaku2';
+        addLog(game, `${name} が変身した！`);
+      });
+      return;
     case 'taco':
       ask(game, pi, ['personality'], `${name}：正解でカードを1枚引く`, (ok) => {
         if (!ok) return;
@@ -1881,14 +2078,14 @@ function actPlay(game, pi, cardId, slot) {
   if (!Number.isInteger(slot) || slot < 0 || slot >= BOARD_SIZE) fail('枠が正しくありません。');
   const occupant = P.board.find((c) => c.slot === slot);
   if (occupant && P.board.length < BOARD_SIZE) fail('空いている枠があるときは交換できません。');
-  if (def.cost > P.cost) fail('コストが足りません。');
+  if (effCost(card) > P.cost) fail('コストが足りません。');
 
   if (occupant) {
     P.board = P.board.filter((x) => x.id !== occupant.id);
     P.trash.push({ id: occupant.id, defId: baseId(occupant.defId) });
     addLog(game, `${game.seats[pi].name} は ${CARD_DEFS[occupant.defId].name} をトラッシュへ送った。`);
   }
-  P.cost -= def.cost;
+  P.cost -= effCost(card);
   P.hand = P.hand.filter((c) => c.id !== cardId);
   const c = newChar(card, slot, P);
   P.board.push(c);
@@ -2017,6 +2214,17 @@ function runEntry(game, pi, c) {
         addLog(game, `${game.seats[pi].name} はカードを${n}枚引いた。`);
       });
     }, 0);
+  }
+  if (card.defId === 'sbDias') {
+    ask(game, pi, ['subBetween'], 'デビル・ディアス：不正解でこのキャラを破壊', (ok) => {
+      if (!ok) destroy(game, pi, c);
+    });
+  }
+  if (card.defId === 'sbPeter') {
+    askSeq(game, pi, [['yobikata'], ['bounty']], 'ピーターマン：呼び方正解でカイリケン、懸賞金正解でミノルバをトラッシュから場に出す', (res) => {
+      if (res[0] && !placeTrashByDef(game, pi, 'sbKairiken')) addLog(game, 'トラッシュにカイリケンがなかった。');
+      if (res[1] && !placeTrashByDef(game, pi, 'sbMinoruba')) addLog(game, 'トラッシュにミノルバがなかった。');
+    });
   }
   if (card.defId === 'kaido') {
     askSeq(game, pi, [['before'], ['subKanji'], ['wazaKanji']], 'カイドウ：3問正解で相手のパワー3以下を全て破壊。不正解で自身を破壊', (res) => {
@@ -2219,7 +2427,7 @@ function viewFor(game, viewer) {
               id: c.id,
               defId: c.defId,
               name: def.name,
-              cost: def.cost,
+              cost: effCost(c),
               power: def.power,
               blocker: def.blocker,
               text: def.text,
@@ -2281,7 +2489,7 @@ function scheduleCpu(game) {
       }
     }
     settle(game);
-  }, game.pending ? 800 : 1200);
+  }, game.pending?.kind === 'order' ? 300 : game.pending ? 800 : 1200);
 }
 
 // 失敗した場合は何もしない選択に倒して、進行を止めない
@@ -2343,7 +2551,7 @@ function cpuStep(game, cpu) {
   }
 
   // 2. カードを出す
-  const playable = P.hand.filter((c) => CARD_DEFS[c.defId].cost <= P.cost);
+  const playable = P.hand.filter((c) => effCost(c) <= P.cost);
   if (playable.length) {
     const score = (c) => CARD_DEFS[c.defId].cost * 2 + CARD_DEFS[c.defId].power;
     playable.sort((a, b) => score(b) - score(a));
@@ -2518,6 +2726,7 @@ export function setupTcgMode(io) {
             ['world', '世界会議', WORLD_DECK],
             ['kid', 'キッド海賊団', KID_DECK],
             ['prisoner', '囚人', PRISONER_DECK],
+            ['shabondy', 'シャボン舞う諸島', SHABONDY_DECK],
           ].filter(([, , d]) => normalizeDeck(d));
           const wanted = presets.find(([k]) => k === payload.cpuDeck);
           const [, label, cpuDeck] = wanted || presets[rnd(presets.length)];

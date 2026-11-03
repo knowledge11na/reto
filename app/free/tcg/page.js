@@ -20,6 +20,8 @@ import {
   KID_CARD_POOL,
   PRISONER_DECK,
   PRISONER_CARD_POOL,
+  SHABONDY_DECK,
+  SHABONDY_CARD_POOL,
   ALL_DECK_CARDS,
   normalizeDeck,
 } from '../../../lib/tcgCards.js';
@@ -214,6 +216,21 @@ const CARD_IMAGES = {
   shiryu: '0591',
   hareji: '1380',
   zangiri: '1381',
+  sbJudy: '0525',
+  sbMarie: '0524',
+  sbAntonio: '0501',
+  sbDias: '0502',
+  sbMinoruba: '0508',
+  sbKairiken: '0507',
+  sbPeter: '0522',
+  sbMarine: '0526',
+  sbDisco: '0529',
+  sbPasia: '0532',
+  sbByron: '0533',
+  sbLacuba: '0535',
+  sbReilly: '0531',
+  sbShakuyaku: '0509',
+  sbShakuyaku2: '05091',
 };
 
 function CardArt({ defId }) {
@@ -255,6 +272,7 @@ function DeckSelect({ onStart, onBack, editOnly = false }) {
     { id: 'world', name: '世界会議デッキ', cards: WORLD_DECK, allowedCards: WORLD_CARD_POOL, fixed: true },
     { id: 'kid', name: 'キッド海賊団デッキ', cards: KID_DECK, allowedCards: KID_CARD_POOL, fixed: true },
     { id: 'prisoner', name: '囚人デッキ', cards: PRISONER_DECK, allowedCards: PRISONER_CARD_POOL, fixed: true },
+    { id: 'shabondy', name: 'シャボン舞う諸島デッキ', cards: SHABONDY_DECK, allowedCards: SHABONDY_CARD_POOL, fixed: true },
     ...custom,
   ];
   const current = decks.find((d) => d.id === selected) || decks[0];
@@ -653,8 +671,8 @@ export default function TcgPage() {
   }
   if (!g || g.phase === 'waiting') {
     return (
-      <Center text={`部屋 ${roomId}：対戦相手を待っています…`}>
-        <div className="sub">相手が同じ部屋に入ると自動で開始します。</div>
+      <Center text={solo ? 'CPUと対戦を準備中…' : `部屋 ${roomId}：対戦相手を待っています…`}>
+        {!solo && <div className="sub">相手が同じ部屋に入ると自動で開始します。</div>}
       </Center>
     );
   }

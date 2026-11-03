@@ -11,6 +11,7 @@ const CPU_DECKS = [
   ['world', '世界会議'],
   ['kid', 'キッド海賊団'],
   ['prisoner', '囚人'],
+  ['shabondy', 'シャボン舞う諸島'],
 ];
 
 export default function SoloTcgMenu() {
