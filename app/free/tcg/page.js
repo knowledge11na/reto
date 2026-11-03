@@ -444,6 +444,8 @@ export default function TcgPage() {
   const [fatal, setFatal] = useState(false);
   const [deck, setDeck] = useState(null);
   const [editOnly, setEditOnly] = useState(false);
+  const [solo, setSolo] = useState(false);
+  const backPath = solo ? '/solo/tcg' : '/rate-match';
 
   const [selHand, setSelHand] = useState(null);
   const [selChar, setSelChar] = useState(null);
@@ -460,9 +462,14 @@ export default function TcgPage() {
   const [trashView, setTrashView] = useState(null); // 'me' | 'opp'
 
   useEffect(() => {
-    const room = new URLSearchParams(window.location.search).get('room') || '';
+    const sp = new URLSearchParams(window.location.search);
+    const isSolo = sp.get('solo') === '1';
+    setSolo(isSolo);
+    const room = isSolo
+      ? `solo-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`
+      : sp.get('room') || '';
     setRoomId(room);
-    if (new URLSearchParams(window.location.search).get('edit') === '1') {
+    if (sp.get('edit') === '1') {
       setEditOnly(true);
       return;
     }
@@ -488,7 +495,8 @@ export default function TcgPage() {
 
     const join = () => {
       setConn('connected');
-      s.emit('tcg:join', { roomId: room, clientId, name, deck });
+      const cpuDeck = new URLSearchParams(window.location.search).get('cpu') || '';
+      s.emit('tcg:join', { roomId: room, clientId, name, deck, solo, cpuDeck });
     };
     s.on('connect', join);
     s.on('disconnect', () => setConn('connecting'));
@@ -504,7 +512,7 @@ export default function TcgPage() {
       s.disconnect();
       socketRef.current = null;
     };
-  }, [deck, roomId]);
+  }, [deck, roomId, solo]);
 
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 250);
@@ -617,7 +625,7 @@ export default function TcgPage() {
   }, [idle]);
 
   if (editOnly) {
-    return <DeckSelect editOnly onBack={() => router.push('/rate-match')} />;
+    return <DeckSelect editOnly onBack={() => router.push(backPath)} />;
   }
   if (conn === 'noroom') {
     return <Center text="部屋IDが指定されていません。フリー対戦の部屋から入ってください。" />;
@@ -629,14 +637,14 @@ export default function TcgPage() {
           sessionStorage.setItem(`tcg_deck_${roomId}`, JSON.stringify(cards));
           setDeck(cards);
         }}
-        onBack={() => router.push('/rate-match')}
+        onBack={() => router.push(backPath)}
       />
     );
   }
   if (fatal) {
     return (
       <Center text={error || 'この部屋には入れません。'}>
-        <button className="btn" onClick={() => router.push('/rate-match')}>戻る</button>
+        <button className="btn" onClick={() => router.push(backPath)}>戻る</button>
       </Center>
     );
   }
@@ -1095,7 +1103,7 @@ export default function TcgPage() {
           <div className="quiz result">
             <h2>{g.winner === g.you ? '勝利！' : '敗北…'}</h2>
             <div className="q-lines">{g.log[g.log.length - 1]}</div>
-            <button className="btn" onClick={() => router.push('/rate-match')}>戻る</button>
+            <button className="btn" onClick={() => router.push(backPath)}>戻る</button>
           </div>
         </div>
       )}

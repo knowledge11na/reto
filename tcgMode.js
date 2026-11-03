@@ -14,6 +14,11 @@ import {
   BOARD_SIZE,
   QUIZ_MS,
   STANDARD_DECK,
+  VILLAINS_DECK,
+  REVOLUTIONARY_DECK,
+  WORLD_DECK,
+  KID_DECK,
+  PRISONER_DECK,
   WORLD_CARD_POOL,
   normalizeDeck,
 } from './lib/tcgCards.js';
@@ -506,6 +511,9 @@ function quizMs(game, owner) {
 }
 
 function ask(game, owner, genres, title, cb, step = null) {
+  // CPUの効果の問題は人間側に出題し、人間の正誤を反転してCPUの結果とする
+  const invert = !!game.seats[owner]?.cpu;
+  const answerer = invert ? 1 - owner : owner;
   let q = null;
   for (const g of shuffle(genres)) {
     q = makeQuestion(g);
@@ -516,11 +524,12 @@ function ask(game, owner, genres, title, cb, step = null) {
     cb(false);
     return;
   }
-  const ms = quizMs(game, owner);
+  const ms = quizMs(game, answerer);
   const pending = {
     kind: 'quiz',
-    owner,
-    title,
+    owner: answerer,
+    invert,
+    title: invert ? `【CPUの効果】${title} ／ あなたが不正解だと成功、正解すると失敗` : title,
     genre: q.label,
     lines: q.lines,
     ms,
@@ -573,7 +582,7 @@ function resolveQuiz(game, pending, text, timeout) {
     `【${pending.genre}】${game.seats[pending.owner].name}：${timeout ? '時間切れ' : ok ? '正解！' : '不正解'}` +
       `（回答：${timeout ? 'なし' : String(text ?? '').trim().slice(0, 40) || 'なし'} ／ 答え：${pending.q.reveal}）`
   );
-  pending.cb(ok);
+  pending.cb(pending.invert ? !ok : ok);
 }
 
 function askChoose(game, owner, title, options, cb) {
@@ -1285,7 +1294,7 @@ function resolveKatakuriQuestions(game, owner, card, cont) {
 }
 
 // ===== 起動効果 =====
-function useAbility(game, pi, charId, genre) {
+function activateAbility(game, pi, charId, genre) {
   const P = game.players[pi];
   const c = P.board.find((x) => x.id === charId);
   if (!c) fail('そのキャラクターは場にいません。');
@@ -2243,7 +2252,204 @@ function settle(game) {
   flushAfterQueue(game);
   checkWin(game);
   broadcast(game);
+  scheduleCpu(game);
 }
+
+// ===== CPU（ソロ用） =====
+const cpuVal = (c) => power(c) + CARD_DEFS[c.defId].cost * 0.5 + (CARD_DEFS[c.defId].blocker ? 1 : 0);
+// 失敗すると自分が損をする効果を持つカードは、CPUは使わない
+const CPU_AVOID_ABILITY = new Set(['hip', 'hop', 'discj', 'papas', 'moai', 'jaguar', 'seki']);
+const CPU_AVOID_ATTACK = new Set(['magellan', 'hody', 'uk', 'compo', 'gig', 'mosh']);
+
+function scheduleCpu(game) {
+  if (game.phase !== 'playing' || game.cpuTimer) return;
+  const cpu = game.seats.findIndex((s) => s?.cpu);
+  if (cpu < 0) return;
+  const p = game.pending;
+  if (p ? p.owner !== cpu : game.current !== cpu) return;
+  game.cpuTimer = setTimeout(() => {
+    game.cpuTimer = null;
+    if (game.phase !== 'playing') return;
+    try {
+      cpuStep(game, cpu);
+    } catch (e) {
+      if (!(e instanceof GameError)) console.error('[tcg] cpu error', e);
+      try {
+        cpuRecover(game, cpu);
+      } catch (e2) {
+        console.error('[tcg] cpu recover error', e2);
+      }
+    }
+    settle(game);
+  }, game.pending ? 800 : 1200);
+}
+
+// 失敗した場合は何もしない選択に倒して、進行を止めない
+function cpuRecover(game, cpu) {
+  const p = game.pending;
+  if (p && p.owner === cpu) {
+    clearTimeout(game.timer);
+    game.pending = null;
+    if (p.kind === 'block') {
+      addLog(game, 'ブロックしなかった。');
+      const f = findChar(game, p.attId);
+      if (f) resolveUnblocked(game, f.c, f.pi);
+      else game.combat = null;
+    } else if (p.kind === 'order') p.cb(cpu);
+    else p.cb(null);
+    return;
+  }
+  if (!p && game.current === cpu) actEnd(game, cpu);
+}
+
+function cpuStep(game, cpu) {
+  const p = game.pending;
+  if (p) {
+    if (p.owner !== cpu) return;
+    cpuResolvePending(game, cpu, p);
+    return;
+  }
+  if (game.current !== cpu) return;
+  const P = game.players[cpu];
+  const O = game.players[1 - cpu];
+  const turnNo = game.players[0].turns + game.players[1].turns;
+  if (game.cpuTurnNo !== turnNo) {
+    game.cpuTurnNo = turnNo;
+    game.cpuActs = 0;
+    game.cpuTried = new Set();
+  }
+  game.cpuActs += 1;
+  if (game.cpuActs > 40) {
+    actEnd(game, cpu);
+    return;
+  }
+
+  // 1. 起動効果
+  for (const c of P.board) {
+    const key = `a${c.id}`;
+    if (game.cpuTried.has(key) || !ACTIVE_CARDS.has(c.defId) || CPU_AVOID_ABILITY.has(c.defId)) continue;
+    const def = CARD_DEFS[c.defId];
+    if (c.defId !== 'beloBetty' && c.abilityUsed) continue;
+    if (def.restCost && c.rested) continue;
+    if (c.defId === 'beloBetty' && c.rested) continue;
+    let genre = '';
+    if (c.defId === 'mugicha') {
+      genre = MUGICHA_GENRES.find((g) => !c.genresUsed.includes(g));
+      if (!genre) continue;
+    }
+    game.cpuTried.add(key);
+    activateAbility(game, cpu, c.id, genre);
+    return;
+  }
+
+  // 2. カードを出す
+  const playable = P.hand.filter((c) => CARD_DEFS[c.defId].cost <= P.cost);
+  if (playable.length) {
+    const score = (c) => CARD_DEFS[c.defId].cost * 2 + CARD_DEFS[c.defId].power;
+    playable.sort((a, b) => score(b) - score(a));
+    const free = [0, 1, 2, 3, 4].find((s) => !P.board.some((c) => c.slot === s));
+    if (free !== undefined) {
+      actPlay(game, cpu, playable[0].id, free);
+      return;
+    }
+    const weakest = [...P.board].sort((a, b) => cpuVal(a) - cpuVal(b))[0];
+    const cand = playable.find((c) => {
+      const d = CARD_DEFS[c.defId];
+      return d.power + d.cost * 0.5 + (d.blocker ? 1 : 0) >= cpuVal(weakest) + 1.5;
+    });
+    if (cand && weakest) {
+      actPlay(game, cpu, cand.id, weakest.slot);
+      return;
+    }
+  }
+
+  // 3. 攻撃
+  const blockers = O.board.filter((c) => CARD_DEFS[c.defId].blocker && !c.rested);
+  const maxBlock = blockers.reduce((m, c) => Math.max(m, power(c)), 0);
+  const attackers = P.board
+    .filter((c) => !c.rested && !c.noAttack && canAttackNow(P, c) && !CPU_AVOID_ATTACK.has(c.defId) && !game.cpuTried.has(`t${c.id}`))
+    .sort((a, b) => power(b) - power(a));
+  const enemyMax = O.board.reduce((m, c) => Math.max(m, power(c)), 0);
+  for (const att of attackers) {
+    const ap = power(att);
+    // ブロッカーは、相手の盤面に自分より強いキャラがいるなら攻撃せず防御に回す
+    if (CARD_DEFS[att.defId].blocker && enemyMax >= ap && !(O.life <= 1 && !blockers.length)) continue;
+    const targets = O.board
+      .filter((t) => (t.rested || att.hitActive) && (ap > power(t) || (ap === power(t) && CARD_DEFS[t.defId].cost > CARD_DEFS[att.defId].cost)))
+      .sort((a, b) => cpuVal(b) - cpuVal(a));
+    let target = null;
+    if (targets.length && (!blockers.length || ap > maxBlock || O.life > 1)) target = targets[0].id;
+    else if (!blockers.length || ap > maxBlock) target = 'player';
+    if (target === null) continue;
+    game.cpuTried.add(`t${att.id}`);
+    actAttack(game, cpu, att.id, target);
+    return;
+  }
+
+  actEnd(game, cpu);
+}
+
+function cpuResolvePending(game, cpu, p) {
+  if (p.kind === 'order') {
+    clearTimeout(game.timer);
+    game.pending = null;
+    p.cb(cpu);
+    return;
+  }
+  if (p.kind === 'choose') {
+    const id = cpuChoose(game, cpu, p);
+    clearTimeout(game.timer);
+    game.pending = null;
+    p.cb(id);
+    return;
+  }
+  if (p.kind === 'discard') {
+    const opts = p.options;
+    const cost = (o) => CARD_DEFS[o.defId].cost * 2 + CARD_DEFS[o.defId].power;
+    const sorted = [...opts].sort((a, b) => cost(a) - cost(b));
+    const pick = p.source === 'trash' ? sorted[sorted.length - 1] : sorted[0];
+    resolveDiscard(game, p, pick ? pick.id : 0);
+    return;
+  }
+  if (p.kind === 'block') {
+    const f = findChar(game, p.attId);
+    const att = f?.c;
+    const opts = p.options.map((id) => game.players[cpu].board.find((c) => c.id === id)).filter(Boolean);
+    let pick = null;
+    if (att) {
+      const ap = power(att);
+      const strong = opts.filter((c) => power(c) >= ap).sort((a, b) => cpuVal(a) - cpuVal(b))[0];
+      const direct = game.combat?.target === 'player';
+      if (strong) pick = strong;
+      else if (direct && game.players[cpu].life <= 1) pick = [...opts].sort((a, b) => power(b) - power(a))[0];
+    }
+    actBlock(game, cpu, pick ? pick.id : null);
+    return;
+  }
+  cpuRecover(game, cpu);
+}
+
+function cpuChoose(game, cpu, p) {
+  const found = p.options.map((id) => findChar(game, id)).filter(Boolean);
+  if (!found.length) return null;
+  const own = found.filter((f) => f.pi === cpu);
+  const enemy = found.filter((f) => f.pi !== cpu);
+  const byVal = (list, desc) => [...list].sort((a, b) => (desc ? 1 : -1) * (cpuVal(b.c) - cpuVal(a.c)))[0]?.c.id ?? null;
+  if (!enemy.length) {
+    if (/回復/.test(p.title)) return byVal(own, true);
+    if (/パワーを上げる|効果を与える|パワー\+/.test(p.title)) {
+      const P = game.players[cpu];
+      const ready = own.filter((f) => !f.c.rested && !f.c.noAttack && (f.c.haste || canAttackNow(P, f.c)) && !CPU_AVOID_ATTACK.has(f.c.defId));
+      const pool = ready.length ? ready : own;
+      return byVal(pool, true);
+    }
+    if (/スキップ可/.test(p.title)) return null;
+    return byVal(own, false);
+  }
+  if (own.length) return /回復/.test(p.title) ? byVal(own, true) : byVal(enemy, true);
+  return byVal(enemy, true);
+}
+
 
 // ===== Socket =====
 export function setupTcgMode(io) {
@@ -2304,6 +2510,27 @@ export function setupTcgMode(io) {
           return;
         }
         game.seats[seat] = { clientId, name, socketId: socket.id, connected: true, deck };
+        if (payload.solo && roomId.startsWith('solo-') && !game.seats[1 - seat]) {
+          const presets = [
+            ['standard', 'スタンダード', STANDARD_DECK],
+            ['villains', 'ヴィランズ', VILLAINS_DECK],
+            ['revolution', '革命軍', REVOLUTIONARY_DECK],
+            ['world', '世界会議', WORLD_DECK],
+            ['kid', 'キッド海賊団', KID_DECK],
+            ['prisoner', '囚人', PRISONER_DECK],
+          ].filter(([, , d]) => normalizeDeck(d));
+          const wanted = presets.find(([k]) => k === payload.cpuDeck);
+          const [, label, cpuDeck] = wanted || presets[rnd(presets.length)];
+          game.seats[1 - seat] = {
+            clientId: 'cpu',
+            name: `CPU（${label}）`,
+            socketId: null,
+            connected: true,
+            deck: normalizeDeck(cpuDeck),
+            cpu: true,
+          };
+          game.solo = true;
+        }
       } else {
         Object.assign(game.seats[seat], { socketId: socket.id, connected: true, name });
       }
@@ -2341,7 +2568,7 @@ export function setupTcgMode(io) {
     socket.on('tcg:ability', ({ charId, genre } = {}) =>
       withGame((game, seat) => {
         needMyFreeTurn(game, seat);
-        useAbility(game, seat, Number(charId), String(genre || ''));
+        activateAbility(game, seat, Number(charId), String(genre || ''));
       })
     );
 
@@ -2412,6 +2639,7 @@ export function setupTcgMode(io) {
         clearTimeout(game.cleanup);
         game.cleanup = setTimeout(() => {
           clearTimeout(game.timer);
+          clearTimeout(game.cpuTimer);
           games.delete(game.roomId);
         }, 10 * 60 * 1000);
       }

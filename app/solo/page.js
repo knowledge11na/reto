@@ -650,6 +650,19 @@ characterImageQuizBest,
   </p>
 </Link>
 
+          {/* KNOWLEDGE TCG（ソロ用） */}
+          <Link
+            href="/solo/tcg"
+            className="block rounded-2xl border border-rose-400 bg-rose-50 px-4 py-5 shadow-sm hover:bg-rose-100 transition"
+          >
+            <p className="text-base font-extrabold text-rose-900">KNOWLEDGE TCG（ソロ用）</p>
+            <p className="text-[12px] text-rose-950 leading-relaxed mt-2">
+              CPUと対戦するカードゲーム。CPUの効果の問題はあなたに出題され、不正解だと効果が発動。
+              <br />
+              デッキ編集もできます。
+            </p>
+          </Link>
+
           {/* ナレッジタワー*/}
           <Link
   href="/solo/knowledge-tower"
