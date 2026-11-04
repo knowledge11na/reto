@@ -264,14 +264,6 @@ function newChar(card, slot, P) {
   };
 }
 
-function placeFromHand(game, pi, defId) {
-  const P = game.players[pi];
-  const card = P.hand.find((c) => c.defId === defId);
-  if (!card) return;
-  P.hand = P.hand.filter((c) => c.id !== card.id);
-  (game.afterQueue ||= []).push(() => putOnBoard(game, pi, { id: card.id, defId: card.defId }, '手札'));
-}
-
 function bounce(game, found) {
   const { pi, c } = found;
   const P = game.players[pi];
@@ -484,12 +476,48 @@ function searchDeck(game, pi, defId) {
   return true;
 }
 
-// トラッシュにある指定カードを1枚場に出す
-function placeTrashByDef(game, pi, defId) {
-  const card = game.players[pi].trash.find((t) => t.defId === defId);
-  if (!card) return false;
-  placeFromTrash(game, pi, card);
-  return true;
+// 手札／トラッシュの指定カードを自分で選んで場に出す。スキップなら何もしない
+function offerPlace(game, pi, title, defIds, zones = ['hand', 'trash']) {
+  (game.afterQueue ||= []).push(() => {
+    const P = game.players[pi];
+    const list = [];
+    if (zones.includes('hand')) list.push(...P.hand.filter((c) => defIds.includes(c.defId)).map((c) => ({ ...c, from: 'hand' })));
+    if (zones.includes('trash')) list.push(...P.trash.filter((c) => defIds.includes(c.defId)).map((c) => ({ ...c, from: 'trash' })));
+    if (!list.length) {
+      addLog(game, `${title.split('：')[0]}：場に出せるカードがなかった。`);
+      return;
+    }
+    const options = list.map(({ id, defId }) => ({ id, defId, name: CARD_DEFS[defId].name }));
+    const pending = {
+      kind: 'discard',
+      source: 'trash',
+      skippable: true,
+      owner: pi,
+      title,
+      options,
+      deadline: Date.now() + QUIZ_MS,
+      drawAfter: 0,
+      cb: (picked) => {
+        const src = picked && list.find((x) => x.id === picked.id);
+        if (!src) {
+          addLog(game, `${game.seats[pi].name} は場に出さなかった。`);
+          return;
+        }
+        if (src.from === 'hand') {
+          P.hand = P.hand.filter((c) => c.id !== src.id);
+          (game.afterQueue ||= []).push(() => putOnBoard(game, pi, { id: src.id, defId: src.defId }, '手札', 'hand'));
+        } else {
+          P.trash = P.trash.filter((t) => t.id !== src.id);
+          (game.afterQueue ||= []).push(() => putOnBoard(game, pi, { id: src.id, defId: src.defId }, 'トラッシュ', 'trash'));
+        }
+      },
+    };
+    game.pending = pending;
+    armTimer(game, pending, () => {
+      game.pending = null;
+      pending.cb(null);
+    });
+  });
 }
 
 const effCost = (c) => Math.max(0, CARD_DEFS[c.defId].cost - (c.costDown || 0));
@@ -1004,7 +1032,7 @@ function reillyBonus(game, pi, c) {
   const n = game.players[pi].hand.length;
   c.temp += n;
   addLog(game, `レイリーのパワーが手札の枚数分（+${n}）上がった（現在 ${currentPower(c)}）。`);
-  if (!placeTrashByDef(game, pi, 'sbShakuyaku')) placeFromHand(game, pi, 'sbShakuyaku');
+  offerPlace(game, pi, 'レイリー：場に出すシャクヤクを選んでください（スキップ可）', ['sbShakuyaku']);
 }
 
 function attackTriggers(game, attOwner, att, cont) {
@@ -1056,7 +1084,7 @@ function attackTriggers(game, attOwner, att, cont) {
       return;
     case 'sbShakuyaku2':
       ask(game, attOwner, ['before'], 'シャクヤク：正解で手札かトラッシュのレイリーを場に出す', (ok) => {
-        if (ok && !placeTrashByDef(game, attOwner, 'sbReilly')) placeFromHand(game, attOwner, 'sbReilly');
+        if (ok) offerPlace(game, attOwner, 'シャクヤク：場に出すレイリーを選んでください（スキップ可）', ['sbReilly']);
         cont();
       });
       return;
@@ -1684,7 +1712,7 @@ function runAbility(game, pi, c, genre) {
             t.c.noRecover = true;
             addLog(game, `${CARD_DEFS[t.c.defId].name} は次の相手ターン開始時に回復できない。`);
           }
-          placeFromHand(game, pi, 'ramen');
+          offerPlace(game, pi, 'ラーメン：場に出すラーメンを選んでください（スキップ可）', ['ramen'], ['hand']);
         });
       });
       return;
@@ -1748,7 +1776,7 @@ function runAbility(game, pi, c, genre) {
         if (!ok) return;
         chooseOpp(game, pi, 'パワー-2にする相手キャラを選んでください', () => true, (t) => {
           if (t) applyPowerDebuff(game, pi, c.id, t.c.id, 2, turnExpiry);
-          placeFromHand(game, pi, 'ramen');
+          offerPlace(game, pi, 'ラーメン：場に出すラーメンを選んでください（スキップ可）', ['ramen'], ['hand']);
         });
       });
       return;
@@ -2179,7 +2207,7 @@ function actPlay(game, pi, cardId, slot) {
 }
 
 // 効果などで場に出す。場が埋まっていれば1体を押し出し（破壊扱いにしない）、登場時効果も発動する
-function putOnBoard(game, pi, card, from) {
+function putOnBoard(game, pi, card, from, zone = 'trash') {
   const P = game.players[pi];
   const name = CARD_DEFS[card.defId].name;
   const place = (slot) => {
@@ -2194,8 +2222,14 @@ function putOnBoard(game, pi, card, from) {
     return;
   }
   askChoose(game, pi, `場が埋まっています。押し出すキャラを選んでください（${name}を出す）`, P.board.map((x) => x.id), (id) => {
-    const out = P.board.find((x) => x.id === (id || P.board[0]?.id));
-    if (!out) return;
+    const out = id && P.board.find((x) => x.id === id);
+    if (!out) {
+      // 押し出さない場合は出さずに元の場所へ戻す
+      if (zone === 'hand') P.hand.push({ id: card.id, defId: card.defId });
+      else P.trash.push({ id: card.id, defId: card.defId });
+      addLog(game, `${name} は場に出さなかった。`);
+      return;
+    }
     const slot = out.slot;
     P.board = P.board.filter((x) => x.id !== out.id);
     P.trash.push({ id: out.id, defId: baseId(out.defId) });
@@ -2307,8 +2341,8 @@ function runEntry(game, pi, c) {
   }
   if (card.defId === 'sbPeter') {
     askSeq(game, pi, [['yobikata'], ['bounty']], 'ピーターマン：呼び方正解でカイリケン、懸賞金正解でミノルバをトラッシュから場に出す', (res) => {
-      if (res[0] && !placeTrashByDef(game, pi, 'sbKairiken')) addLog(game, 'トラッシュにカイリケンがなかった。');
-      if (res[1] && !placeTrashByDef(game, pi, 'sbMinoruba')) addLog(game, 'トラッシュにミノルバがなかった。');
+      if (res[0]) offerPlace(game, pi, 'ピーターマン：場に出すカイリケンを選んでください（スキップ可）', ['sbKairiken'], ['trash']);
+      if (res[1]) offerPlace(game, pi, 'ピーターマン：場に出すミノルバを選んでください（スキップ可）', ['sbMinoruba'], ['trash']);
     });
   }
   if (card.defId === 'kaido') {

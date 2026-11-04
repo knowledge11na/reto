@@ -504,6 +504,7 @@ export default function TcgPage() {
   const logRef = useRef(null);
   const [trashView, setTrashView] = useState(null); // 'me' | 'opp'
   const [commonOpen, setCommonOpen] = useState(false);
+  const [discardSel, setDiscardSel] = useState(null);
 
   useEffect(() => {
     const sp = new URLSearchParams(window.location.search);
@@ -1060,14 +1061,34 @@ export default function TcgPage() {
                 <button
                   type="button"
                   key={card.id}
-                  className="deck-mini discard-option"
-                  onClick={() => discardCard(card.id)}
+                  className={`deck-mini discard-option ${discardSel === card.id ? 'picked' : ''}`}
+                  onClick={() => {
+                    if (discardSel === card.id) {
+                      setDiscardSel(null);
+                      discardCard(card.id);
+                    } else {
+                      setDiscardSel(card.id);
+                    }
+                  }}
                 >
                   <CardArt defId={card.defId} />
                   <span>{card.name}</span>
                 </button>
               ))}
             </div>
+            {(() => {
+              const sel = discardOptions.find((o) => o.id === discardSel);
+              const def = sel && CARD_DEFS[sel.defId];
+              return def ? (
+                <div className="discard-detail">
+                  <b>{def.name}</b>（コスト{def.cost} / パワー{def.power}{def.blocker ? ' / ブロッカー' : ''}）
+                  <div>{def.text}</div>
+                  <div className="d-note">もう一度タップするとこのカードを指定します。</div>
+                </div>
+              ) : (
+                <div className="d-note">カードをタップで効果を確認、もう一度タップで指定します。</div>
+              );
+            })()}
             {pending.skippable && (
               <button type="button" className="btn small" onClick={() => discardCard(0)}>選ばない</button>
             )}
@@ -1255,6 +1276,8 @@ body { margin: 0; background: #eaf3ff; }
 .deck { display: flex; flex-direction: column; align-items: center; gap: 4px; }
 .deck-card { width: 46px; height: 62px; box-shadow: 2px 2px 0 #7fa6d6, 4px 4px 0 #a9c5e6; }
 .piles { display: flex; gap: 10px; align-items: flex-start; }
+.discard-option.picked { outline: 3px solid #f5b400; box-shadow: 0 0 12px rgba(245,180,0,.9); }
+.discard-detail { margin: 8px 0; padding: 8px 10px; border-radius: 8px; background: #fff8d6; color: #222; font-size: 13px; line-height: 1.5; text-align: left; }
 .common-btn { align-self: center; padding: 6px 10px; border-radius: 8px; border: 1px solid rgba(0,0,0,.25); background: rgba(255,255,255,.7); color: #345; font: inherit; font-size: 12px; cursor: pointer; opacity: .85; }
 .common-btn:hover:not(:disabled) { opacity: 1; background: #fff; }
 .common-btn:disabled { cursor: default; opacity: .45; }
