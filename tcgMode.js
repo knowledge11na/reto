@@ -177,6 +177,8 @@ const power = (c) =>
 
 const currentPower = power;
 
+const isBlocker = (c) => !!CARD_DEFS[c.defId].blocker || !!c.blockBuff;
+
 function applyPowerDebuff(game, sourceOwner, sourceId, targetId, amount, expires = null) {
   const found = findChar(game, targetId);
   if (!found) return;
@@ -348,6 +350,7 @@ function startTurn(game, pi) {
   const schedule = pi === game.first ? COST_FIRST : COST_SECOND;
   P.maxCost = schedule[Math.min(P.turns - 1, schedule.length - 1)];
   P.cost = P.maxCost;
+  P.commonUsed = false;
   for (const c of P.board) {
     if (c.noRecover) c.noRecover = false;
     else c.rested = false;
@@ -769,7 +772,7 @@ function afterAttackTriggers(game) {
   const blockers = cb.unblockable
     ? []
     : game.players[defOwner].board.filter(
-        (c) => CARD_DEFS[c.defId].blocker && !c.rested && c.id !== cb.target
+        (c) => isBlocker(c) && !c.rested && c.id !== cb.target
       );
   if (!blockers.length) {
     resolveUnblocked(game, att, attOwner);
@@ -1580,9 +1583,9 @@ function runAbility(game, pi, c, genre) {
       return;
     case 'sbDisco':
       c.abilityUsed = true;
-      askSeq(game, pi, Array.from({ length: P.hand.length }, () => ALL_GENRES), `${name}：自分の手札の枚数分のクイズ`, (mine) => {
+      askSeq(game, pi,       Array.from({ length: Math.min(4, P.hand.length) }, () => ALL_GENRES), `${name}：自分の手札の枚数分のクイズ（最大4問）`, (mine) => {
         const myRight = mine.filter(Boolean).length;
-        askSeq(game, opp, Array.from({ length: game.players[opp].hand.length }, () => ALL_GENRES), `${name}：相手の手札の枚数分のクイズ`, (theirs) => {
+              askSeq(game, opp, Array.from({ length: Math.min(4, game.players[opp].hand.length) }, () => ALL_GENRES), `${name}：相手の手札の枚数分のクイズ（最大4問）`, (theirs) => {
           const diff = myRight - theirs.filter(Boolean).length;
           addLog(game, `ディスコ：正解数 ${game.seats[pi].name} ${myRight} / ${game.seats[opp].name} ${theirs.filter(Boolean).length}`);
           if (diff > 0) {
@@ -2069,6 +2072,79 @@ function runAbility(game, pi, c, genre) {
   }
 }
 
+// ===== 共通コストアクション =====
+const COMMON_ACTIONS = {
+  1: { text: '味方1体のパワーをこのターン中+1', target: 'ally' },
+  2: { text: 'ライフを1回復' },
+  3: { text: 'カードを1枚引く' },
+  4: { text: 'ライフを2回復' },
+  5: { text: '味方1体を次の相手のターン終了までブロッカーにする', target: 'ally' },
+  6: { text: '味方1体のパワーをこのターン中+2', target: 'ally' },
+  7: { text: 'カードを2枚引く' },
+  8: { text: '相手キャラ1体のパワーを永続的に-2', target: 'enemy' },
+  9: { text: '味方1体のパワーを永続的に+3', target: 'ally' },
+  10: { text: 'カードを3枚引く' },
+};
+
+function actCommon(game, pi, cost) {
+  const P = game.players[pi];
+  const action = COMMON_ACTIONS[cost];
+  if (!action) fail('その共通アクションは存在しません。');
+  if (P.commonUsed) fail('共通アクションはこのターンすでに使用済みです。');
+  if (cost > P.cost) fail('コストが足りません。');
+  if (action.target === 'ally' && !P.board.length) fail('対象にできる味方キャラがいません。');
+  if (action.target === 'enemy' && !game.players[1 - pi].board.length) fail('対象にできる相手キャラがいません。');
+
+  P.cost -= cost;
+  P.commonUsed = true;
+  const who = game.seats[pi].name;
+  addLog(game, `${who} が共通アクション（コスト${cost}：${action.text}）を使用した。`);
+  ask(game, pi, ALL_GENRES, `共通アクション（コスト${cost}）：正解で「${action.text}」`, (ok) => {
+    if (!ok) {
+      addLog(game, '共通アクションは不発に終わった。');
+      return;
+    }
+    switch (cost) {
+      case 1:
+      case 6:
+        pickAlly(game, pi, 'パワーを上げる味方キャラを選んでください', () => true, (t) => addTurnTemp(game, pi, t.c, cost === 1 ? 1 : 2));
+        return;
+      case 2:
+      case 4:
+        healLife(game, pi, cost === 2 ? 1 : 2);
+        return;
+      case 3:
+      case 7:
+      case 10: {
+        const n = draw(game, pi, cost === 3 ? 1 : cost === 7 ? 2 : 3);
+        addLog(game, `${who} はカードを${n}枚引いた。`);
+        return;
+      }
+      case 5:
+        pickAlly(game, pi, 'ブロッカーにする味方キャラを選んでください', () => true, (t) => {
+          t.c.blockBuff = { owner: 1 - pi, turn: game.players[1 - pi].turns + 1 };
+          addLog(game, `${CARD_DEFS[t.c.defId].name} が次の相手のターン終了までブロッカーになった。`);
+        });
+        return;
+      case 8:
+        chooseOpp(game, pi, 'パワーを-2する相手キャラを選んでください', () => true, (t) => {
+          if (!t) return;
+          t.c.bonus -= 2;
+          addLog(game, `${CARD_DEFS[t.c.defId].name} のパワーが永続的に-2された（現在 ${currentPower(t.c)}）。`);
+          if (currentPower(t.c) <= 0) destroy(game, t.pi, t.c);
+        });
+        return;
+      case 9:
+        pickAlly(game, pi, 'パワーを+3する味方キャラを選んでください', () => true, (t) => {
+          t.c.bonus += 3;
+          addLog(game, `${CARD_DEFS[t.c.defId].name} のパワーが永続的に+3された（現在 ${currentPower(t.c)}）。`);
+        });
+        return;
+      default:
+    }
+  });
+}
+
 // ===== アクション =====
 function actPlay(game, pi, cardId, slot) {
   const P = game.players[pi];
@@ -2312,6 +2388,7 @@ function actEnd(game, pi) {
   }
   for (const player of game.players) {
     for (const c of player.board) {
+      if (c.blockBuff && c.blockBuff.owner === pi && c.blockBuff.turn <= game.players[pi].turns) c.blockBuff = null;
       c.powerMods = (c.powerMods || []).filter(
         (mod) => mod.expiresOwner !== pi || mod.expiresTurn > game.players[pi].turns
       );
@@ -2342,7 +2419,7 @@ function charView(game, pi, c) {
     rested: c.rested,
     power: power(c),
     cost: def.cost,
-    blocker: def.blocker,
+    blocker: isBlocker(c),
     text: def.text,
     canAttack: mine && !c.rested && !c.noAttack && canAttackNow(P, c),
     hitActive: !!c.hitActive,
@@ -2419,6 +2496,7 @@ function viewFor(game, viewer) {
       handCount: P.hand.length,
       cost: P.cost,
       maxCost: P.maxCost,
+      commonUsed: !!P.commonUsed,
       board: P.board.map((c) => charView(game, pi, c)),
       hand: own
         ? P.hand.map((c) => {
@@ -2572,7 +2650,7 @@ function cpuStep(game, cpu) {
   }
 
   // 3. 攻撃
-  const blockers = O.board.filter((c) => CARD_DEFS[c.defId].blocker && !c.rested);
+  const blockers = O.board.filter((c) => isBlocker(c) && !c.rested);
   const maxBlock = blockers.reduce((m, c) => Math.max(m, power(c)), 0);
   const attackers = P.board
     .filter((c) => !c.rested && !c.noAttack && canAttackNow(P, c) && !CPU_AVOID_ATTACK.has(c.defId) && !game.cpuTried.has(`t${c.id}`))
@@ -2824,6 +2902,13 @@ export function setupTcgMode(io) {
         const pending = game.pending;
         if (!pending || pending.kind !== 'discard' || pending.owner !== seat) fail('今はカードを捨てられません。');
         resolveDiscard(game, pending, Number(cardId));
+      })
+    );
+
+    socket.on('tcg:common', ({ cost } = {}) =>
+      withGame((game, seat) => {
+        needMyFreeTurn(game, seat);
+        actCommon(game, seat, Number(cost));
       })
     );
 

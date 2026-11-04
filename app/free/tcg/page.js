@@ -405,7 +405,7 @@ function DeckSelect({ onStart, onBack, editOnly = false }) {
   );
 }
 
-function DeckPile({ count, trash, onOpenTrash }) {
+function DeckPile({ count, trash, onOpenTrash, common }) {
   const last = trash?.[trash.length - 1];
   return (
     <div className="piles">
@@ -419,9 +419,33 @@ function DeckPile({ count, trash, onOpenTrash }) {
         </div>
         <div className="deck-count">トラッシュ {trash?.length || 0}</div>
       </button>
+      {common && (
+        <button
+          type="button"
+          className={`common-btn ${common.used ? 'used' : ''}`}
+          title="余ったコストを支払って共通アクションを使う"
+          disabled={common.used || !common.enabled}
+          onClick={common.onClick}
+        >
+          {common.used ? '使用済み' : 'コストを支払う'}
+        </button>
+      )}
     </div>
   );
 }
+
+const COMMON_ACTIONS = [
+  [1, '味方1体のパワーをこのターン中+1'],
+  [2, 'ライフを1回復'],
+  [3, 'カードを1枚引く'],
+  [4, 'ライフを2回復'],
+  [5, '味方1体を次の相手のターン終了までブロッカーにする'],
+  [6, '味方1体のパワーをこのターン中+2'],
+  [7, 'カードを2枚引く'],
+  [8, '相手キャラ1体のパワーを永続的に-2'],
+  [9, '味方1体のパワーを永続的に+3'],
+  [10, 'カードを3枚引く'],
+];
 
 function nameClass(name) {
   const n = String(name || '').length;
@@ -478,6 +502,7 @@ export default function TcgPage() {
   const inputRef = useRef(null);
   const logRef = useRef(null);
   const [trashView, setTrashView] = useState(null); // 'me' | 'opp'
+  const [commonOpen, setCommonOpen] = useState(false);
 
   useEffect(() => {
     const sp = new URLSearchParams(window.location.search);
@@ -934,7 +959,12 @@ export default function TcgPage() {
               {me.hand.length === 0 && <div className="no-hand">手札なし</div>}
             </div>
 
-            <DeckPile count={me.deckCount} trash={me.trash} onOpenTrash={() => setTrashView('me')} />
+            <DeckPile
+              count={me.deckCount}
+              trash={me.trash}
+              onOpenTrash={() => setTrashView('me')}
+              common={{ used: me.commonUsed, enabled: idle, onClick: () => setCommonOpen(true) }}
+            />
           </div>
         </section>
       </div>
@@ -1061,6 +1091,36 @@ export default function TcgPage() {
         </div>
       )}
 
+      {commonOpen && idle && !me.commonUsed && (
+        <div className="overlay" onClick={() => setCommonOpen(false)}>
+          <div className="quiz common-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="q-title">共通アクション（COST {me.cost}）— 1ターンに1回・ランダムジャンルのクイズに正解で発動</div>
+            <div className="common-list">
+              {COMMON_ACTIONS.map(([cost, text]) => {
+                const ok = cost <= me.cost;
+                return (
+                  <button
+                    key={cost}
+                    type="button"
+                    className={`common-item ${ok ? 'glow' : 'dim'}`}
+                    disabled={!ok}
+                    onClick={() => {
+                      setCommonOpen(false);
+                      emit('tcg:common', { cost });
+                    }}
+                  >
+                    <b>{cost}</b>
+                    <span>{text}</span>
+                  </button>
+                );
+              })}
+            </div>
+            <div className="d-note">不正解でもコストは戻りません。</div>
+            <button className="btn ghost" onClick={() => setCommonOpen(false)}>キャンセル</button>
+          </div>
+        </div>
+      )}
+
       {trashView && (
         <div className="overlay" onClick={() => setTrashView(null)}>
           <div className="quiz trash-modal" onClick={(e) => e.stopPropagation()}>
@@ -1183,6 +1243,16 @@ body { margin: 0; background: #eaf3ff; }
 .deck { display: flex; flex-direction: column; align-items: center; gap: 4px; }
 .deck-card { width: 46px; height: 62px; box-shadow: 2px 2px 0 #7fa6d6, 4px 4px 0 #a9c5e6; }
 .piles { display: flex; gap: 10px; align-items: flex-start; }
+.common-btn { align-self: center; padding: 6px 10px; border-radius: 8px; border: 1px solid rgba(0,0,0,.25); background: rgba(255,255,255,.7); color: #345; font: inherit; font-size: 12px; cursor: pointer; opacity: .85; }
+.common-btn:hover:not(:disabled) { opacity: 1; background: #fff; }
+.common-btn:disabled { cursor: default; opacity: .45; }
+.common-list { display: grid; gap: 6px; margin: 8px 0; }
+.common-item { display: flex; gap: 10px; align-items: center; text-align: left; padding: 8px 10px; border-radius: 8px; border: 1px solid #999; font: inherit; }
+.common-item b { min-width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; background: #555; color: #fff; }
+.common-item.glow { background: #fff8d6; border-color: #f5b400; color: #222; cursor: pointer; box-shadow: 0 0 10px 2px rgba(245,180,0,.8); animation: common-glow 1.2s ease-in-out infinite alternate; }
+.common-item.glow b { background: #f5b400; color: #222; }
+.common-item.dim { background: #3a3f4a; color: #889; cursor: not-allowed; opacity: .6; }
+@keyframes common-glow { from { box-shadow: 0 0 6px 1px rgba(245,180,0,.6); } to { box-shadow: 0 0 16px 4px rgba(245,180,0,.95); } }
 .deck.trash { border: none; background: none; padding: 0; font: inherit; color: inherit; cursor: pointer; }
 .trash-card { border: 2px dashed #9db8d8; border-radius: 6px; background: rgba(255,255,255,0.6); overflow: hidden; display: flex; box-shadow: none; }
 .trash-card.has { border-style: solid; background: #fff; }
