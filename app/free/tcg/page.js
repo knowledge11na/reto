@@ -231,6 +231,7 @@ const CARD_IMAGES = {
   sbReilly: '0531',
   sbShakuyaku: '0509',
   sbShakuyaku2: '05091',
+  joyboy: '1826',
 };
 
 function CardArt({ defId }) {
@@ -538,8 +539,19 @@ export default function TcgPage() {
 
     const join = () => {
       setConn('connected');
-      const cpuDeck = new URLSearchParams(window.location.search).get('cpu') || '';
-      s.emit('tcg:join', { roomId: room, clientId, name, deck, solo, cpuDeck });
+      const cpuParam = new URLSearchParams(window.location.search).get('cpu') || '';
+      let cpuDeck = cpuParam;
+      let cpuCards = null;
+      let cpuName = '';
+      if (cpuParam.startsWith('my:')) {
+        const mine = loadCustomDecks().find((d) => d.id === cpuParam.slice(3));
+        if (mine) {
+          cpuCards = mine.cards;
+          cpuName = mine.name;
+        }
+        cpuDeck = '';
+      }
+      s.emit('tcg:join', { roomId: room, clientId, name, deck, solo, cpuDeck, cpuCards, cpuName });
     };
     s.on('connect', join);
     s.on('disconnect', () => setConn('connecting'));

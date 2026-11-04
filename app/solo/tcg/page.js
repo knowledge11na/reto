@@ -1,7 +1,9 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
+
+const DECKS_KEY = 'tcg_custom_decks';
 
 const CPU_DECKS = [
   ['random', 'ランダム'],
@@ -16,7 +18,20 @@ const CPU_DECKS = [
 
 export default function SoloTcgMenu() {
   const [cpu, setCpu] = useState('random');
-  const battleHref = cpu === 'random' ? '/free/tcg?solo=1' : `/free/tcg?solo=1&cpu=${cpu}`;
+  const [mine, setMine] = useState([]);
+  useEffect(() => {
+    const t = setTimeout(() => {
+      try {
+        const list = JSON.parse(localStorage.getItem(DECKS_KEY) || '[]');
+        setMine(list.map((d) => ({ id: String(d.id), name: String(d.name || 'マイデッキ') })));
+      } catch {
+        setMine([]);
+      }
+    }, 0);
+    return () => clearTimeout(t);
+  }, []);
+  const battleHref =
+    cpu === 'random' ? '/free/tcg?solo=1' : `/free/tcg?solo=1&cpu=${encodeURIComponent(cpu)}`;
 
   return (
     <main className="min-h-screen bg-slate-50 px-4 py-8">
@@ -39,6 +54,11 @@ export default function SoloTcgMenu() {
               {CPU_DECKS.map(([v, l]) => (
                 <option key={v} value={v}>
                   {l}
+                </option>
+              ))}
+              {mine.map((d) => (
+                <option key={d.id} value={`my:${d.id}`}>
+                  マイデッキ：{d.name}
                 </option>
               ))}
             </select>

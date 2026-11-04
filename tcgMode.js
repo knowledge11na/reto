@@ -130,17 +130,25 @@ function addLog(game, text) {
   if (game.log.length > 60) game.log.shift();
 }
 
+// ジョイボーイは常にデッキの一番下に置く
+const shuffleKeepBottom = (cards) => [
+  ...shuffle(cards.filter((c) => c.defId !== 'joyboy')),
+  ...cards.filter((c) => c.defId === 'joyboy'),
+];
+
 function createPlayerState(game, deckSpec) {
   const cards = [];
   for (const [defId, n] of Object.entries(deckSpec || STANDARD_DECK)) {
     for (let i = 0; i < n; i++) cards.push({ id: newId(game), defId });
   }
-  const deck = shuffle(cards);
+  const joy = cards.filter((c) => c.defId === 'joyboy').length;
+  const deck = shuffleKeepBottom(cards);
   return {
     life: INITIAL_LIFE,
     lifeHp: LIFE_HP,
-    deck: deck.slice(INITIAL_HAND),
-    hand: deck.slice(0, INITIAL_HAND),
+    deck: deck.slice(INITIAL_HAND + joy),
+    hand: deck.slice(0, INITIAL_HAND + joy),
+    joy,
     board: [],
     trash: [],
     powerMods: [],
@@ -171,7 +179,7 @@ function startGame(game) {
 
 // ===== 基本操作 =====
 const power = (c) =>
-  CARD_DEFS[c.defId].power + c.bonus + c.turnTemp + c.temp
+  CARD_DEFS[c.defId].power + c.bonus + c.turnTemp + c.temp + (c.joy || 0)
   - (c.powerMods || []).reduce((total, mod) => total + mod.amount, 0)
   + (c.powerBuffs || []).reduce((total, buff) => total + buff.amount, 0);
 
@@ -244,6 +252,7 @@ function newChar(card, slot, P) {
     slot,
     rested: false,
     bonus: 0,
+    joy: P.joy || 0,
     temp: 0,
     turnTemp: 0,
     powerMods: [],
@@ -348,7 +357,7 @@ function startTurn(game, pi) {
   const P = game.players[pi];
   P.turns += 1;
   const schedule = pi === game.first ? COST_FIRST : COST_SECOND;
-  P.maxCost = schedule[Math.min(P.turns - 1, schedule.length - 1)];
+  P.maxCost = Math.min(10, schedule[Math.min(P.turns - 1, schedule.length - 1)] + (P.joy || 0));
   P.cost = P.maxCost;
   P.commonUsed = false;
   for (const c of P.board) {
@@ -470,7 +479,7 @@ function searchDeck(game, pi, defId) {
   }
   const [card] = P.deck.splice(i, 1);
   P.hand.push(card);
-  P.deck = shuffle(P.deck);
+  P.deck = shuffleKeepBottom(P.deck);
   addLog(game, `${game.seats[pi].name} は山札の ${CARD_DEFS[defId].name} を手札に加えた。`);
   return true;
 }
@@ -2867,7 +2876,10 @@ export function setupTcgMode(io) {
             ['shabondy', 'シャボン舞う諸島', SHABONDY_DECK],
           ].filter(([, , d]) => normalizeDeck(d));
           const wanted = presets.find(([k]) => k === payload.cpuDeck);
-          const [, label, cpuDeck] = wanted || presets[rnd(presets.length)];
+          const mineDeck = normalizeDeck(payload.cpuCards);
+          const [, label, cpuDeck] = mineDeck
+            ? ['my', `マイデッキ：${String(payload.cpuName || '').slice(0, 12)}`, mineDeck]
+            : wanted || presets[rnd(presets.length)];
           game.seats[1 - seat] = {
             clientId: 'cpu',
             name: `CPU（${label}）`,
