@@ -204,6 +204,17 @@ export default function PunkRecordsPage() {
   const [discussionTime, setDiscussionTime] =
     useState(120);
 
+  // 1人あたりの入力制限時間（分）。0 = 無制限
+  const [inputTimeMin, setInputTimeMin] =
+    useState(0);
+
+  const [inputRemaining, setInputRemaining] =
+    useState(0);
+
+  // 各プレイヤーが書いた文全体（担当外の欄の下書き）。{ プレイヤー番号: { 文字位置: 文字 } }
+  const [drafts, setDrafts] =
+    useState({});
+
   // -------------------------
   // ゲーム
   // -------------------------
@@ -579,6 +590,8 @@ const [stealthType, setStealthType] =
       initialInputValues
     );
 
+    setDrafts({});
+
     setYorkStealthValues({});
     setYorkStealthUsed(0);
 setStealthMode(false);
@@ -658,6 +671,8 @@ setStealthType('character');
     setCurrentPlayerRole(
       currentInputPlayer.role
     );
+
+    setInputRemaining(inputTimeMin * 60);
 
     setPhase('input');
   }
@@ -765,6 +780,25 @@ function isCurrentPlayersSlot(
       String(value ?? ''),
   }));
 }
+
+  function handleDraftInput(
+    charIndex,
+    value
+  ) {
+    if (!currentInputPlayer) {
+      return;
+    }
+
+    const pid = currentInputPlayer.id;
+
+    setDrafts((prev) => ({
+      ...prev,
+      [pid]: {
+        ...(prev[pid] || {}),
+        [charIndex]: String(value ?? ''),
+      },
+    }));
+  }
 
   function handleStealthInput(
     charIndex,
@@ -978,7 +1012,7 @@ function isCurrentPlayersSlot(
   // 自分の入力完了
   // -------------------------
 
-function finishCurrentInput() {
+function finishCurrentInput(force = false) {
   if (!currentInputPlayer) {
     return;
   }
@@ -989,7 +1023,8 @@ function finishCurrentInput() {
   if (
     isCurrentPlayerYork() &&
     stealthMode &&
-    stealthType === 'symbol'
+    stealthType === 'symbol' &&
+    !(force && selectedHiddenSymbolIndexes.length === 0)
   ) {
     if (
       selectedHiddenSymbolIndexes.length === 0
@@ -1051,10 +1086,16 @@ function finishCurrentInput() {
         ).trim()
     );
 
-  if (missing) {
-    setMessage(
-      '担当している文字をすべて入力してください。'
-    );
+  if (missing && force) {
+    // 時間切れ：未入力の担当欄は「？」で埋める
+    setInputValues((prev) => {
+      const next = { ...prev };
+      myIndexes.forEach((index) => {
+        if (!String(next[index] ?? '').trim()) next[index] = '？';
+      });
+      return next;
+    });
+  } else if (missing) {
 
     return;
   }
@@ -1083,6 +1124,32 @@ function finishCurrentInput() {
 
   setPhase('handoff');
 }
+
+  // -------------------------
+  // 入力の制限時間
+  // -------------------------
+
+  useEffect(() => {
+    if (
+      phase !== 'input' ||
+      inputTimeMin <= 0
+    ) {
+      return undefined;
+    }
+
+    if (inputRemaining <= 0) {
+      finishCurrentInput(true);
+      return undefined;
+    }
+
+    const timer = setTimeout(() => {
+      setInputRemaining((prev) => prev - 1);
+    }, 1000);
+
+    return () => clearTimeout(timer);
+    // finishCurrentInput は毎レンダーで再生成されるため依存に含めない
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase, inputTimeMin, inputRemaining]);
 
   // -------------------------
   // 回答画面
@@ -1309,8 +1376,7 @@ function finishCurrentInput() {
     setCurrentPlayerRole(null);
 
     setInputValues({});
-
-    setYorkStealthValues({});
+    setDrafts({});
     setYorkStealthUsed(0);
 setStealthMode(false);
 setStealthCharacter('');
@@ -1734,12 +1800,27 @@ function renderDescription(
                 </div>
 
                 <p className="instruction">
-                  あなたの担当する文字だけ
-                  入力できます。
+                  説明文全体を書いてください。
+                  <br />
+                  実際に採用されるのは、黄色く強調された
+                  あなたの担当欄だけです。
                   <br />
                   他のプレイヤーが入力した文字は
                   見えません。
                 </p>
+
+                {inputTimeMin > 0 && (
+                  <div
+                    className={
+                      inputRemaining <= 10
+                        ? 'input-timer danger'
+                        : 'input-timer'
+                    }
+                  >
+                    残り {Math.floor(inputRemaining / 60)}:
+                    {String(inputRemaining % 60).padStart(2, '0')}
+                  </div>
+                )}
 
  <div className="description-grid input-grid">
   {descriptionChars.map(
@@ -1875,12 +1956,22 @@ function renderDescription(
       // --------------------------------
       if (!mine) {
         return (
-          <div
+          <input
             key={index}
-            className="description-cell hidden-cell"
-          >
-            ？
-          </div>
+            className="description-input draft-input"
+            type="text"
+            inputMode="text"
+            autoComplete="off"
+            value={
+              drafts[currentInputPlayer?.id]?.[index] || ''
+            }
+            onChange={(event) =>
+              handleDraftInput(
+                index,
+                event.target.value
+              )
+            }
+          />
         );
       }
 
@@ -2160,8 +2251,8 @@ function renderDescription(
 
             <button
               className="start-button wide"
-              onClick={
-                finishCurrentInput
+              onClick={() =>
+                finishCurrentInput()
               }
             >
               入力完了
@@ -2484,6 +2575,43 @@ function renderDescription(
 
   <div className="final-description">
     {renderDescription(true)}
+  </div>
+</div>
+
+<div className="final-description-section">
+  <h2>
+    みんなが書いた説明文
+  </h2>
+
+  <div className="player-sentences">
+    {inputPlayerIndexes.map((pid) => {
+      const p = players[pid];
+      return (
+        <div key={pid} className="player-sentence">
+          <span className="ps-name">{p?.name}</span>
+          {descriptionChars.map((char, index) => {
+            const adopted =
+              !isOpenSymbol(char) &&
+              inputPlayerIndexes[(getOwnerNumber(index) || 0) - 1] === pid;
+            if (isOpenSymbol(char)) {
+              return <span key={index}>{char}</span>;
+            }
+            const raw = adopted
+              ? inputValues[index]
+              : drafts[pid]?.[index];
+            const ch = Array.from(raw || '')[0] || '＿';
+            return (
+              <span
+                key={index}
+                className={adopted ? 'ps-adopted' : 'ps-other'}
+              >
+                {ch}
+              </span>
+            );
+          })}
+        </div>
+      );
+    })}
   </div>
 </div>
 
@@ -2921,6 +3049,28 @@ function renderDescription(
                   ? 'ON'
                   : 'OFF'}
               </button>
+            </div>
+
+            <div className="setting-block">
+              <div className="setting-label">
+                1人あたりの入力制限時間
+              </div>
+
+              <select
+                value={inputTimeMin}
+                onChange={(event) =>
+                  setInputTimeMin(
+                    Number(event.target.value)
+                  )
+                }
+              >
+                <option value={0}>無制限</option>
+                {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 15, 20, 30].map((m) => (
+                  <option key={m} value={m}>
+                    {m}分
+                  </option>
+                ))}
+              </select>
             </div>
 
             <div className="setting-block">
@@ -3783,6 +3933,64 @@ const styles = `
     background: #fff;
     box-shadow:
       0 0 0 3px rgba(45,130,170,0.14);
+  }
+
+  .assigned-input {
+    background: #fff3b0;
+    border-color: #e0a800;
+    box-shadow: 0 0 0 2px rgba(224,168,0,0.35);
+  }
+
+  .draft-input {
+    background: #f4f6f8;
+    border-color: #cdd6dc;
+    color: #8798a3;
+  }
+
+  .input-timer {
+    margin: 8px auto;
+    text-align: center;
+    font-weight: 800;
+    font-size: 20px;
+    color: #23495d;
+  }
+
+  .input-timer.danger {
+    color: #d34b4b;
+  }
+
+  .player-sentences {
+    display: grid;
+    gap: 10px;
+    margin: 16px 0;
+  }
+
+  .player-sentence {
+    padding: 10px 12px;
+    border-radius: 10px;
+    border: 1px solid #d3e2ea;
+    background: #fff;
+    text-align: left;
+    line-height: 1.9;
+    word-break: break-all;
+  }
+
+  .player-sentence .ps-name {
+    display: block;
+    font-weight: 800;
+    color: #23495d;
+    font-size: 13px;
+  }
+
+  .player-sentence .ps-adopted {
+    background: #fff3b0;
+    border-bottom: 2px solid #e0a800;
+    font-weight: 800;
+    color: #111;
+  }
+
+  .player-sentence .ps-other {
+    color: #9aa8b0;
   }
 
   /* =========================================
