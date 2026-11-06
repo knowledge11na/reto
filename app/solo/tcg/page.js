@@ -71,7 +71,7 @@ export default function SoloTcgMenu() {
         >
           <p className="text-base font-extrabold text-rose-900">CPUと対戦</p>
           <p className="mt-2 text-[12px] leading-relaxed text-rose-950">
-            デッキを選んで、最善手を打ってくるCPUと対戦します。
+            デッキを選んで、CPUと対戦します。
           </p>
         </Link>
 
