@@ -788,6 +788,8 @@ export default function TcgPage() {
 
   const turnLabel = g.phase === 'finished'
     ? '対戦終了'
+    : g.turnNo === 0
+      ? '対戦準備中'
     : myTurn
       ? 'あなたのターン'
       : '相手のターン';
@@ -796,6 +798,8 @@ export default function TcgPage() {
   const waitingMsg = pending && !pending.mine
     ? pending.kind === 'block'
       ? '相手がブロックを選択中…'
+      : pending.kind === 'mulligan'
+        ? '相手が初手を選択中…'
       : pending.kind === 'order'
         ? '相手が先攻・後攻を選択中…'
         : pending.kind === 'choose'
@@ -864,6 +868,17 @@ export default function TcgPage() {
             <small>TURN {g.turnNo}</small>
           </div>
           {waitingMsg && <div className="wait-msg">{waitingMsg}</div>}
+          {pending?.kind === 'mulligan' && pending.mine && (
+            <div className="wait-msg strong mulligan-prompt">
+              <span>初手を確認して選択（残り{left}秒）。引き直しは1回、手札すべてを戻して同じ枚数を引きます。</span>
+              <button type="button" className="btn small" onClick={() => emit('tcg:mulligan', { redraw: false })}>
+                この手札で始める
+              </button>
+              <button type="button" className="btn small" onClick={() => emit('tcg:mulligan', { redraw: true })}>
+                手札を引き直す
+              </button>
+            </div>
+          )}
           {pending?.kind === 'choose' && pending.mine && (
             <div className="wait-msg strong">
               {pending.title}（残り{left}秒）
@@ -1335,6 +1350,7 @@ body { margin: 0; background: #eaf3ff; }
 .turn-badge small { font-size: 10px; color: #5d7391; font-weight: normal; }
 .wait-msg { font-size: 13px; color: #3b6f9e; display: flex; align-items: center; gap: 8px; }
 .wait-msg.strong { color: #a86b00; font-weight: bold; }
+.mulligan-prompt { flex-wrap: wrap; }
 .mid-actions { display: flex; align-items: center; gap: 8px; margin-left: auto; }
 .hint { font-size: 12px; color: #1f8f62; }
 

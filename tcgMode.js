@@ -154,16 +154,49 @@ function createPlayerState(game, deckSpec) {
     powerMods: [],
     turns: 0,
     cost: 0,
+    maxCost: 0,
   };
 }
 
 function startGame(game) {
   game.players = game.seats.map((s) => createPlayerState(game, s.deck));
-  game.first = rnd(2);
+  game.first = null;
+  game.current = null;
   game.phase = 'playing';
   game.winner = null;
+  addLog(game, '対戦開始！ 先攻・後攻を決める前に、初手を1回引き直せます。');
+  askMulligan(game, 0);
+}
+
+function askMulligan(game, owner) {
+  const pending = {
+    kind: 'mulligan',
+    owner,
+    ms: 30000,
+    deadline: Date.now() + 30000,
+    cb: (redraw) => {
+      const P = game.players[owner];
+      if (redraw) {
+        const handSize = P.hand.length;
+        const deck = shuffleKeepBottom([...P.deck, ...P.hand]);
+        P.hand = deck.slice(0, handSize);
+        P.deck = deck.slice(handSize);
+      }
+      addLog(game, `${game.seats[owner].name} は初手を${redraw ? '引き直した' : '維持した'}。`);
+      if (owner === 0) askMulligan(game, 1);
+      else chooseFirstPlayer(game);
+    },
+  };
+  game.pending = pending;
+  armTimer(game, pending, () => {
+    game.pending = null;
+    pending.cb(false);
+  });
+}
+
+function chooseFirstPlayer(game) {
   const chooser = rnd(2);
-  addLog(game, `対戦開始！ ランダムで ${game.seats[chooser].name} が先攻・後攻を選びます。`);
+  addLog(game, `ランダムで ${game.seats[chooser].name} が先攻・後攻を選びます。`);
   const decide = (first) => {
     game.first = first;
     addLog(game, `先攻は ${game.seats[first].name} です。`);
@@ -2774,6 +2807,13 @@ function cpuLethal(O, attackers, blockerCount) {
 }
 
 function cpuResolvePending(game, cpu, p) {
+  if (p.kind === 'mulligan') {
+    const playable = game.players[cpu].hand.filter((card) => effCost(card) <= 3).length;
+    clearTimeout(game.timer);
+    game.pending = null;
+    p.cb(playable === 0);
+    return;
+  }
   if (p.kind === 'order') {
     clearTimeout(game.timer);
     game.pending = null;
@@ -2998,6 +3038,18 @@ export function setupTcgMode(io) {
         clearTimeout(game.timer);
         game.pending = null;
         p.cb(id);
+      })
+    );
+
+    socket.on('tcg:mulligan', ({ redraw } = {}) =>
+      withGame((game, seat) => {
+        needPlaying(game, seat);
+        const p = game.pending;
+        if (!p || p.kind !== 'mulligan' || p.owner !== seat) fail('今は初手を選択できません。');
+        if (typeof redraw !== 'boolean') fail('初手の選択が正しくありません。');
+        clearTimeout(game.timer);
+        game.pending = null;
+        p.cb(redraw);
       })
     );
 
