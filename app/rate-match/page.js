@@ -106,6 +106,20 @@ function TeamCardMini({ member }) {
 
 const FREE_GAMES = [
   {
+    id: 'punkrecords',
+    name: 'パンクレコーズ',
+    description: '4人で説明文を作り、ヨークを見破るゲーム',
+    minPlayers: 4, maxPlayers: 4, available: true,
+    rulePath: '/free/punkrecords/rules',
+  },
+  {
+    id: 'vivre-search',
+    name: 'ビブルサーチ',
+    description: 'ヒントからキャラクターを探す対戦・パーティーゲーム',
+    minPlayers: 2, maxPlayers: 4, available: true,
+    rulePath: '/solo/vivre-search/rules',
+  },
+  {
     id: 'hawk',
     name: 'ミス・フライデーのえじき',
     description: '同じカードを使って競り合うゲーム',
@@ -509,6 +523,12 @@ if (gameId === 'tcg') {
   router.push(
     `/free/tcg?room=${encodeURIComponent(roomId)}`
   );
+  return;
+}
+
+if (gameId === 'punkrecords' || gameId === 'vivre-search') {
+  if (payload.knowledgeToken) sessionStorage.setItem(`knowledge_token_${roomId}`, payload.knowledgeToken);
+  router.push(`/free/${gameId}?room=${encodeURIComponent(roomId)}`);
   return;
 }
 

@@ -9,6 +9,7 @@ import db from "./lib/db.js";
 import { addBerriesByUserId } from "./lib/berries.js";
 import { setupMeteorMode } from "./meteorMode.js";
 import { setupTcgMode } from "./tcgMode.js";
+import { setupFreeKnowledgeModes } from "./freeKnowledgeModes.js";
 
 const PORT = process.env.PORT || 4000;
 
@@ -56,6 +57,7 @@ const io = new Server(httpServer, {
 
 setupMeteorMode(io);
 const tcgMode = setupTcgMode(io);
+const knowledgeModes = setupFreeKnowledgeModes(io);
 
 // ------------------------------
 // 共通
@@ -196,6 +198,13 @@ function rebindFreeRoomPlayer(room, player, socket) {
     socket.emit("free:game-start", {
       roomId: room.roomId,
       gameId: room.selectedGame,
+    });
+  }
+  if (["punkrecords", "vivre-search"].includes(room.selectedGame) && player.knowledgeToken && knowledgeModes.has(room.roomId)) {
+    socket.emit("free:game-start", {
+      roomId: room.roomId,
+      gameId: room.selectedGame,
+      knowledgeToken: player.knowledgeToken,
     });
   }
 }
@@ -1521,6 +1530,29 @@ room.players.set(
             roomId: safeRoomId,
             gameId: "tcg",
             tcgToken: participant.token,
+          });
+        }
+        return;
+      }
+
+      if (room.selectedGame === "punkrecords" || room.selectedGame === "vivre-search") {
+        const count = room.players.size;
+        const punk = room.selectedGame === "punkrecords";
+        if ((punk && count !== 4) || (!punk && (count < 2 || count > 4))) {
+          socket.emit("free:error", { message: punk ? "パンクレコーズは4人で開始してください。" : "ビブルサーチは2〜4人で開始してください。" });
+          return;
+        }
+        const participants = Array.from(room.players.values()).map((player) => ({
+          socketId: player.socketId, name: player.name, token: randomBytes(24).toString("hex"),
+        }));
+        if (!knowledgeModes.prepare(safeRoomId, punk ? "punk" : "vivre", participants.map(({ name, token }) => ({ name, token })))) {
+          socket.emit("free:error", { message: "この部屋のゲームはすでに開始しています。" });
+          return;
+        }
+        for (const player of participants) {
+          room.players.get(player.socketId).knowledgeToken = player.token;
+          io.to(player.socketId).emit("free:game-start", {
+            roomId: safeRoomId, gameId: room.selectedGame, knowledgeToken: player.token,
           });
         }
         return;
