@@ -2607,6 +2607,39 @@ function broadcast(game) {
   game.seats.forEach((s, i) => {
     if (s?.socketId) IO.to(s.socketId).emit('tcg:state', viewFor(game, i));
   });
+  if (game.spectator?.socketId) {
+    const state = viewFor(game, 0);
+    state.spectator = true;
+    state.me = { ...state.me };
+    const other = viewFor(game, 1);
+    state.opp.hand = other.me.hand;
+    if (state.pending) state.pending.mine = false;
+    IO.to(game.spectator.socketId).emit('tcg:state', state);
+  }
+}
+
+function broadcastLobby(game) {
+  for (const participant of game.lobby.members) {
+    if (participant.socketId) IO.to(participant.socketId).emit('tcg:lobby', {
+      expected: game.lobby.expected,
+      joined: game.lobby.members.length,
+      role: participant.role,
+      error: game.lobby.error,
+    });
+  }
+}
+
+function scheduleCleanupIfEmpty(game) {
+  const connected = game.lobby
+    ? game.lobby.members.some((member) => member.socketId)
+    : game.seats.some((seat) => seat?.connected);
+  if (connected) return;
+  clearTimeout(game.cleanup);
+  game.cleanup = setTimeout(() => {
+    clearTimeout(game.timer);
+    clearTimeout(game.cpuTimer);
+    if (games.get(game.roomId) === game) games.delete(game.roomId);
+  }, 10 * 60 * 1000);
 }
 
 function settle(game) {
@@ -2891,6 +2924,8 @@ export function setupTcgMode(io) {
       const game = games.get(roomId);
       if (!game || seat === undefined) return;
       try {
+        if (seat < 0) fail('観戦中は操作できません。');
+        if (game.seats[seat]?.socketId !== socket.id) fail('この接続は既に切り替わっています。');
         fn(game, seat);
         settle(game);
       } catch (e) {
@@ -2925,6 +2960,39 @@ export function setupTcgMode(io) {
         games.set(roomId, game);
       }
       clearTimeout(game.cleanup);
+
+      if (game.lobby) {
+        const token = String(payload.token || '');
+        if (game.lobby.tokens && !game.lobby.tokens.has(token)) {
+          socket.emit('tcg:error', { message: 'フリーマッチの参加者として入室してください。', fatal: true });
+          return;
+        }
+        let member = game.lobby.members.find((m) => game.lobby.tokens ? m.token === token : m.clientId === clientId);
+        if (!member) {
+          if (game.phase !== 'waiting' || game.lobby.members.length >= game.lobby.expected) {
+            socket.emit('tcg:error', { message: 'この部屋はすでに満員です。', fatal: true });
+            return;
+          }
+          member = { clientId: game.lobby.tokens ? token : clientId, token, name, socketId: socket.id, role: null, deck: null };
+          game.lobby.members.push(member);
+        } else {
+          member.socketId = socket.id;
+          member.name = name;
+        }
+        socket.data.tcgRoom = roomId;
+        socket.data.tcgClientId = member.clientId;
+        if (game.phase === 'waiting') {
+          socket.data.tcgSeat = -1;
+          broadcastLobby(game);
+        } else {
+          const seat = game.seats.findIndex((s) => s?.clientId === member.clientId);
+          socket.data.tcgSeat = seat;
+          if (seat >= 0) Object.assign(game.seats[seat], { socketId: socket.id, connected: true });
+          else if (game.spectator?.clientId === member.clientId) game.spectator.socketId = socket.id;
+          broadcast(game);
+        }
+        return;
+      }
 
       let seat = game.seats.findIndex((s) => s && s.clientId === clientId);
       if (seat === -1) {
@@ -2973,6 +3041,47 @@ export function setupTcgMode(io) {
 
       if (game.phase === 'waiting' && game.seats[0] && game.seats[1]) startGame(game);
       settle(game);
+    });
+
+    socket.on('tcg:select-role', ({ role, deck } = {}) => {
+      const game = games.get(socket.data.tcgRoom);
+      if (!game?.lobby || game.phase !== 'waiting') {
+        socket.emit('tcg:error', { message: '今は役割を選択できません。' });
+        return;
+      }
+      const member = game.lobby.members.find((m) => m.clientId === socket.data.tcgClientId && m.socketId === socket.id);
+      if (!member) return;
+      if (role !== 'player' && !(role === 'spectator' && game.lobby.expected === 3)) {
+        socket.emit('tcg:error', { message: '役割が正しくありません。' });
+        return;
+      }
+      const normalized = role === 'player' ? normalizeDeck(deck) : null;
+      if (role === 'player' && !normalized) {
+        socket.emit('tcg:error', { message: 'デッキが不正です（30枚・同名カードは3枚まで）。' });
+        return;
+      }
+      member.role = role;
+      member.deck = normalized;
+      game.lobby.error = '';
+      const members = game.lobby.members;
+      if (members.length === game.lobby.expected && members.every((m) => m.role)) {
+        const players = members.filter((m) => m.role === 'player');
+        if (players.length !== 2) {
+          for (const m of members) { m.role = null; m.deck = null; }
+          game.lobby.error = 'プレイ人数が合いません。デッキを選び直してください。';
+        } else {
+          game.seats = players.map((m) => ({ ...m, connected: true }));
+          game.spectator = members.find((m) => m.role === 'spectator') || null;
+          for (const [index, player] of game.seats.entries()) {
+            const playerSocket = io.sockets.sockets.get(player.socketId);
+            if (playerSocket) playerSocket.data.tcgSeat = index;
+          }
+          startGame(game);
+          settle(game);
+          return;
+        }
+      }
+      broadcastLobby(game);
     });
 
     socket.on('tcg:play', ({ cardId, slot } = {}) =>
@@ -3082,19 +3191,39 @@ export function setupTcgMode(io) {
       const game = games.get(socket.data.tcgRoom);
       const seat = socket.data.tcgSeat;
       if (!game || seat === undefined) return;
+      if (game.lobby) {
+        const member = game.lobby.members.find((m) => m.clientId === socket.data.tcgClientId);
+        if (!member || member.socketId !== socket.id) return;
+        member.socketId = null;
+        if (seat < 0 && game.spectator) game.spectator.socketId = null;
+        if (seat < 0) {
+          if (game.phase === 'waiting') broadcastLobby(game);
+          scheduleCleanupIfEmpty(game);
+          return;
+        }
+      }
       const s = game.seats[seat];
       if (!s || s.socketId !== socket.id) return;
       s.connected = false;
       s.socketId = null;
       broadcast(game);
-      if (game.seats.every((x) => !x || !x.connected)) {
-        clearTimeout(game.cleanup);
-        game.cleanup = setTimeout(() => {
-          clearTimeout(game.timer);
-          clearTimeout(game.cpuTimer);
-          games.delete(game.roomId);
-        }, 10 * 60 * 1000);
-      }
+      scheduleCleanupIfEmpty(game);
     });
   });
+
+  return {
+    prepareFreeRoom(roomId, expected, tokens = null) {
+      const previous = games.get(String(roomId));
+      if (previous && previous.phase !== 'finished') return false;
+      if (previous) {
+        clearTimeout(previous.cleanup);
+        clearTimeout(previous.timer);
+        clearTimeout(previous.cpuTimer);
+      }
+      const game = createGame(String(roomId));
+      game.lobby = { expected, members: [], error: '', tokens: tokens ? new Set(tokens) : null };
+      games.set(game.roomId, game);
+      return true;
+    },
+  };
 }

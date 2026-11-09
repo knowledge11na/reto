@@ -1,6 +1,7 @@
 // file: server.js
 
 import http from "http";
+import { randomBytes } from "node:crypto";
 import express from "express";
 import cors from "cors";
 import { Server } from "socket.io";
@@ -54,7 +55,7 @@ const io = new Server(httpServer, {
 });
 
 setupMeteorMode(io);
-setupTcgMode(io);
+const tcgMode = setupTcgMode(io);
 
 // ------------------------------
 // 共通
@@ -1498,6 +1499,30 @@ room.players.set(
           }
         );
 
+        return;
+      }
+
+      if (room.selectedGame === "tcg") {
+        const count = room.players.size;
+        if (count < 2 || count > 3) {
+          socket.emit("free:error", { message: "KNOWLEDGE TCGは2人または3人で開始してください。" });
+          return;
+        }
+        const participants = Array.from(room.players.values()).map((player) => ({
+          socketId: player.socketId,
+          token: randomBytes(24).toString("hex"),
+        }));
+        if (!tcgMode.prepareFreeRoom(safeRoomId, count, participants.map((p) => p.token))) {
+          socket.emit("free:error", { message: "この部屋のTCGはすでに開始しています。" });
+          return;
+        }
+        for (const participant of participants) {
+          io.to(participant.socketId).emit("free:game-start", {
+            roomId: safeRoomId,
+            gameId: "tcg",
+            tcgToken: participant.token,
+          });
+        }
         return;
       }
 

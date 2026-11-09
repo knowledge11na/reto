@@ -147,9 +147,9 @@ rulePath: '/free/tatou/rules',
 {
   id: 'tcg',
   name: 'KNOWLEDGE TCG',
-  description: 'クイズを解いて戦う1対1のカードゲーム',
+  description: 'クイズを解いて戦う1対1のカードゲーム（3人目は観戦）',
   minPlayers: 2,
-  maxPlayers: 2,
+  maxPlayers: 3,
   available: true,
   rulePath: '/free/tcg/rules',
 },
@@ -503,6 +503,9 @@ if (gameId === 'haste-voute') {
 
 // ONE PIECE TCG
 if (gameId === 'tcg') {
+  if (payload.tcgToken) {
+    sessionStorage.setItem(`tcg_token_${roomId}`, payload.tcgToken);
+  }
   router.push(
     `/free/tcg?room=${encodeURIComponent(roomId)}`
   );
@@ -1090,6 +1093,11 @@ setFreeError(
         `${game.name}は${game.minPlayers}人以上必要です。`
       );
 
+      return;
+    }
+
+    if (game.id === 'tcg' && playerCount > game.maxPlayers) {
+      setFreeError(`${game.name}は3人までです。`);
       return;
     }
 

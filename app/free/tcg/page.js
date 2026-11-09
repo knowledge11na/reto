@@ -250,7 +250,7 @@ function CardArt({ defId }) {
   );
 }
 
-function DeckSelect({ onStart, onBack, editOnly = false }) {
+function DeckSelect({ onStart, onBack, editOnly = false, lobby, onSpectate, connection, error }) {
   const [custom, setCustom] = useState([]);
   const [selected, setSelected] = useState('standard');
   const [editing, setEditing] = useState(null); // { id, name, cards }
@@ -337,8 +337,27 @@ function DeckSelect({ onStart, onBack, editOnly = false }) {
           <button className="btn end" disabled={total !== DECK_SIZE} onClick={saveEdit}>保存</button>
           <button className="btn ghost" onClick={() => setEditing(null)}>キャンセル</button>
         </div>
-        <div className="deck-grid">
-          {editing.allowedCards.map((id) => {
+        {(() => {
+          const pools = [
+            ['スタンダードデッキ', STANDARD_CARD_POOL],
+            ['ヴィランズデッキ', VILLAINS_CARD_POOL],
+            ['革命軍デッキ', REVOLUTIONARY_CARD_POOL],
+            ['世界会議デッキ', WORLD_CARD_POOL],
+            ['キッド海賊団デッキ', KID_CARD_POOL],
+            ['囚人デッキ', PRISONER_CARD_POOL],
+            ['シャボン舞う諸島デッキ', SHABONDY_CARD_POOL],
+          ];
+          const grouped = new Set(pools.flatMap(([, cards]) => cards));
+          pools.push(['その他のカード', editing.allowedCards.filter((id) => !grouped.has(id))]);
+          const allowed = new Set(editing.allowedCards);
+          return pools.map(([name, cards]) => {
+            const ids = [...new Set(cards)].filter((id) => allowed.has(id));
+            if (!ids.length) return null;
+            return (
+              <details key={name} className="deck-group">
+                <summary>{name}（{ids.length}種類）</summary>
+                <div className="deck-grid">
+          {ids.map((id) => {
             const def = CARD_DEFS[id];
             const n = editing.cards[id] || 0;
             return (
@@ -355,7 +374,11 @@ function DeckSelect({ onStart, onBack, editOnly = false }) {
               </div>
             );
           })}
-        </div>
+                </div>
+              </details>
+            );
+          });
+        })()}
       </main>
     );
   }
@@ -367,6 +390,15 @@ function DeckSelect({ onStart, onBack, editOnly = false }) {
         <h1>{editOnly ? 'デッキを編集' : 'デッキを選択'}</h1>
         <button className="btn ghost" onClick={onBack}>戻る</button>
       </div>
+      {lobby && (
+        <div className="deck-group" role="status">
+          <p>参加者 {lobby.joined} / {lobby.expected}人 {lobby.role ? '・選択済み（変更できます）' : '・役割を選択してください'}</p>
+          {lobby.error && <p role="alert">{lobby.error}</p>}
+          {error && <p role="alert">{error}</p>}
+          {connection !== 'connected' && <p role="alert">接続されていません。再接続を待っています。</p>}
+          {lobby.expected === 3 && <button className="btn" disabled={connection !== 'connected'} onClick={onSpectate}>観戦する</button>}
+        </div>
+      )}
       <div className="deck-list">
         {decks.map((d) => (
           <button
@@ -391,7 +423,7 @@ function DeckSelect({ onStart, onBack, editOnly = false }) {
         </div>
         <div className="deck-actions">
           {!editOnly && (
-            <button className="btn end" onClick={() => onStart(current.cards)}>このデッキで対戦</button>
+            <button className="btn end" disabled={!!lobby && connection !== 'connected'} onClick={() => onStart(current.cards)}>このデッキで対戦</button>
           )}
           <button className="btn" onClick={() => startEdit(current)}>
             {current.fixed ? 'コピーして編集' : '編集'}
@@ -486,6 +518,7 @@ export default function TcgPage() {
   const [error, setError] = useState('');
   const [fatal, setFatal] = useState(false);
   const [deck, setDeck] = useState(null);
+  const [lobby, setLobby] = useState(null);
   const [editOnly, setEditOnly] = useState(false);
   const [solo, setSolo] = useState(false);
   const backPath = solo ? '/solo/tcg' : '/rate-match';
@@ -505,6 +538,7 @@ export default function TcgPage() {
   const [trashView, setTrashView] = useState(null); // 'me' | 'opp'
   const [commonOpen, setCommonOpen] = useState(false);
   const [discardSel, setDiscardSel] = useState(null);
+  const [spectatorHand, setSpectatorHand] = useState(null);
 
   useEffect(() => {
     const sp = new URLSearchParams(window.location.search);
@@ -524,12 +558,12 @@ export default function TcgPage() {
     }
     try {
       const saved = normalizeDeck(JSON.parse(sessionStorage.getItem(`tcg_deck_${room}`) || 'null'));
-      if (saved) setDeck(saved);
+      if (saved && isSolo) setDeck(saved);
     } catch {}
   }, []);
 
   useEffect(() => {
-    if (!deck || !roomId) return undefined;
+    if ((!deck && solo) || !roomId || editOnly) return undefined;
     const room = roomId;
 
     const name =
@@ -552,12 +586,14 @@ export default function TcgPage() {
         }
         cpuDeck = '';
       }
-      s.emit('tcg:join', { roomId: room, clientId, name, deck, solo, cpuDeck, cpuCards, cpuName });
+      const token = solo ? null : sessionStorage.getItem(`tcg_token_${room}`);
+      s.emit('tcg:join', { roomId: room, clientId, name, deck, solo, cpuDeck, cpuCards, cpuName, token });
     };
     s.on('connect', join);
     s.on('disconnect', () => setConn('connecting'));
     s.on('connect_error', () => setConn('error'));
     s.on('tcg:state', (st) => setG(st));
+    s.on('tcg:lobby', (state) => setLobby(state));
     s.on('tcg:error', (e) => {
       setError(e.message || 'エラー');
       if (e.fatal) setFatal(true);
@@ -568,7 +604,7 @@ export default function TcgPage() {
       s.disconnect();
       socketRef.current = null;
     };
-  }, [deck, roomId, solo]);
+  }, [deck, roomId, solo, editOnly]);
 
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 250);
@@ -656,7 +692,7 @@ export default function TcgPage() {
   const emit = (ev, data) => socketRef.current?.emit(ev, data);
   const discardCard = (cardId) => emit('tcg:discard', { cardId });
 
-  const myTurn = g?.phase === 'playing' && g.current === g.you;
+  const myTurn = !g?.spectator && g?.phase === 'playing' && g.current === g.you;
   const idle = myTurn && !pending;
 
   const selectedChar = useMemo(
@@ -686,22 +722,30 @@ export default function TcgPage() {
   if (conn === 'noroom') {
     return <Center text="部屋IDが指定されていません。フリー対戦の部屋から入ってください。" />;
   }
-  if (!deck) {
-    return (
-      <DeckSelect
-        onStart={(cards) => {
-          sessionStorage.setItem(`tcg_deck_${roomId}`, JSON.stringify(cards));
-          setDeck(cards);
-        }}
-        onBack={() => router.push(backPath)}
-      />
-    );
-  }
   if (fatal) {
     return (
       <Center text={error || 'この部屋には入れません。'}>
         <button className="btn" onClick={() => router.push(backPath)}>戻る</button>
       </Center>
+    );
+  }
+  if ((solo && !deck) || (!solo && lobby && !g)) {
+    return (
+      <DeckSelect
+        onStart={(cards) => {
+          if (solo) {
+            sessionStorage.setItem(`tcg_deck_${roomId}`, JSON.stringify(cards));
+            setDeck(cards);
+          } else {
+            emit('tcg:select-role', { role: 'player', deck: cards });
+          }
+        }}
+        lobby={lobby}
+        connection={conn}
+        error={error}
+        onSpectate={() => emit('tcg:select-role', { role: 'spectator' })}
+        onBack={() => router.push(backPath)}
+      />
     );
   }
   if (conn === 'error' && !g) {
@@ -788,6 +832,8 @@ export default function TcgPage() {
 
   const turnLabel = g.phase === 'finished'
     ? '対戦終了'
+    : g.spectator
+      ? '観戦中'
     : g.turnNo === 0
       ? '対戦準備中'
     : myTurn
@@ -822,6 +868,7 @@ export default function TcgPage() {
                 <div key={i} className="card back mini" />
               ))}
               <span className="hand-count">手札 {opp.handCount}</span>
+              {g.spectator && <button type="button" className="btn small" onClick={() => setSpectatorHand('opp')}>手札を見る</button>}
             </div>
             <div className="who">
               <div className="pname">{opp.name}{!opp.connected && <em>（切断中）</em>}</div>
@@ -906,7 +953,7 @@ export default function TcgPage() {
               </button>
             </div>
           )}
-          <div className="mid-actions">
+          {!g.spectator && <div className="mid-actions">
             {idle && selectedChar?.canAttack && <span className="hint">攻撃先を選択（ダウン中の相手キャラ／相手のライフ）</span>}
             {idle && selectedHandCard && <span className="hint">出す枠をクリック</span>}
             <button className="btn end" disabled={!idle} onClick={() => emit('tcg:end')}>
@@ -921,7 +968,7 @@ export default function TcgPage() {
             >
               降参
             </button>
-          </div>
+          </div>}
         </div>
 
         <section className="side my-side">
@@ -951,7 +998,7 @@ export default function TcgPage() {
 
           <div className="player-strip">
             <div className="who">
-              <div className="pname">{me.name}（あなた）</div>
+              <div className="pname">{me.name}{g.spectator ? '' : '（あなた）'}</div>
               <div className="life-box mine" data-life="me">
                 <span className="life-label">LIFE</span>
                 <Hearts life={me.life} hp={me.lifeHp} maxHp={me.lifeMaxHp} />
@@ -960,7 +1007,9 @@ export default function TcgPage() {
               <div className="cost-text">COST {me.cost}/{me.maxCost}</div>
             </div>
 
-            <div className="hand">
+            {g.spectator ? (
+              <button type="button" className="btn" onClick={() => setSpectatorHand('me')}>{me.name}の手札を見る（{me.handCount}枚）</button>
+            ) : <div className="hand">
               {me.hand.map((c) => {
                 const playable = idle && c.cost <= me.cost;
                 return (
@@ -985,13 +1034,13 @@ export default function TcgPage() {
                 );
               })}
               {me.hand.length === 0 && <div className="no-hand">手札なし</div>}
-            </div>
+            </div>}
 
             <DeckPile
               count={me.deckCount}
               trash={me.trash}
               onOpenTrash={() => setTrashView('me')}
-              common={{ used: me.commonUsed, enabled: idle, onClick: () => setCommonOpen(true) }}
+              common={!g.spectator && { used: me.commonUsed, enabled: idle, onClick: () => setCommonOpen(true) }}
             />
           </div>
         </section>
@@ -1169,6 +1218,22 @@ export default function TcgPage() {
         </div>
       )}
 
+      {spectatorHand && (
+        <div className="overlay" onClick={() => setSpectatorHand(null)}>
+          <div className="quiz trash-modal" onClick={(event) => event.stopPropagation()}>
+            <div className="q-title">{spectatorHand === 'me' ? me.name : opp.name} の手札</div>
+            <div className="trash-list">
+              {(spectatorHand === 'me' ? me.hand : opp.hand).map((card) => (
+                <button type="button" key={card.id} className="deck-mini discard-option" onClick={() => setDetail(card)}>
+                  <CardArt defId={card.defId} /><span>{card.name}</span>
+                </button>
+              ))}
+            </div>
+            {detail && <div className="discard-detail"><b>{detail.name}</b>（コスト{detail.cost} / パワー{detail.power}）<div>{detail.text}</div></div>}
+            <button className="btn" onClick={() => setSpectatorHand(null)}>閉じる</button>
+          </div>
+        </div>
+      )}
       {trashView && (
         <div className="overlay" onClick={() => setTrashView(null)}>
           <div className="quiz trash-modal" onClick={(e) => e.stopPropagation()}>
@@ -1227,7 +1292,7 @@ export default function TcgPage() {
       {g.phase === 'finished' && (
         <div className="overlay">
           <div className="quiz result">
-            <h2>{g.winner === g.you ? '勝利！' : '敗北…'}</h2>
+            <h2>{g.spectator ? '対戦終了' : g.winner === g.you ? '勝利！' : '敗北…'}</h2>
             <div className="q-lines">{g.log[g.log.length - 1]}</div>
             <button className="btn" onClick={() => router.push(backPath)}>戻る</button>
           </div>
@@ -1425,6 +1490,9 @@ body { margin: 0; background: #eaf3ff; }
 .deck-mini { display: flex; flex-direction: column; align-items: center; gap: 4px; font-size: 12px; font-weight: bold; text-align: center; }
 .deck-mini .c-art { width: 90px; height: 90px; flex: none; }
 .deck-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+.deck-group { margin: 10px 0; border: 1px solid #b7cde6; border-radius: 8px; background: #fff; }
+.deck-group summary { padding: 12px; font-weight: bold; cursor: pointer; }
+.deck-group .deck-grid { padding: 0 12px 12px; }
 .deck-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
 .deck-item { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 12px; border: 2px solid #b7cde6; border-radius: 10px; background: #fff; }
 .deck-item.in { border-color: #3fb584; }
