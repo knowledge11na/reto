@@ -161,6 +161,26 @@ function broadcastFreeRoom(room) {
 }
 
 // ------------------------------
+// 終了済みゲームの状態を破棄（同じ部屋で次のゲームを始められるようにする）
+// ------------------------------
+
+function resetFinishedFreeRoomGames(roomId) {
+  const key = String(roomId);
+
+  const drop = (games, finishedPhases) => {
+    const game = games.get(key);
+    if (game && finishedPhases.includes(game.phase)) {
+      games.delete(key);
+    }
+  };
+
+  drop(hawkGames, ["finished"]);
+  drop(extraPokerGames, ["finished"]);
+  drop(saikoroGames, ["result"]);
+  drop(hasteVouteGames, ["finished"]);
+}
+
+// ------------------------------
 // 再接続したプレイヤーを元の席へ戻す
 // ------------------------------
 
@@ -194,13 +214,13 @@ function rebindFreeRoomPlayer(room, player, socket) {
 
   // 看板たぬきが進行中なら、ゲーム画面へ戻す
   const game = saikoroGames.get(String(room.roomId));
-  if (room.selectedGame === "saikoro" && game?.started) {
+  if (room.selectedGame === "saikoro" && game?.started && game.phase !== "result") {
     socket.emit("free:game-start", {
       roomId: room.roomId,
       gameId: room.selectedGame,
     });
   }
-  if (["punkrecords", "vivre-search"].includes(room.selectedGame) && player.knowledgeToken && knowledgeModes.has(room.roomId)) {
+  if (["punkrecords", "vivre-search"].includes(room.selectedGame) && player.knowledgeToken && knowledgeModes.active(room.roomId)) {
     socket.emit("free:game-start", {
       roomId: room.roomId,
       gameId: room.selectedGame,
@@ -1439,6 +1459,8 @@ room.players.set(
       room.selectedGame =
         gameId || null;
 
+      resetFinishedFreeRoomGames(safeRoomId);
+
       log(
         "free game selected:",
         safeRoomId,
@@ -1510,6 +1532,8 @@ room.players.set(
 
         return;
       }
+
+      resetFinishedFreeRoomGames(safeRoomId);
 
       if (room.selectedGame === "tcg") {
         const count = room.players.size;

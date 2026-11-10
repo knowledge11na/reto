@@ -223,6 +223,9 @@ export default function RateMatchPage() {
 
   const [freeSelectedGame, setFreeSelectedGame] = useState(null);
 
+  // ゲーム終了後に部屋へ戻ってきた時の操作（same | select）
+  const returnActionRef = useRef(null);
+  const returnHandledRef = useRef(false);
   // --------------------------------------
   // ログ
   // --------------------------------------
@@ -440,10 +443,23 @@ export default function RateMatchPage() {
       // 部屋に入った状態ならロビー表示
       setFreeView('room');
 
-      if (payload?.selectedGame) {
-        setFreeSelectedGame(
-          payload.selectedGame
-        );
+      setFreeSelectedGame(
+        payload?.selectedGame ?? null
+      );
+
+      // ゲーム終了後の「ゲームを選び直す」：部屋主が選択をリセット
+      const after = returnActionRef.current;
+      returnActionRef.current = null;
+
+      if (
+        after === 'select' &&
+        payload?.hostSocketId === s.id &&
+        payload?.selectedGame
+      ) {
+        s.emit('free:select-game', {
+          roomId: payload.roomId,
+          gameId: null,
+        });
       }
     };
 
@@ -617,6 +633,32 @@ setFreeError(
     };
   }, [router, me]);
 
+  // ========================================
+  // ゲーム終了後：同じ部屋へ復帰
+  // ========================================
+
+  useEffect(() => {
+    if (!me || !socket || returnHandledRef.current) return;
+
+    const params = new URLSearchParams(window.location.search);
+    const roomId = params.get('freeRoom') || '';
+
+    if (!/^\d{4}$/.test(roomId)) return;
+
+    returnHandledRef.current = true;
+    returnActionRef.current = params.get('after');
+    window.history.replaceState(null, '', '/rate-match');
+
+    socket.emit('free:join', {
+      roomId,
+      name:
+        me.display_name ||
+        me.username ||
+        me.name ||
+        'プレイヤー',
+      userId: me.id ?? null,
+    });
+  }, [me]);
   // ========================================
   // レートマッチ開始
   // ========================================

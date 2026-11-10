@@ -14,8 +14,7 @@ import {
   useRouter,
 } from 'next/navigation';
 import io from 'socket.io-client';
-
-let socket;
+import FreeRematchButtons from '../../../components/FreeRematchButtons.js';
 
 const SOCKET_URL =
   process.env.NEXT_PUBLIC_SOCKET_URL ||
@@ -1320,14 +1319,7 @@ function HawkGamePage() {
             </div>
           </div>
 
-          <button
-            onClick={
-              handleBackToFreeMatch
-            }
-            className="w-full py-3 rounded-full bg-sky-500 text-white font-bold"
-          >
-            フリーマッチへ戻る
-          </button>
+          <FreeRematchButtons roomId={roomId} />
         </div>
       </main>
     );

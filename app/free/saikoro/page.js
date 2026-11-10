@@ -3,6 +3,7 @@
 
 import {useEffect,useMemo,useRef,useState,}from'react';
 import io from 'socket.io-client';
+import FreeRematchButtons from '../../../components/FreeRematchButtons.js';
 
 import {
   loadSaikoroVivreProfiles,
@@ -8654,6 +8655,8 @@ function handleEndMyTurn() {
           >
             設定に戻ってもう一度遊ぶ
           </button>
+
+          <FreeRematchButtons roomId={onlineState?.roomId} />
         </div>
       </main>
     );

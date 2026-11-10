@@ -1,8 +1,10 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import Link from 'next/link';
 import io from 'socket.io-client';
+import FreeRematchButtons from './FreeRematchButtons.js';
+
+const roomFromUrl = () => new URLSearchParams(window.location.search).get('room') || '';
 
 const box = 'rounded-xl border border-slate-300 bg-white p-4 shadow-sm';
 const button = 'rounded-lg bg-blue-700 px-4 py-2 font-bold text-white disabled:opacity-40';
@@ -110,13 +112,22 @@ function Punk({ game, send }) {
       <h2 className="text-xl font-bold">{game.winner === 'stella' ? 'ベガパンク側の勝利' : 'ヨーク側の勝利'}</h2>
       <p>正しい説明文：{game.correctDescription}</p>
       {game.players.map((player, index) => <div key={index}><b>{player.name}（{game.role[index] === 'york' ? 'ヨーク' : game.role[index] === 'stella' ? 'ステラ' : 'サテライト'}）</b>{index !== game.stella && <p>{game.drafts[index].map((char, i) => <span key={i} className={game.owners[i] === index ? 'bg-yellow-200' : ''}>{game.settings.symbolsOpen && game.owners[i] === null ? Array.from(game.correctDescription)[i] : char || '＿'}</span>)}</p>}</div>)}
-      <Link className="underline" href="/rate-match">戻る</Link>
+      <FreeRematchButtons roomId={roomFromUrl()} />
     </section>}
   </>;
 }
 
 function Vivre({ game, send, profiles }) {
   const [guess, setGuess] = useState('');
+  const [suggestions, setSuggestions] = useState([]);
+  const hiraToKata = (str) => str.replace(/[\u3041-\u3096]/g, (s) => String.fromCharCode(s.charCodeAt(0) + 0x60));
+  const onChange = (e) => {
+    const value = e.target.value;
+    setGuess(value);
+    if (value === '') { setSuggestions([]); return; }
+    const keyword = hiraToKata(value);
+    setSuggestions(profiles.filter((x) => x.name.includes(value) || x.name.includes(keyword)).filter((x) => !game.history.some((h) => h.profile.name === x.name)).slice(0, 10));
+  };
   const hard = game.settings.mode.endsWith('hard');
   const party = game.settings.mode.startsWith('party');
   const canAnswer = game.phase === 'playing' && (party || game.turn === game.you);
@@ -126,22 +137,22 @@ function Vivre({ game, send, profiles }) {
     <section className={box}>
       <h2 className="font-bold">{party ? 'パーティー' : '対戦'}{hard ? 'ハード' : 'ノーマル'}</h2>
       <p>{game.phase === 'result' ? `${game.players[game.winner].name} が正解！ 答え：${game.answer}` : party ? '全員が何度でも回答できます。最初の正解者が勝利です。' : `${game.players[game.turn].name} の番（1人60秒）`}</p>
-      {canAnswer && <form className="mt-3 flex gap-2" onSubmit={(e) => { e.preventDefault(); send('guess', { name: guess }); setGuess(''); }}>
-        <input className={input} list="vivre-names" value={guess} onChange={(e) => setGuess(e.target.value)} placeholder="キャラクター名" />
-        <datalist id="vivre-names">{profiles.filter((p) => !game.history.some((h) => h.profile.name === p.name)).map((p, i) => <option key={i} value={p.name} />)}</datalist>
-        <button className={button}>回答</button>
+      {canAnswer && <form className="mt-3 flex gap-2" onSubmit={(e) => { e.preventDefault(); send('guess', { name: guess }); setGuess(''); setSuggestions([]); }}>
+        <input className={`${input} min-w-0 flex-1`} value={guess} onChange={onChange} placeholder="キャラ名を入力" />
+        <button className={`${button} whitespace-nowrap`}>回答</button>
       </form>}
+      {canAnswer && suggestions.length > 0 && <div className="mt-2 rounded-lg border bg-white shadow">{suggestions.map((s) => <div key={s.name} className="cursor-pointer px-4 py-2 font-medium text-black hover:bg-gray-100" onClick={() => { setGuess(s.name); setSuggestions([]); }}>{s.name}</div>)}</div>}
     </section>
     <section className={`${box} overflow-x-auto`}>
       <p>緑：一致 ／ 黄：部分一致 ／ 赤：正解より小さい ／ 青：正解より大きい</p>
-      <table className="mt-2 border-collapse text-center text-sm"><thead><tr>{fields.map((field) => <th className="border p-2" key={field}>{labels[field]}</th>)}<th className="border p-2">回答者</th></tr></thead>
+      <table className="mt-2 w-full table-fixed border-collapse text-center text-[10px] leading-tight sm:text-sm"><thead><tr>{fields.map((field) => <th className="break-words border p-1 sm:p-2" key={field}>{labels[field]}</th>)}</tr></thead>
         <tbody>{game.history.map((row, i) => <tr key={i}>{fields.map((field) => {
           const value = field === 'born' ? `${row.profile.bornSea} / ${row.profile.bornPlace}` : field === 'family' ? row.profile.family.join('、') || 'なし' : row.profile[field];
-          return <td key={field} className={`border p-2 ${colors[row.result[field]] || (field === 'name' && row.correct ? colors.green : 'bg-gray-100')}`}>{value}{row.result[field] === 'up' ? ' ↑' : row.result[field] === 'down' ? ' ↓' : ''}</td>;
-        })}<td className="border p-2">{row.player === null ? '最初のヒント' : game.players[row.player].name}</td></tr>)}</tbody>
+          return <td key={field} className={`break-words border p-1 sm:p-2 ${colors[row.result[field]] || (field === 'name' && row.correct ? colors.green : 'bg-gray-100')}`}>{value}{row.result[field] === 'up' ? ' ↑' : row.result[field] === 'down' ? ' ↓' : ''}</td>;
+        })}</tr>)}</tbody>
       </table>
     </section>
-    {game.phase === 'result' && <Link className="underline" href="/rate-match">戻る</Link>}
+    {game.phase === 'result' && <FreeRematchButtons roomId={roomFromUrl()} />}
   </>;
 }
 
@@ -189,7 +200,7 @@ export default function FreeKnowledgeGame({ kind }) {
     if (!connected) { setError('接続されていません。再接続を待ってください。'); return; }
     socket?.emit('knowledge:action', { type, ...payload });
   };
-  return <main className="min-h-screen bg-slate-100 p-4 text-slate-900">
+  return <main className={`min-h-screen p-4 text-slate-900 ${kind === 'punk' ? 'bg-slate-100' : 'bg-cover bg-center bg-fixed'}`} style={kind === 'punk' ? undefined : { backgroundImage: "url('/map-bg.jpg')" }}>
     <div className="mx-auto max-w-5xl space-y-4">
       <h1 className="text-2xl font-bold">{kind === 'punk' ? 'パンクレコーズ' : 'ビブルサーチ'}（フリーマッチ）</h1>
       {error && <p role="alert" className="rounded bg-red-100 p-3 text-red-800">{error}</p>}

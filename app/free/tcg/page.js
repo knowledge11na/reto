@@ -4,6 +4,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import io from 'socket.io-client';
+import FreeRematchButtons from '../../../components/FreeRematchButtons.js';
 import {
   CARD_DEFS,
   DECK_SIZE,
@@ -1294,7 +1295,9 @@ export default function TcgPage() {
           <div className="quiz result">
             <h2>{g.spectator ? '対戦終了' : g.winner === g.you ? '勝利！' : '敗北…'}</h2>
             <div className="q-lines">{g.log[g.log.length - 1]}</div>
-            <button className="btn" onClick={() => router.push(backPath)}>戻る</button>
+            {solo
+              ? <button className="btn" onClick={() => router.push(backPath)}>戻る</button>
+              : <FreeRematchButtons roomId={roomId} />}
           </div>
         </div>
       )}

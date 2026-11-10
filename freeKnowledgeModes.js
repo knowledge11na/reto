@@ -274,5 +274,9 @@ export function setupFreeKnowledgeModes(io, loaders = {}) {
     has(roomId) {
       return games.has(String(roomId));
     },
+    active(roomId) {
+      const game = games.get(String(roomId));
+      return !!game && game.phase !== 'result';
+    },
   };
 }

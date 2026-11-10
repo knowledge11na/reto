@@ -4,6 +4,7 @@
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { io } from "socket.io-client";
+import FreeRematchButtons from "../../../components/FreeRematchButtons.js";
 
 const SOCKET_URL =
   process.env.NEXT_PUBLIC_SOCKET_URL ||
@@ -748,6 +749,8 @@ function HasteVouteContent() {
                 {player.name}：{player.score} 点
               </p>
             ))}
+
+          <FreeRematchButtons roomId={roomId} />
         </section>
       )}
     </main>

@@ -17,6 +17,7 @@ import {
 import {
   io,
 } from 'socket.io-client';
+import FreeRematchButtons from '../../../components/FreeRematchButtons.js';
 
 
 const DEFAULT_SETTINGS = {
@@ -1699,6 +1700,8 @@ function emitSubmitAnswer() {
               )}
             </div>
           </section>
+
+          <FreeRematchButtons roomId={roomId} />
         </div>
       </main>
     );
