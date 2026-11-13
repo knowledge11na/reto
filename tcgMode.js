@@ -2474,10 +2474,9 @@ function actEnd(game, pi) {
     }
   }
   startTurn(game, 1 - pi);
-  const turnNo = game.players[0].turns + game.players[1].turns;
   for (let owner = 0; owner < game.players.length; owner++) {
     for (const c of [...game.players[owner].board]) {
-      if (c.indestructibleThroughTurn < turnNo && currentPower(c) <= 0) destroy(game, owner, c);
+      if (currentPower(c) <= 0) destroy(game, owner, c);
     }
   }
 }
