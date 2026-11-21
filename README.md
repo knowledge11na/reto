@@ -1,5 +1,11 @@
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
+## TCG
+
+デッキ編集では、どのデッキから編集しても「拡張パック第1弾」のカードを追加できます。
+タグクイズは承認済み投稿問題から指定タグに一致する問題を出題し、記述・選択・複数選択・並び替えに対応します。各問題の制限時間は40秒です。問題がない場合や取得に失敗した場合は対戦ログに表示されます。
+ベンサムは相手の攻撃時効果またはターンに1回の起動効果を自分の効果として使用します。コピーした効果のクイズも出題され、ダウンの発動コストは不要です。変身する起動効果はコピーできません。
+
 ## Getting Started
 
 First, run the development server:

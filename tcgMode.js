@@ -24,6 +24,7 @@ import {
   normalizeDeck,
 } from './lib/tcgCards.js';
 import { makeQuestion, ALL_GENRES } from './lib/tcgQuestions.js';
+import { loadTagQuestion } from './lib/tcgTagQuestions.js';
 
 const games = new Map();
 let IO = null;
@@ -94,9 +95,10 @@ function resolveDiscard(game, pending, cardId) {
 }
 
 // ===== ゲーム生成 =====
-function createGame(roomId) {
+function createGame(roomId, questionLoader = loadTagQuestion) {
   return {
     roomId,
+    questionLoader,
     seats: [null, null],
     players: [],
     phase: 'waiting', // waiting | playing | finished
@@ -223,6 +225,9 @@ const isBlocker = (c) => !!CARD_DEFS[c.defId].blocker || !!c.blockBuff;
 function applyPowerDebuff(game, sourceOwner, sourceId, targetId, amount, expires = null) {
   const found = findChar(game, targetId);
   if (!found) return;
+  if (game.current === sourceOwner && found.pi !== sourceOwner) {
+    amount += game.players[sourceOwner].debuffBoost || 0;
+  }
   found.c.powerMods.push({
     amount,
     sourceOwner,
@@ -385,6 +390,9 @@ function startTurn(game, pi) {
   P.maxCost = Math.min(10, schedule[Math.min(P.turns - 1, schedule.length - 1)] + (P.joy || 0));
   P.cost = P.maxCost;
   P.commonUsed = false;
+  P.commonUses = 0;
+  P.commonLimit = 1;
+  P.debuffBoost = 0;
   for (const c of P.board) {
     if (c.noRecover) c.noRecover = false;
     else c.rested = false;
@@ -627,7 +635,7 @@ function armTimer(game, pending, onTimeout) {
       console.error('[tcg] timeout error', e);
     }
     settle(game);
-  }, (pending.ms || QUIZ_MS) + 1500);
+  }, (pending.ms || QUIZ_MS) + (pending.strictDeadline ? 0 : 1500));
 }
 
 function quizMs(game, owner) {
@@ -639,32 +647,60 @@ function ask(game, owner, genres, title, cb, step = null) {
   // CPUの効果の問題は人間側に出題し、人間の正誤を反転してCPUの結果とする
   const invert = !!game.seats[owner]?.cpu;
   const answerer = invert ? 1 - owner : owner;
-  let q = null;
-  for (const g of shuffle(genres)) {
-    q = makeQuestion(g, (game.usedQ ||= new Map()));
-    if (q) break;
-  }
-  if (!q) {
+  const start = (q, isTag) => {
+    const ms = isTag ? QUIZ_MS : quizMs(game, answerer);
+    const pending = {
+      kind: 'quiz',
+      owner: answerer,
+      invert,
+      title: invert ? `【CPUの効果】${title} ／ あなたが不正解だと成功、正解すると失敗` : title,
+      genre: q.label,
+      lines: q.lines,
+      ms,
+      strictDeadline: isTag,
+      quizId: game.quizSeq = (game.quizSeq || 0) + 1,
+      deadline: Date.now() + ms,
+      q,
+      cb,
+      step,
+    };
+    game.pending = pending;
+    armTimer(game, pending, () => resolveQuiz(game, pending, '', true));
+  };
+  const remaining = shuffle(genres);
+  const next = () => {
+    while (remaining.length) {
+      const genre = remaining.shift();
+      if (genre === 'tag' || genre.startsWith('tag:')) {
+        const tag = genre === 'tag' ? '空島' : genre.slice(4);
+        const loading = { kind: 'loading', owner: -1, title: `タグ【${tag}】の問題を読み込み中` };
+        game.pending = loading;
+        game.questionLoader(tag, (game.usedQ ||= new Map())).then((q) => {
+          if (game.pending !== loading || game.phase !== 'playing') return;
+          game.pending = null;
+          if (q) start(q, true);
+          else next();
+          settle(game);
+        }, (error) => {
+          console.error('[tcg] タグ問題の取得に失敗しました:', error);
+          if (game.pending !== loading || game.phase !== 'playing') return;
+          game.pending = null;
+          addLog(game, `タグ【${tag}】の問題取得に失敗しました。`);
+          cb(false);
+          settle(game);
+        });
+        return;
+      }
+      const q = makeQuestion(genre, (game.usedQ ||= new Map()));
+      if (q) {
+        start(q, false);
+        return;
+      }
+    }
     addLog(game, '出題できる問題がありませんでした（データ不足）。');
     cb(false);
-    return;
-  }
-  const ms = quizMs(game, answerer);
-  const pending = {
-    kind: 'quiz',
-    owner: answerer,
-    invert,
-    title: invert ? `【CPUの効果】${title} ／ あなたが不正解だと成功、正解すると失敗` : title,
-    genre: q.label,
-    lines: q.lines,
-    ms,
-    deadline: Date.now() + ms,
-    q,
-    cb,
-    step,
   };
-  game.pending = pending;
-  armTimer(game, pending, () => resolveQuiz(game, pending, '', true));
+  next();
 }
 
 function askSeq(game, owner, specs, title, done) {
@@ -705,7 +741,7 @@ function resolveQuiz(game, pending, text, timeout) {
   addLog(
     game,
     `【${pending.genre}】${game.seats[pending.owner].name}：${timeout ? '時間切れ' : ok ? '正解！' : '不正解'}` +
-      `（回答：${timeout ? 'なし' : String(text ?? '').trim().slice(0, 40) || 'なし'} ／ 答え：${pending.q.reveal}）`
+      `（回答：${timeout ? 'なし' : (Array.isArray(text) ? text.join(' / ') : String(text ?? '')).trim().slice(0, 40) || 'なし'} ／ 答え：${pending.q.reveal}）`
   );
   pending.cb(pending.invert ? !ok : ok);
 }
@@ -716,6 +752,15 @@ function askChoose(game, owner, title, options, cb) {
     return;
   }
   const pending = { kind: 'choose', owner, title, options, deadline: Date.now() + QUIZ_MS, cb };
+  game.pending = pending;
+  armTimer(game, pending, () => {
+    game.pending = null;
+    cb(null);
+  });
+}
+
+function askEffectChoice(game, owner, title, options, cb) {
+  const pending = { kind: 'effectChoice', owner, title, options, deadline: Date.now() + QUIZ_MS, cb };
   game.pending = pending;
   armTimer(game, pending, () => {
     game.pending = null;
@@ -756,6 +801,7 @@ function damageLife(game, target, dmg, done = () => {}) {
 // ===== 戦闘 =====
 function resolveBattle(game, att, attOwner, def, defOwner, noKill = false) {
   if (!findChar(game, att.id) || !findChar(game, def.id)) {
+    revertHyogoro(game, att);
     game.combat = null;
     return;
   }
@@ -781,6 +827,7 @@ function resolveBattle(game, att, attOwner, def, defOwner, noKill = false) {
   }
   att.temp = 0;
   def.temp = 0;
+  revertHyogoro(game, att);
   game.combat = null;
   diveTriggers(game, lost);
 }
@@ -798,6 +845,7 @@ function diveTriggers(game, lost) {
 function failAttack(game, att) {
   addLog(game, `${CARD_DEFS[att.defId].name} の攻撃は失敗した。`);
   att.temp = 0;
+  revertHyogoro(game, att);
   game.combat = null;
 }
 
@@ -805,7 +853,18 @@ function resolveDirect(game, att, attOwner) {
   game.combat = null;
   const dmg = power(att);
   att.temp = 0;
+  revertHyogoro(game, att);
   damageLife(game, 1 - attOwner, dmg);
+}
+
+function revertHyogoro(game, att) {
+  if (att.defId !== 'hyogoro2') return;
+  att.defId = 'hyogoro';
+  const found = findChar(game, att.id);
+  if (found) {
+    addLog(game, 'ヒョウ五郎が変身前に戻った。');
+    if (power(att) <= 0) destroy(game, found.pi, att);
+  }
 }
 
 // ブロックされなかった場合の攻撃解決（ライフ直接 or 攻撃対象キャラとのバトル）
@@ -818,6 +877,7 @@ function resolveUnblocked(game, att, attOwner) {
   }
   const hit = findChar(game, cb.target);
   if (!hit) {
+    revertHyogoro(game, att);
     game.combat = null;
     return;
   }
@@ -866,6 +926,38 @@ function afterAttackTriggers(game) {
 // 防御側（攻撃された／ブロックした）のカード効果
 function defendTrigger(game, owner, c, role, cont) {
   switch (c.defId) {
+    case 'vergo':
+    case 'kuma':
+    case 'namida': {
+      if (role !== 'block') break;
+      const tags = { vergo: 'パンクハザード', kuma: 'エッグヘッド', namida: 'ワノ国' };
+      ask(game, owner, [`tag:${tags[c.defId]}`], `${CARD_DEFS[c.defId].name}：ブロック時効果`, (ok) => {
+        if (!ok) {
+          cont(false);
+          return;
+        }
+        if (c.defId === 'namida') {
+          pickTrash(game, owner, '場に出すコスト3以下のキャラを選んでください', (t) => t.defId !== 'namida' && CARD_DEFS[t.defId].cost <= 3, (card) => {
+            if (!card) {
+              cont(false);
+              return;
+            }
+            placeFromTrash(game, owner, card);
+            game.afterQueue.push(() => cont(false));
+          });
+        } else {
+          chooseOpp(game, owner, c.defId === 'kuma' ? '手札に戻す相手キャラを選んでください' : 'パワーを-1する相手キャラを選んでください',
+            (target) => c.defId !== 'kuma' || power(target) < power(c), (target) => {
+              if (target) {
+                if (c.defId === 'kuma') bounce(game, target);
+                else applyPowerDebuff(game, owner, c.id, target.c.id, 1);
+              }
+              cont(false);
+            });
+        }
+      });
+      return;
+    }
     case 'sbDias':
       if (role !== 'block') break;
       ask(game, owner, ['number'], 'デビル・ディアス：正解でパワー+1、不正解でパワー-1', (ok) => {
@@ -1068,9 +1160,60 @@ function reillyBonus(game, pi, c) {
   offerPlace(game, pi, 'レイリー：場に出すシャクヤクを選んでください（スキップ可）', ['sbShakuyaku']);
 }
 
-function attackTriggers(game, attOwner, att, cont) {
+const ATTACK_EFFECT_CARDS = new Set([
+  'hyogoro2', 'sbJudy', 'sbMinoruba', 'sbKairiken', 'sbMarine', 'sbReilly', 'sbShakuyaku2',
+  'dobby', 'francois', 'shiki', 'kid', 'killer', 'heat', 'wire', 'emma', 'bubblegum',
+  'uk', 'compo', 'mosh', 'gig', 'elizabello', 'sabo', 'hack', 'lindbergh', 'karasu',
+  'gambo', 'jiron', 'hanap', 'hojiro', 'zori', 'mugicha5', 'vivi', 'crocodile', 'buggy',
+  'foxy', 'katakuri', 'moria', 'magellan', 'hody', 'bentham',
+]);
+const TRANSFORM_ABILITIES = new Set(['bellet', 'sbShakuyaku', 'hyogoro']);
+const canCopyOncePerTurn = (defId) =>
+  ACTIVE_CARDS.has(defId) && defId !== 'beloBetty' && !TRANSFORM_ABILITIES.has(defId);
+
+function attackTriggers(game, attOwner, att, cont, effectId = att.defId) {
   const cb = game.combat;
-  switch (att.defId) {
+  switch (effectId) {
+    case 'bentham':
+      ask(game, attOwner, ['tag:インペルダウン'], 'ベンサム：正解で相手キャラの効果を発動できる', (ok) => {
+        if (!ok) {
+          cont();
+          return;
+        }
+        const opponents = game.players[1 - attOwner].board.filter((target) =>
+          ATTACK_EFFECT_CARDS.has(target.defId) || canCopyOncePerTurn(target.defId));
+        askChoose(game, attOwner, 'コピーする効果を持つ相手キャラを選んでください', opponents.map((target) => target.id), (id) => {
+          const target = id && findChar(game, id);
+          if (!target) {
+            cont();
+            return;
+          }
+          const sourceId = target.c.defId;
+          const choices = [];
+          if (ATTACK_EFFECT_CARDS.has(sourceId)) choices.push({ id: 'attack', label: '攻撃時効果' });
+          if (canCopyOncePerTurn(sourceId)) choices.push({ id: 'active', label: 'ターンに1回の効果' });
+          const use = (choice) => {
+            if (!choice) {
+              cont();
+              return;
+            }
+            addLog(game, `ベンサムは ${CARD_DEFS[sourceId].name} の${choice === 'attack' ? '攻撃時' : '起動'}効果を使用する。`);
+            if (choice === 'attack') attackTriggers(game, attOwner, att, cont, sourceId);
+            else copyActiveEffect(game, attOwner, att, sourceId, cont);
+          };
+          if (choices.length === 1) use(choices[0].id);
+          else askEffectChoice(game, attOwner, 'コピーする効果を選んでください', choices, use);
+        });
+      });
+      return;
+    case 'hyogoro2':
+      askSeq(game, attOwner, [['tag:ワノ国'], ['tag:ワノ国']], 'ヒョウ五郎：正解1問ごとにパワー+1、2問不正解で攻撃失敗', (results) => {
+        const correct = results.filter(Boolean).length;
+        if (correct) addTurnTemp(game, attOwner, att, correct);
+        if (correct === 0) failAttack(game, att);
+        else cont();
+      });
+      return;
     case 'sbJudy':
       ask(game, attOwner, ['number'], 'ジュディ：正解で山札のマリィを1枚手札に加える', (ok) => {
         if (ok) searchDeck(game, attOwner, 'sbMarie');
@@ -1550,16 +1693,120 @@ function activateAbility(game, pi, charId, genre) {
 }
 
 const COPY_ABILITY = new Set(['rikudold', 'bandodecine']);
-const NOT_COPYABLE = new Set(['rikudold', 'bandodecine', 'beloBetty', 'mugicha']);
+const NOT_COPYABLE = new Set(['rikudold', 'bandodecine', 'beloBetty', 'mugicha', 'hyogoro']);
 
-function runAbility(game, pi, c, genre) {
+function copyActiveEffect(game, pi, c, effectId, cont) {
+  if (COPY_ABILITY.has(effectId)) {
+    const options = game.players[pi].board.filter((target) =>
+      target.id !== c.id && ACTIVE_CARDS.has(target.defId) && !NOT_COPYABLE.has(target.defId) &&
+      !TRANSFORM_ABILITIES.has(target.defId)).map((target) => target.id);
+    askChoose(game, pi, 'コピーする味方キャラの起動効果を選んでください', options, (id) => {
+      const target = id && findChar(game, id);
+      if (target) copyActiveEffect(game, pi, c, target.c.defId, cont);
+      else cont();
+    });
+    return;
+  }
+  if (effectId === 'mugicha') {
+    const labels = { age: '年齢', height: '身長', food: '好物', blood: '血液型' };
+    const choices = MUGICHA_GENRES.filter((genre) => !c.genresUsed.includes(genre))
+      .map((genre) => ({ id: genre, label: labels[genre] }));
+    if (!choices.length) {
+      addLog(game, 'ベンサムが使えるジャンルは残っていません。');
+      cont();
+      return;
+    }
+    askEffectChoice(game, pi, '出題ジャンルを選んでください', choices, (genre) => {
+      if (genre) startCopiedActive(game, pi, c, effectId, genre, cont);
+      else cont();
+    });
+    return;
+  }
+  startCopiedActive(game, pi, c, effectId, '', cont);
+}
+
+function startCopiedActive(game, pi, c, effectId, genre, cont) {
+  const combat = game.combat;
+  game.resumeCopiedAttack = () => {
+    if (game.combat !== combat) return;
+    if (!findChar(game, c.id)) {
+      game.combat = null;
+      return;
+    }
+    cont();
+  };
+  runAbility(game, pi, c, genre, effectId, true);
+}
+
+function runAbility(game, pi, c, genre, effectId = c.defId, ignoreRestCost = false) {
   const P = game.players[pi];
-  const name = CARD_DEFS[c.defId].name;
+  const name = CARD_DEFS[effectId].name;
   const opp = 1 - pi;
   const turnExpiry = { owner: pi, turn: P.turns };
   const nextOppExpiry = () => ({ owner: opp, turn: game.players[opp].turns + 1 });
 
-  switch (c.defId) {
+  switch (effectId) {
+    case 'frankyGeneral':
+    case 'klabautermann':
+    case 'orochi':
+    case 'ginny':
+    case 'beakRemark':
+    case 'humphrey':
+    case 'coffeeMonkeys':
+    case 'hyogoro': {
+      c.abilityUsed = true;
+      const tags = {
+        frankyGeneral: '3D2Y', klabautermann: 'W7、エニエス・ロビー', orochi: 'ワノ国',
+        ginny: 'エッグヘッド', beakRemark: 'シャボンディ諸島', humphrey: 'シャボンディ諸島',
+        coffeeMonkeys: 'シャボンディ諸島', hyogoro: 'ワノ国',
+      };
+      ask(game, pi, [`tag:${tags[effectId]}`], `${name}：起動効果`, (ok) => {
+        if (!ok) return;
+        switch (effectId) {
+          case 'frankyGeneral':
+            askChoose(game, pi, '破壊するキャラを選んでください',
+              game.players.flatMap((player) => player.board.filter((target) => power(target) <= power(c)).map((target) => target.id)), (id) => {
+              const target = id && findChar(game, id);
+              if (target) destroy(game, target.pi, target.c);
+            });
+            break;
+          case 'klabautermann':
+            offerPlace(game, pi, `${name}：場に出す船を選んでください（スキップ可）`, ['kavell', 'sloop']);
+            break;
+          case 'orochi':
+            P.debuffBoost = (P.debuffBoost || 0) + 1;
+            addLog(game, 'このターン、相手キャラへのパワー減少値が1増える。');
+            break;
+          case 'ginny':
+            pickAlly(game, pi, '出たターンに攻撃できるキャラを選んでください', () => true, (target) => {
+              target.c.haste = true;
+              addLog(game, `${CARD_DEFS[target.c.defId].name} はこのターン攻撃できる。`);
+            });
+            break;
+          case 'beakRemark':
+            pickAlly(game, pi, 'パワーを上げる味方キャラを選んでください', () => true, (target) => {
+              target.c.bonus += 1;
+              addLog(game, `${CARD_DEFS[target.c.defId].name} のパワーが永続で+1された。`);
+            });
+            break;
+          case 'humphrey':
+            P.commonLimit = 2;
+            P.commonUsed = (P.commonUses || 0) >= P.commonLimit;
+            addLog(game, 'このターン「コストを支払う」を2回使える。');
+            break;
+          case 'coffeeMonkeys':
+            recoverRested(game, pi, (target) => target.id === c.id);
+            break;
+          case 'hyogoro':
+            if (findChar(game, c.id)) {
+              c.defId = 'hyogoro2';
+              addLog(game, `${name} が変身した！`);
+            }
+            break;
+        }
+      });
+      return;
+    }
     case 'kairo':
       c.abilityUsed = true;
       ask(game, pi, ['number'], `${name}：正解で自身を破壊し、トラッシュからキャラを場に出す`, (ok) => {
@@ -1721,7 +1968,7 @@ function runAbility(game, pi, c, genre) {
       return;
     case 'stelly':
     case 'mari': {
-      const genre = c.defId === 'stelly' ? 'fish' : 'food';
+      const genre = effectId === 'stelly' ? 'fish' : 'food';
       ask(game, pi, [genre], `${name}：      正解でカードを2枚引き、1枚捨てる`, (ok) => {
         if (!ok) return;
               draw(game, pi, 2);
@@ -1760,7 +2007,7 @@ function runAbility(game, pi, c, genre) {
     case 'nashi':
     case 'tarassa': {
       c.abilityUsed = true;
-      const genre = { hamburger: 'hint', nashi: 'ship', tarassa: 'before' }[c.defId];
+      const genre = { hamburger: 'hint', nashi: 'ship', tarassa: 'before' }[effectId];
       ask(game, pi, [genre], `${name}：正解でトラッシュの世界の王達が20種類以上なら勝利`, (ok) => {
         if (ok) checkWorldWin(game, pi);
       });
@@ -1768,10 +2015,10 @@ function runAbility(game, pi, c, genre) {
     }
     case 'iwatobi':
     case 'mukkeka': {
-      const genre = c.defId === 'iwatobi' ? 'subKanji' : 'wazaKanji';
+      const genre = effectId === 'iwatobi' ? 'subKanji' : 'wazaKanji';
       ask(game, pi, [genre], `${name}：正解でお互いのキャラ1体ずつのパワー-1`, (ok) => {
         if (!ok) return;
-        const partners = c.defId === 'iwatobi' ? ['mukkeka', 'hamburger'] : ['iwatobi', 'beer6'];
+        const partners = effectId === 'iwatobi' ? ['mukkeka', 'hamburger'] : ['iwatobi', 'beer6'];
         const again = P.board.some((x) => x.id !== c.id && partners.includes(x.defId));
         pairDebuff(game, pi, c, again ? 2 : 1);
       });
@@ -1912,7 +2159,7 @@ function runAbility(game, pi, c, genre) {
       });
       return;
     case 'beloBetty':
-      if (c.rested) fail('ダウン中のため使用できません。');
+      if (c.rested && !ignoreRestCost) fail('ダウン中のため使用できません。');
       c.rested = true;
       ask(game, pi, ['hobby', 'hate', 'season'], `${name}：正解で自身以外の味方キャラのパワー+1（次の相手ターン終了まで）`, (ok) => {
         if (!ok) return;
@@ -1978,7 +2225,7 @@ function runAbility(game, pi, c, genre) {
       });
       return;
     case 'karoo':
-      if (c.rested) fail('ダウン中のため使用できません。');
+      if (c.rested && !ignoreRestCost) fail('ダウン中のため使用できません。');
       c.abilityUsed = true;
       c.rested = true;
       ask(game, pi, ['image'], `${name}：正解で味方1体が出たターンでも攻撃でき、ダウンしていない相手にも攻撃できる`, (ok) => {
@@ -2094,7 +2341,7 @@ function runAbility(game, pi, c, genre) {
     case 'papas':
     case 'moai': {
       c.abilityUsed = true;
-      const isPapas = c.defId === 'papas';
+      const isPapas = effectId === 'papas';
       ask(game, pi, [isPapas ? 'wazaKanji' : 'subKanji'], `${name}：正解でカードを${isPapas ? 2 : 1}枚引く（不正解で破壊）`, (ok) => {
         if (!ok) {
           destroy(game, pi, c);
@@ -2166,7 +2413,8 @@ function actCommon(game, pi, cost) {
   if (action.target === 'enemy' && !game.players[1 - pi].board.length) fail('対象にできる相手キャラがいません。');
 
   P.cost -= cost;
-  P.commonUsed = true;
+  P.commonUses = (P.commonUses || 0) + 1;
+  P.commonUsed = P.commonUses >= (P.commonLimit || 1);
   const who = game.seats[pi].name;
   addLog(game, `${who} が共通アクション（コスト${cost}：${action.text}）を使用した。`);
   ask(game, pi, ALL_GENRES, `共通アクション（コスト${cost}）：正解で「${action.text}」`, (ok) => {
@@ -2199,8 +2447,9 @@ function actCommon(game, pi, cost) {
       case 8:
         chooseOpp(game, pi, 'パワーを-2する相手キャラを選んでください', () => true, (t) => {
           if (!t) return;
-          t.c.bonus -= 2;
-          addLog(game, `${CARD_DEFS[t.c.defId].name} のパワーが永続的に-2された（現在 ${currentPower(t.c)}）。`);
+          const amount = 2 + (P.debuffBoost || 0);
+          t.c.bonus -= amount;
+          addLog(game, `${CARD_DEFS[t.c.defId].name} のパワーが永続的に-${amount}された（現在 ${currentPower(t.c)}）。`);
           if (currentPower(t.c) <= 0) destroy(game, t.pi, t.c);
         });
         return;
@@ -2519,9 +2768,13 @@ function pendingView(game, viewer) {
     total: p.ms || QUIZ_MS,
   };
   if (p.kind === 'quiz') {
-    return { ...base, title: p.title, genre: p.genre, lines: p.lines, step: p.step };
+    return { ...base, title: p.title, genre: p.genre, lines: p.lines, step: p.step, quizId: p.quizId, type: p.q.type || 'text', options: p.q.options };
   }
+  if (p.kind === 'loading') return { ...base, title: p.title };
   if (p.kind === 'choose') {
+    return { ...base, title: p.title, options: p.options };
+  }
+  if (p.kind === 'effectChoice') {
     return { ...base, title: p.title, options: p.options };
   }
   if (p.kind === 'discard') {
@@ -2644,6 +2897,12 @@ function scheduleCleanupIfEmpty(game) {
 function settle(game) {
   checkWin(game);
   flushAfterQueue(game);
+  if (game.phase === 'playing' && !game.pending && !game.afterQueue?.length && game.resumeCopiedAttack) {
+    const resume = game.resumeCopiedAttack;
+    game.resumeCopiedAttack = null;
+    resume();
+    flushAfterQueue(game);
+  }
   checkWin(game);
   broadcast(game);
   scheduleCpu(game);
@@ -2721,7 +2980,7 @@ function cpuStep(game, cpu) {
   // 1. 起動効果（回復系は攻撃後に回すため、ここでは使わない）
   for (const c of P.board) {
     const key = `a${c.id}`;
-    if (game.cpuTried.has(key) || !ACTIVE_CARDS.has(c.defId) || CPU_AVOID_ABILITY.has(c.defId) || CPU_RECOVER[c.defId]) continue;
+    if (game.cpuTried.has(key) || !ACTIVE_CARDS.has(c.defId) || CPU_AVOID_ABILITY.has(c.defId) || CPU_RECOVER[c.defId] || c.defId === 'coffeeMonkeys') continue;
     const def = CARD_DEFS[c.defId];
     if (c.defId !== 'beloBetty' && c.abilityUsed) continue;
     if (def.restCost && c.rested) continue;
@@ -2794,6 +3053,14 @@ function cpuStep(game, cpu) {
   }
 
   // 4. 攻撃後に、ダウンした攻撃役を回復して再攻撃できる状況なら回復系の効果を使う
+  const coffee = P.board.find((c) => c.defId === 'coffeeMonkeys' && c.rested && !c.abilityUsed &&
+    !game.cpuTried.has(`a${c.id}`) && !c.noAttack && canAttackNow(P, c));
+  if (coffee) {
+    game.cpuTried.add(`a${coffee.id}`);
+    game.cpuTried.delete(`t${coffee.id}`);
+    activateAbility(game, cpu, coffee.id, '');
+    return;
+  }
   for (const c of P.board) {
     const key = `a${c.id}`;
     const need = CPU_RECOVER[c.defId];
@@ -2859,6 +3126,12 @@ function cpuResolvePending(game, cpu, p) {
     p.cb(id);
     return;
   }
+  if (p.kind === 'effectChoice') {
+    clearTimeout(game.timer);
+    game.pending = null;
+    p.cb(p.options[0]?.id || null);
+    return;
+  }
   if (p.kind === 'discard') {
     const opts = p.options;
     const cost = (o) => CARD_DEFS[o.defId].cost * 2 + CARD_DEFS[o.defId].power;
@@ -2913,7 +3186,7 @@ function cpuChoose(game, cpu, p) {
 
 
 // ===== Socket =====
-export function setupTcgMode(io) {
+export function setupTcgMode(io, { questionLoader = loadTagQuestion } = {}) {
   IO = io;
 
   io.on('connection', (socket) => {
@@ -2955,7 +3228,7 @@ export function setupTcgMode(io) {
 
       let game = games.get(roomId);
       if (!game) {
-        game = createGame(roomId);
+        game = createGame(roomId, questionLoader);
         games.set(roomId, game);
       }
       clearTimeout(game.cleanup);
@@ -3125,7 +3398,10 @@ export function setupTcgMode(io) {
         needPlaying(game, seat);
         const p = game.pending;
         if (!p || p.kind !== 'quiz' || p.owner !== seat) fail('今は回答できません。');
-        resolveQuiz(game, p, String(text ?? '').slice(0, 200), false);
+        const answer = Array.isArray(text)
+          ? text.map((value) => String(value))
+          : p.strictDeadline ? String(text ?? '') : String(text ?? '').slice(0, 200);
+        resolveQuiz(game, p, answer, p.strictDeadline && Date.now() >= p.deadline);
       })
     );
 
@@ -3146,6 +3422,18 @@ export function setupTcgMode(io) {
         clearTimeout(game.timer);
         game.pending = null;
         p.cb(id);
+      })
+    );
+
+    socket.on('tcg:effect-choice', ({ choice } = {}) =>
+      withGame((game, seat) => {
+        needPlaying(game, seat);
+        const p = game.pending;
+        if (!p || p.kind !== 'effectChoice' || p.owner !== seat) fail('今は効果を選択できません。');
+        if (choice !== null && !p.options.some((option) => option.id === choice)) fail('その効果は選べません。');
+        clearTimeout(game.timer);
+        game.pending = null;
+        p.cb(choice);
       })
     );
 
@@ -3219,7 +3507,7 @@ export function setupTcgMode(io) {
         clearTimeout(previous.timer);
         clearTimeout(previous.cpuTimer);
       }
-      const game = createGame(String(roomId));
+      const game = createGame(String(roomId), questionLoader);
       game.lobby = { expected, members: [], error: '', tokens: tokens ? new Set(tokens) : null };
       games.set(game.roomId, game);
       return true;

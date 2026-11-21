@@ -24,6 +24,7 @@ import {
   SHABONDY_DECK,
   SHABONDY_CARD_POOL,
   ALL_DECK_CARDS,
+  EXPANSION_1_CARDS,
   normalizeDeck,
 } from '../../../lib/tcgCards.js';
 
@@ -232,16 +233,24 @@ const CARD_IMAGES = {
   sbReilly: '0531',
   sbShakuyaku: '0509',
   sbShakuyaku2: '05091',
+  frankyGeneral: '00081',
+  hyogoro2: '13291',
   joyboy: '1826',
 };
 
+const CHARACTER_IMAGES = {
+  klabautermann: '0298', orochi: '1342', vergo: '0804', ginny: '1792',
+  kuma: '0267', beakRemark: '0708', humphrey: '0707', coffeeMonkeys: '0534',
+  namida: '1386', hyogoro: '1329', bentham: '0172',
+};
+
 function CardArt({ defId }) {
-  const file = CARD_IMAGES[defId];
+  const file = CHARACTER_IMAGES[defId] || CARD_IMAGES[defId];
   if (!file) return null;
   return (
     <img
       className="c-art"
-      src={`/tcg/${file}.png`}
+      src={`/${CHARACTER_IMAGES[defId] ? 'character' : 'tcg'}/${file}.png`}
       alt=""
       draggable={false}
       onError={(e) => {
@@ -289,7 +298,7 @@ function DeckSelect({ onStart, onBack, editOnly = false, lobby, onSpectate, conn
       id: deck.fixed ? null : deck.id,
       name: deck.fixed ? `${deck.name}のコピー` : deck.name,
       cards: { ...deck.cards },
-      allowedCards: deck.allowedCards ? [...deck.allowedCards] : ALL_DECK_CARDS,
+      allowedCards: [...new Set([...(deck.allowedCards || ALL_DECK_CARDS), ...EXPANSION_1_CARDS])],
     });
   };
 
@@ -347,6 +356,7 @@ function DeckSelect({ onStart, onBack, editOnly = false, lobby, onSpectate, conn
             ['キッド海賊団デッキ', KID_CARD_POOL],
             ['囚人デッキ', PRISONER_CARD_POOL],
             ['シャボン舞う諸島デッキ', SHABONDY_CARD_POOL],
+            ['拡張パック第1弾', EXPANSION_1_CARDS],
           ];
           const grouped = new Set(pools.flatMap(([, cards]) => cards));
           pools.push(['その他のカード', editing.allowedCards.filter((id) => !grouped.has(id))]);
@@ -528,6 +538,7 @@ export default function TcgPage() {
   const [selChar, setSelChar] = useState(null);
   const [detail, setDetail] = useState(null);
   const [answer, setAnswer] = useState('');
+  const [selectedAnswers, setSelectedAnswers] = useState([]);
   const [now, setNow] = useState(() => Date.now());
   const [toast, setToast] = useState(null);
   const [arrow, setArrow] = useState(null);
@@ -686,9 +697,10 @@ export default function TcgPage() {
   useEffect(() => {
     if (myQuiz) {
       setAnswer('');
+      setSelectedAnswers([]);
       setTimeout(() => inputRef.current?.focus(), 50);
     }
-  }, [myQuiz, pending?.deadline]);
+  }, [myQuiz, pending?.quizId]);
 
   const emit = (ev, data) => socketRef.current?.emit(ev, data);
   const discardCard = (cardId) => emit('tcg:discard', { cardId });
@@ -827,8 +839,9 @@ export default function TcgPage() {
 
   const submitAnswer = (e) => {
     e.preventDefault();
-    emit('tcg:answer', { text: answer });
+    emit('tcg:answer', { text: pending.type === 'multi' || pending.type === 'order' ? selectedAnswers : answer });
     setAnswer('');
+    setSelectedAnswers([]);
   };
 
   const turnLabel = g.phase === 'finished'
@@ -851,6 +864,8 @@ export default function TcgPage() {
         ? '相手が先攻・後攻を選択中…'
         : pending.kind === 'choose'
         ? '相手が対象を選択中…'
+        : pending.kind === 'effectChoice'
+          ? '相手が効果を選択中…'
         : pending.kind === 'discard'
           ? '相手が捨てるカードを選択中…'
         : null
@@ -933,6 +948,17 @@ export default function TcgPage() {
               <button className="btn small" onClick={() => emit('tcg:choose', { targetId: null })}>
                 スキップ
               </button>
+            </div>
+          )}
+          {pending?.kind === 'effectChoice' && pending.mine && (
+            <div className="wait-msg strong">
+              {pending.title}（残り{left}秒）
+              {pending.options.map((option) => (
+                <button key={option.id} className="btn small" onClick={() => emit('tcg:effect-choice', { choice: option.id })}>
+                  {option.label}
+                </button>
+              ))}
+              <button className="btn small" onClick={() => emit('tcg:effect-choice', { choice: null })}>スキップ</button>
             </div>
           )}
           {pending?.kind === 'order' && pending.mine && (
@@ -1177,17 +1203,43 @@ export default function TcgPage() {
             </div>
             <div className="timer"><span style={{ width: `${pct}%` }} /></div>
             <div className="q-left">残り {left} 秒</div>
-            <input
+            {pending.type === 'single' && pending.options?.map((option, i) => (
+              <label key={i}>
+                <input type="radio" name="quiz-answer" checked={answer === option} onChange={() => setAnswer(option)} />
+                {' '}{option}
+              </label>
+            ))}
+            {pending.type === 'multi' && pending.options?.map((option, i) => (
+              <label key={i}>
+                <input type="checkbox" checked={selectedAnswers.includes(option)} onChange={() => setSelectedAnswers((current) =>
+                  current.includes(option) ? current.filter((value) => value !== option) : [...current, option]
+                )} />
+                {' '}{option}
+              </label>
+            ))}
+            {pending.type === 'order' && (
+              <>
+                <div>順番に選択してください（選択済みの項目を押すと取り消せます）</div>
+                <div>{selectedAnswers.join(' → ') || '未選択'}</div>
+                {pending.options?.map((option, i) => (
+                  <button key={i} type="button" className="btn small" onClick={() => setSelectedAnswers((current) =>
+                    current.includes(option) ? current.filter((value) => value !== option) : [...current, option]
+                  )}>{selectedAnswers.includes(option) ? `${selectedAnswers.indexOf(option) + 1}. ` : ''}{option}</button>
+                ))}
+              </>
+            )}
+            {(!pending.type || pending.type === 'text') && <input
               ref={inputRef}
               value={answer}
               onChange={(e) => setAnswer(e.target.value)}
               placeholder="答えを入力"
               autoComplete="off"
-            />
+            />}
             <button className="btn" type="submit">回答する</button>
           </form>
         </div>
       )}
+      {pending?.kind === 'loading' && <div className="overlay"><div className="quiz">{pending.title}</div></div>}
 
       {commonOpen && idle && !me.commonUsed && (
         <div className="overlay" onClick={() => setCommonOpen(false)}>
