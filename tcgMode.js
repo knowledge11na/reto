@@ -298,6 +298,7 @@ function newChar(card, slot, P) {
     haste: false,
     summonedOn: P.turns,
     abilityUsed: false,
+    benthamAttackUsed: false,
     genresUsed: [],
   };
 }
@@ -397,6 +398,7 @@ function startTurn(game, pi) {
     if (c.noRecover) c.noRecover = false;
     else c.rested = false;
     c.abilityUsed = false;
+    c.benthamAttackUsed = false;
   }
   game.current = pi;
 
@@ -1175,6 +1177,12 @@ function attackTriggers(game, attOwner, att, cont, effectId = att.defId) {
   const cb = game.combat;
   switch (effectId) {
     case 'bentham':
+      if (att.benthamAttackUsed) {
+        addLog(game, 'ベンサムの攻撃時効果はこのターンすでに使用済み。');
+        cont();
+        return;
+      }
+      att.benthamAttackUsed = true;
       ask(game, attOwner, ['tag:インペルダウン'], 'ベンサム：正解で相手キャラの効果を発動できる', (ok) => {
         if (!ok) {
           cont();

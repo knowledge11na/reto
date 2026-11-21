@@ -84,6 +84,34 @@ test('Bentham copies an enemy activated effect onto himself before the attack re
   player.send('tcg:surrender');
 });
 
+test('Bentham can attack again after recovery but triggers his effect only once per turn', async (t) => {
+  const { player, opponent, bentham, source, tags } = createMatch(t, 'coffeeMonkeys');
+  player.send('tcg:attack', { attackerId: bentham.id, target: 'player' });
+  await Promise.resolve();
+  player.send('tcg:answer', { text: 'ok' });
+  player.send('tcg:choose', { targetId: source.id });
+  await Promise.resolve();
+  player.send('tcg:answer', { text: 'ok' });
+  assert.equal(player.state.me.board[0].rested, false);
+
+  player.send('tcg:attack', { attackerId: bentham.id, target: 'player' });
+  assert.equal(player.state.pending, null);
+  assert.equal(player.state.opp.lifeHp, 6);
+  assert.equal(player.state.me.board[0].rested, true);
+  assert.deepEqual(tags, ['インペルダウン', 'シャボンディ諸島']);
+
+  player.send('tcg:end');
+  opponent.send('tcg:end');
+  player.send('tcg:attack', { attackerId: bentham.id, target: 'player' });
+  await Promise.resolve();
+  assert.equal(player.state.pending.genre, 'タグ【インペルダウン】');
+  assert.deepEqual(tags, ['インペルダウン', 'シャボンディ諸島', 'インペルダウン']);
+  player.send('tcg:answer', { text: 'wrong' });
+  assert.equal(player.state.opp.lifeHp, 4);
+  assert.deepEqual(player.errors, []);
+  player.send('tcg:surrender');
+});
+
 test('Bentham can select an attack effect from a card with both effects and fails on a wrong answer', async (t) => {
   const { player, bentham, source } = createMatch(t, 'shiki');
   player.send('tcg:attack', { attackerId: bentham.id, target: 'player' });
